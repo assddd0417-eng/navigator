@@ -57,3 +57,13 @@ jobs:
         env:
           TEST_ADMIN_DATABASE_URL: ${{ env.ADMIN_URL }}
         run: pytest -v
+
+      - name: 시드 적용 (2회, 재실행 안전 확인) + API 스모크 테스트 (curl)
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/relay_ax_ci
+        run: |
+          psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -f seeds/init_test_data.sql
+          psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -f seeds/init_test_data.sql
+          (cd backend && uvicorn app.main:app --port 8000 > ../uvicorn.log 2>&1 &)
+          for i in $(seq 30); do curl -sf http://localhost:8000/health >/dev/null && break; sleep 1; done
+          ./scripts/smoke_test.sh || { cat uvicorn.log; exit 1; }
