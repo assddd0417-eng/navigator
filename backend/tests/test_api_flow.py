@@ -1,7 +1,7 @@
 """API 전체 흐름: 문서 등록 → 성과카드 → 수요 → 매칭 → 검토 배정 → 의견 → 최종판정 → 이력·KPI."""
 import pytest
 
-from tests.conftest import as_user
+from tests.conftest import ROOT, as_user
 
 PLANNER, REVIEWER, EXPERT, CURATOR, VIEWER = 1, 2, 3, 4, 5
 state: dict = {}
@@ -10,7 +10,9 @@ state: dict = {}
 async def test_health(client):
     r = await client.get("/health")
     assert r.status_code == 200
-    assert r.json()["schema_version"] == "0015"
+    latest = sorted((ROOT / "db" / "migrations").glob("[0-9][0-9][0-9][0-9]_*.sql"))[-1].name[:4]
+    assert r.json()["schema_version"] == latest
+    assert r.json()["embedding"]["model"] == "relay-ax/hash-ngram"
 
 
 async def test_auth_required(client):

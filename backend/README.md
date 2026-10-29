@@ -13,6 +13,28 @@ DATABASE_URL=... ../scripts/migrate.sh
 uvicorn app.main:app --reload      # http://localhost:8000/docs
 ```
 
+## BGE-M3 로 실행 (Apple Silicon Mac 기준)
+
+```bash
+cd backend && source .venv/bin/activate
+pip install -e ".[dev,bge]"           # sentence-transformers + torch (macOS arm64 휠은 MPS 포함)
+export EMBEDDER=bge_m3                # 또는 .env 에 기록
+uvicorn app.main:app --port 8000      # 첫 실행: Hugging Face 에서 BAAI/bge-m3(약 2.3GB) 내려받아 캐시
+python -m app.reembed                 # 다른 터미널에서. 기존 문서·카드·수요를 BGE-M3 로 다시 임베딩
+curl -s localhost:8000/health         # embedding.model = BAAI/bge-m3, reindex_needed = false 확인
+```
+
+- 장치: `EMBEDDING_DEVICE=auto` 는 CUDA → MPS → CPU 순으로 고른다. MPS 에서 문제가 있으면 `EMBEDDING_DEVICE=cpu`.
+- 메모리: `EMBEDDING_MAX_SEQ_LENGTH`(기본 1024 토큰)와 `EMBEDDING_BATCH_SIZE`(기본 16)를 줄이면 M2 8GB 에서도 여유가 생긴다.
+- 서버는 시작할 때 모델을 먼저 올리고(첫 요청 지연 방지), 추론은 스레드에서 돌려 다른 요청을 막지 않는다.
+- 폐쇄망: 모델 폴더를 반입하고 `EMBEDDING_MODEL_PATH=/opt/models/bge-m3`, `EMBEDDING_OFFLINE=true` (네트워크 접근 없음). 캐시 위치는 `EMBEDDING_CACHE_DIR`.
+- 되돌리기: `EMBEDDER=hash` 로 서버를 띄우고 `python -m app.reembed`. 이전 모델 벡터를 지우지 않으려면 `--keep-other-models`.
+
+**벡터 분리 원칙** (마이그레이션 0016): 임베더마다 `ax.embedding_model` 행이 따로 있고(`relay-ax/hash-ngram`, `BAAI/bge-m3`),
+서버가 시작할 때 `EMBEDDER` 에 맞는 행을 활성으로 만든다. 검색·매칭은 활성 모델 벡터만 보므로 hash 벡터와 BGE-M3 벡터가 섞이지 않는다.
+재임베딩 전에는 기존 데이터가 검색·매칭에 나오지 않으며, 서버 로그와 `/health` 의 `reindex_needed` 가 알려 준다.
+같은 DB 에 서로 다른 `EMBEDDER` 로 서버 두 개를 띄우지 않는다 (활성 모델을 서로 바꾼다).
+
 ## 테스트
 
 빈 테스트 DB(`relay_ax_test`)를 만들고, 마이그레이션과 기본 데이터를 넣은 뒤 실제 PostgreSQL 에 대해 API 전체 흐름을 검증한다.
@@ -32,7 +54,8 @@ app/
   errors.py          DB 오류 → HTTP (check_violation 422, insufficient_privilege 403, unique 409)
   routers/           documents, cards, demands, recommendations(검토), kpi
   services/
-    embedding.py     Embedder(Hash/BGE-M3), 카드·수요 패싯 텍스트, 임베딩 동기화(sha256 변경 감지)
+    embedding.py     Embedder(Hash/BGE-M3), 모델 활성화, 카드·수요 패싯 텍스트, 임베딩 동기화(sha256 변경 감지)
+  reembed.py         전체 재임베딩 CLI (python -m app.reembed)
     scoring.py       5개 기준 점수, 6대 연계유형 분류, 융합형 판정 (순수 함수)
     matching.py      수요→성과 매칭 실행, 추천·점수·근거·부서/기업 후보 저장
     rationale.py     연계이유·개발필요사항 문장 (템플릿, LLM 생성기로 교체 가능)

@@ -126,6 +126,7 @@ erDiagram
 | `0013_integrated_planning` | 통합기획 | `planning_meeting`, `relay_review_sheet(_item)`, `planning_draft(_evidence)`, `meeting_decision`, `linkage_execution` |
 | `0014_poc_evaluation` | PoC 검증 | `eval_case`, `eval_ground_truth`, `eval_run`, `eval_run_case`, `work_time_measurement`, `satisfaction_survey` |
 | `0015_functions_views` | 조회 함수·KPI 뷰 | `can_read_document()`, `search_chunks()`, `match_cards()`, `v_recommendation_overview`, `v_recommendation_evidence`, `v_review_queue`, `v_kpi_*`, `v_eval_topk_hits` |
+| `0016_embedding_model_per_embedder` | 임베더별 벡터 분리 | `embedding_model` 에 hash 모델 행 추가·기존 벡터 이관, `match_cards()` 활성 모델 조건 |
 
 합계: 테이블 90개, 뷰 7개.
 
@@ -177,7 +178,7 @@ erDiagram
 | 사업화형 | PURPOSE | SUMMARY + `company_tech_embedding` |
 
 - **패싯별 부분 HNSW 인덱스** (`WHERE facet = 'OPEN_ISSUE'` 등): 하나의 큰 인덱스에서 facet 으로 거르면 상위 K개가 모자랄 수 있는데, 부분 인덱스를 쓰면 그 문제가 없다. `match_cards()` 는 패싯을 리터럴로 넣은 동적 SQL 로 실행해 부분 인덱스가 선택되게 했다 (스모크 테스트에서 `Index Scan using card_embedding_hnsw_open_issue` 확인).
-- `embedding_model` 에 활성 모델을 하나만 두고, 모든 임베딩 행이 `model_id` 를 가진다. 모델을 교체할 때는 새 모델 행을 넣고 재임베딩한 뒤 활성 모델을 바꾸면 된다(같은 차원일 때).
+- `embedding_model` 에 활성 모델을 하나만 두고, 모든 임베딩 행이 `model_id` 를 가진다. 임베더마다 모델 행이 따로 있다(0016: 개발용 `relay-ax/hash-ngram`, 실제 `BAAI/bge-m3`). 백엔드가 시작할 때 `EMBEDDER` 설정에 맞는 행을 활성으로 바꾸고, 모든 벡터 검색은 활성 모델 벡터만 본다. 모델을 바꾼 뒤에는 `python -m app.reembed` 로 재임베딩하며, 이때 다른 모델 벡터는 지운다(HNSW 인덱스가 모델 구분 없이 하나라서 남겨 두면 근접 후보 자리를 차지한다). 차원이 다르면 새 마이그레이션으로 컬럼 타입을 바꿔야 한다.
 - 사업트랙 목적 임베딩은 건수가 적어 인덱스 없이 전수 비교한다.
 
 ### 5.5 매칭·추천

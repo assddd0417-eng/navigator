@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import uuid
 from contextlib import asynccontextmanager
 
@@ -7,11 +9,22 @@ from app.auth import CurrentUser, get_current_user
 from app.db import close_pool, open_pool, transaction
 from app.errors import install_error_handlers
 from app.routers import cards, demands, documents, kpi, recommendations
+from app.services.embedding import activate_model, embedding_status, get_embedder
+
+log = logging.getLogger("app")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await open_pool()
+    # 모델을 먼저 올려 첫 요청이 모델 로딩(BGE-M3 는 수십 초)을 기다리지 않게 한다
+    await asyncio.to_thread(get_embedder)
+    async with transaction() as conn:
+        await activate_model(conn)
+        st = await embedding_status(conn)
+    if st["reindex_needed"]:
+        log.warning("활성 모델 %s 의 벡터가 없는 항목: 청크 %s · 카드 %s · 수요 %s → `python -m app.reembed` 실행 필요",
+                    st["model"], st["chunks_missing"], st["cards_missing"], st["demands_missing"])
     yield
     await close_pool()
 
@@ -39,7 +52,8 @@ async def health():
         row = await (await conn.execute(
             "SELECT max(version) AS schema_version, (SELECT extversion FROM pg_extension WHERE extname = 'vector') AS pgvector "
             "FROM ax.schema_migrations")).fetchone()
-    return {"status": "ok", **row}
+        embedding = await embedding_status(conn)
+    return {"status": "ok", **row, "embedding": embedding}
 
 
 @app.get("/me", tags=["시스템"])
