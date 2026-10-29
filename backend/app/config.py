@@ -23,12 +23,31 @@ class Settings(BaseSettings):
     embedding_offline: bool = False             # true = 네트워크 없이 캐시·로컬 폴더에서만 로드 (폐쇄망)
     embedding_cache_dir: str | None = None      # 모델 캐시 위치 (기본: ~/.cache/huggingface)
 
+    # 문서 업로드 (POST /documents/upload, /documents/parse)
+    upload_max_mb: int = 30           # 파일 크기 상한
+    pdf_max_pages: int = 1000         # PDF 쪽 수 상한
+    chunk_max_chars: int = 1000       # 청크 최대 글자 수 (청크는 쪽 경계를 넘지 않음)
+
     # 매칭
     match_top_k: int = 20             # 최종 추천 수
     match_facet_k: int = 30           # 패싯별 후보 수
     match_min_score: float = 0.35     # 미만이면 is_excluded 로 보존
     hnsw_ef_search: int = 100
     rag_evidence_k: int = 3           # 추천당 RAG 근거 청크 수
+
+    # 연계이유 문장: "auto"(기본) = API 키가 있으면 LLM, 없으면 템플릿 / "llm" = 항상 LLM 시도 / "template"
+    # LLM 실패·근거 검증 탈락 시에는 추천별로 템플릿 문장을 쓴다
+    rationale_generator: str = "auto"
+    llm_provider: str = "anthropic"
+    llm_model: str = "claude-opus-5-5"
+    llm_effort: str = "medium"        # low | medium | high | xhigh | max
+    llm_max_tokens: int = 4000        # 사고(thinking) 토큰 포함 상한
+    llm_timeout_s: float = 60.0
+    llm_max_retries: int = 2
+    llm_concurrency: int = 4          # 한 매칭 실행에서 동시에 보낼 요청 수
+    llm_server_fallback: bool = True  # 거절 시 서버측 대체 모델 (Claude API 전용, Bedrock 등에서는 false)
+    llm_evidence_max_security: str = "INTERNAL"  # 이 등급을 넘는 문서의 원문은 외부 LLM 에 보내지 않음
+    anthropic_api_key: str | None = None  # 비우면 SDK 가 ANTHROPIC_API_KEY 환경변수 등에서 찾음
 
 
 @lru_cache

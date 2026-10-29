@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]  # relay-ax-db/
 
 os.environ["DATABASE_URL"] = TEST_URL
 os.environ.setdefault("EMBEDDER", "hash")
+os.environ.setdefault("RATIONALE_GENERATOR", "template")  # 키가 있는 개발 PC 에서도 테스트가 실제 LLM 을 부르지 않도록
 
 SEED = """
 SET search_path = ax, public;

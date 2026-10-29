@@ -10,7 +10,7 @@ state: dict = {}
 async def test_health(client):
     r = await client.get("/health")
     assert r.status_code == 200
-    latest = sorted((ROOT / "db" / "migrations").glob("[0-9][0-9][0-9][0-9]_*.sql"))[-1].name[:4]
+    latest = max(f.name[:4] for f in (ROOT / "db" / "migrations").glob("[0-9][0-9][0-9][0-9]_*.sql"))
     assert r.json()["schema_version"] == latest
     assert r.json()["embedding"]["model"] == "relay-ax/hash-ngram"
 
@@ -195,3 +195,81 @@ async def test_kpi(client):
     first = rows[0]
     assert first["finally_reviewed"] == 1 and first["adopted"] == 1
     assert float(first["evidence_coverage_pct"]) > 0
+
+
+class _FakeLLM:
+    name = "fake/test"
+
+    def __init__(self, reply: str):
+        self.reply = reply
+
+    async def complete(self, system, user):
+        return self.reply
+
+
+async def _match_with_llm(client, monkeypatch, reply: str) -> list[dict]:
+    from app.services import matching
+    from app.services.rationale import LLMRationaleWriter
+
+    monkeypatch.setattr(matching, "get_llm_writer", lambda s: LLMRationaleWriter(_FakeLLM(reply)))
+    r = await client.post(f"/demands/{state['demand']}/match", headers=as_user(PLANNER), json={"top_k": 10})
+    assert r.status_code == 201, r.text
+    run = (await client.get(f"/match-runs/{r.json()['id']}", headers=as_user(PLANNER))).json()
+    assert run["params"]["rationale_generator"] == "fake/test"
+    return run
+
+
+async def test_llm_rationale_shown_only_with_evidence_access(client, monkeypatch):
+    run = await _match_with_llm(client, monkeypatch,
+                                "이 성과의 동기 유지 시간 6s 는 수요 요구 10s 에 못 미쳐 후속 개발이 필요하다 [E1].")
+    summary = run["params"]["rationale_llm"]
+    assert summary["ok"] >= 1
+    top = next(x for x in run["recommendations"] if x["source_cards"][0]["card_id"] == state["card_a"])
+    assert top["rationale_source"] == "LLM"
+    assert top["rationale_generation"] == {"status": "OK", "generator": "fake/test", "error": None}
+    assert top["rationale"].startswith("[후속형] 이 성과의 동기 유지 시간 6s")
+    assert "[근거: 항재밍 데이터링크 결과보고서" in top["rationale"]
+
+    # 근거 문서(통신팀 소관) 열람권이 없는 전문가에게는 규칙 문장을 보여 준다
+    detail = (await client.get(f"/recommendations/{top['recommendation_id']}", headers=as_user(EXPERT))).json()
+    assert detail["rationale_source"] == "TEMPLATE_RESTRICTED"
+    assert "근거:" not in detail["rationale"] and "기술 유사도" in detail["rationale"]
+
+
+async def test_llm_rationale_falls_back_to_template_when_ungrounded(client, monkeypatch):
+    run = await _match_with_llm(client, monkeypatch, "동기 유지 시간을 99s 로 높이면 충족한다 [E1].")
+    state["llm_fallback_run"] = run["id"]
+    summary = run["params"]["rationale_llm"]
+    assert summary["ok"] == 0 and summary["fallback"] >= 1
+    assert {x["rationale_source"] for x in run["recommendations"]} == {"TEMPLATE"}
+
+
+async def test_regenerate_rationale_endpoint(client, monkeypatch):
+    from app.routers import recommendations as rr
+    from app.services.rationale import LLMRationaleWriter
+
+    run = (await client.get(f"/match-runs/{state['llm_fallback_run']}", headers=as_user(PLANNER))).json()
+    rec = next(x for x in run["recommendations"] if not x["is_excluded"])["recommendation_id"]
+    url = f"/recommendations/{rec}/rationale"
+
+    r = await client.post(url, headers=as_user(PLANNER))       # 테스트 환경은 RATIONALE_GENERATOR=template
+    assert r.status_code == 409 and "꺼져" in r.json()["detail"]
+
+    monkeypatch.setattr(rr, "get_llm_writer", lambda s: LLMRationaleWriter(_FakeLLM(
+        "동기 유지 시간 6s 가 요구 10s 에 못 미친다 [E1].")))
+    assert (await client.post(url, headers=as_user(EXPERT))).status_code == 403
+    r = await client.post(url, headers=as_user(PLANNER))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "OK" and body["rationale_source"] == "LLM" and "[근거:" in body["rationale"]
+
+    # 재생성이 검증에서 탈락하면 예전 LLM 문장도 지우고 템플릿으로 돌아간다
+    monkeypatch.setattr(rr, "get_llm_writer", lambda s: LLMRationaleWriter(_FakeLLM("요구는 77s 다 [E1].")))
+    body = (await client.post(url, headers=as_user(PLANNER))).json()
+    assert body["status"] == "FALLBACK" and "77" in body["error"] and body["rationale_source"] == "TEMPLATE"
+    detail = (await client.get(f"/recommendations/{rec}", headers=as_user(PLANNER))).json()
+    assert detail["rationale_generation"]["status"] == "FALLBACK" and detail["rationale_source"] == "TEMPLATE"
+
+    # 최종판정이 끝난 추천은 바꿀 수 없다
+    r = await client.post(f"/recommendations/{state['rec']}/rationale", headers=as_user(PLANNER))
+    assert r.status_code == 409 and "DECIDED" in r.json()["detail"]

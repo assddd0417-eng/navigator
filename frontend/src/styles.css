@@ -192,6 +192,11 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary-sof
 .file-drop { border: 2px dashed var(--border); border-radius: var(--radius); padding: 14px; text-align: center; cursor: pointer; }
 .file-drop input { display: none; }
 .file-drop:hover { border-color: var(--primary); }
+.file-drop .small { display: block; margin-top: 4px; }
+.pdf-preview { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); }
+.pdf-preview-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pdf-preview-head .btn { margin-left: auto; }
+.pdf-preview blockquote { background: var(--surface); white-space: pre-line; }
 .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .seg button { font: inherit; border: none; background: #fff; padding: 5px 12px; cursor: pointer; }
 .seg button.on { background: var(--primary); color: #fff; }

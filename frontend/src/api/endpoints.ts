@@ -58,6 +58,48 @@ export const listDocuments = (query: { project_id?: number; parse_status?: strin
 export const createDocument = (body: DocumentCreate) =>
   api<DocumentCreated>('/documents', { method: 'POST', body })
 
+/** 파일(PDF·TXT·MD)에서 추출한 결과. 텍스트 없는 쪽(스캔본)은 pages_without_text 로 알려 준다. */
+export interface ParsePreview {
+  filename: string
+  file_type: 'pdf' | 'text'
+  parser: string
+  page_count: number | null
+  pages_without_text: number[]
+  char_count: number
+  warnings: string[]
+  chunks: { content: string; page_start: number | null; page_end: number | null }[]
+}
+
+export interface DocumentUploaded extends DocumentCreated {
+  filename: string
+  file_type: 'pdf' | 'text'
+  page_count: number | null
+  pages_without_text: number[]
+  warnings: string[]
+}
+
+export interface DocumentUploadFields {
+  doc_type_code: string
+  title?: string
+  project_id?: number | null
+  owner_dept_id?: number | null
+  security_code?: string
+}
+
+const fileForm = (file: File, fields: Record<string, string | number | null | undefined> = {}) => {
+  const form = new FormData()
+  form.append('file', file)
+  for (const [k, v] of Object.entries(fields)) if (v != null && v !== '') form.append(k, String(v))
+  return form
+}
+
+/** 저장 없이 추출·청킹 결과만 미리 본다. 스캔본·암호·손상 PDF 는 422 (kind 로 구분). */
+export const parseDocumentFile = (file: File) =>
+  api<ParsePreview>('/documents/parse', { method: 'POST', body: fileForm(file) })
+/** 파일을 올려 추출 → 쪽 단위 청킹 → 등록·임베딩을 한 번에 한다. */
+export const uploadDocumentFile = (file: File, fields: DocumentUploadFields) =>
+  api<DocumentUploaded>('/documents/upload', { method: 'POST', body: fileForm(file, { ...fields }) })
+
 // ---- 성과 활용카드 (/cards) --------------------------------------------------
 export type CardStatus = 'DRAFT' | 'IN_REVIEW' | 'PUBLISHED' | 'ARCHIVED'
 
@@ -149,6 +191,10 @@ export interface RecommendationOverview {
   demand_title: string | null
   target_program_name: string | null
   rationale: string | null
+  /** LLM = AI 작성 문장, TEMPLATE = 규칙 문장, TEMPLATE_RESTRICTED = AI 문장이 있으나 근거 열람권한이 없어 규칙 문장 표시 */
+  rationale_source?: 'LLM' | 'TEMPLATE' | 'TEMPLATE_RESTRICTED'
+  /** LLM 생성 기록: OK = AI 문장 저장, FALLBACK = 실패해 규칙 문장 사용, null = LLM 미사용 */
+  rationale_generation?: { status: 'OK' | 'FALLBACK' | null; generator: string | null; error: string | null }
   development_needs: string | null
   source_cards: SourceCard[] | null
   scores: Record<string, Num> | null
@@ -279,6 +325,14 @@ export const submitDecision = (recId: number, body: DecisionCreate) =>
   api<Created>(`/recommendations/${recId}/decisions`, { method: 'POST', body })
 export const addComment = (recId: number, body: string) =>
   api<Created>(`/recommendations/${recId}/comments`, { method: 'POST', body: { body } })
+export interface RationaleRegenerated {
+  status: 'OK' | 'FALLBACK'
+  error: string | null
+  rationale: string
+  rationale_source: 'LLM' | 'TEMPLATE' | 'TEMPLATE_RESTRICTED'
+}
+export const regenerateRationale = (recId: number) =>
+  api<RationaleRegenerated>(`/recommendations/${recId}/rationale`, { method: 'POST' })
 export const getReviewQueue = (mine: boolean) => api<ReviewQueueRow[]>('/reviews/queue', { query: { mine } })
 
 // ---- KPI (/kpi) ------------------------------------------------------------

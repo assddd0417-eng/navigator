@@ -57,6 +57,7 @@ function formatDetail(detail: unknown): string {
 export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
   query?: Record<string, string | number | boolean | null | undefined>
+  /** FormData 면 multipart/form-data 로 그대로 보낸다 (파일 업로드). 그 외는 JSON. */
   body?: unknown
   /** true 면 전역 토스트를 띄우지 않는다 (호출한 쪽에서 직접 처리할 때). */
   silent?: boolean
@@ -75,14 +76,16 @@ export async function api<T>(path: string, opts: RequestOptions = {}): Promise<T
   const headers: Record<string, string> = { Accept: 'application/json' }
   const userId = opts.userId ?? currentUserId
   if (userId != null) headers['X-User-Id'] = String(userId)
-  if (opts.body !== undefined) headers['Content-Type'] = 'application/json'
+  const isForm = opts.body instanceof FormData
+  // multipart 경계(boundary)는 브라우저가 붙이므로 Content-Type 을 직접 지정하지 않는다
+  if (opts.body !== undefined && !isForm) headers['Content-Type'] = 'application/json'
 
   let res: Response
   try {
     res = await fetch(url, {
       method,
       headers,
-      body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+      body: opts.body === undefined ? undefined : isForm ? (opts.body as FormData) : JSON.stringify(opts.body),
     })
   } catch {
     throw emit(new ApiError(0, '백엔드 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인하세요.',

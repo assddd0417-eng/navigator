@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
-  addComment, getRecommendation, getRecommendationHistory, submitDecision,
+  addComment, getRecommendation, getRecommendationHistory, regenerateRationale, submitDecision,
   type DecisionCode, type RecommendationDetail,
 } from '../../api/endpoints'
 import { useAuth } from '../../auth/AuthContext'
@@ -119,6 +119,28 @@ function Comments({ rec, onDone }: { rec: RecommendationDetail; onDone: () => vo
   )
 }
 
+/** AI 연계이유 다시 생성 (기획 담당, 검토 종료 전) — 실패하면 규칙 문장 유지 */
+function RegenerateRationale({ rec, onDone }: { rec: RecommendationDetail; onDone: () => void }) {
+  const toast = useToast()
+  const { busy, run } = useAction()
+  if (['DECIDED', 'WITHDRAWN'].includes(rec.status)) return null
+  const click = async () => {
+    const res = await run(() => regenerateRationale(rec.recommendation_id))
+    if (!res) return
+    if (res.status === 'OK') toast.success('AI 연계이유를 생성했습니다', '원문 근거만 사용해 작성했습니다')
+    else toast.show({ kind: 'info', title: 'AI 문장을 쓰지 못해 규칙 문장을 유지합니다', message: res.error ?? '' })
+    onDone()
+  }
+  return (
+    <div className="form-row">
+      <button type="button" className="btn" disabled={busy} onClick={click}>
+        {busy ? 'AI 작성 중…' : 'AI 연계이유 다시 생성'}
+      </button>
+      <RoleHint roles={['PLANNER']} />
+    </div>
+  )
+}
+
 /** 추천 상세 · 검수/의견 작성 (모든 역할 열람, 판정은 역할별로 서버가 판단) */
 export function RecommendationPage() {
   const id = Number(useParams().id)
@@ -153,7 +175,15 @@ export function RecommendationPage() {
               </div>
             ))}
           </div>
-          {r.rationale && <><h4>연계 이유</h4><p>{r.rationale}</p></>}
+          {r.rationale && <>
+            <h4>연계 이유{r.rationale_source === 'LLM' && <span className="muted"> · AI 작성(원문 근거 기반, 검토 필요)</span>}</h4>
+            <p>{r.rationale}</p>
+            {r.rationale_source === 'TEMPLATE_RESTRICTED' &&
+              <div className="notice">🔒 AI 작성 문장은 열람 권한이 없는 근거 문서를 참고해 가려졌고, 규칙 기반 문장을 표시합니다.</div>}
+            {r.rationale_generation?.status === 'FALLBACK' &&
+              <div className="muted small">AI 문장 생성에 실패해 규칙 기반 문장을 표시합니다 ({r.rationale_generation.error})</div>}
+            <RegenerateRationale rec={r} onDone={reload} />
+          </>}
           {r.development_needs && <><h4>개발 필요사항</h4><p>{r.development_needs}</p></>}
           <div className="muted small">소관부서 {r.owner_department ?? '–'} · 미해결 확인사항 {r.open_confirmations}건</div>
         </Card>
