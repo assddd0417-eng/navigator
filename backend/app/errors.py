@@ -15,6 +15,11 @@ class NotFound(HTTPException):
         super().__init__(status.HTTP_404_NOT_FOUND, f"{what} {key} 을(를) 찾을 수 없습니다")
 
 
+class Conflict(HTTPException):
+    def __init__(self, detail: str):
+        super().__init__(status.HTTP_409_CONFLICT, detail)
+
+
 _MAP: list[tuple[type[Exception], int, str]] = [
     (pg.CheckViolation, status.HTTP_422_UNPROCESSABLE_CONTENT, "check_violation"),
     (pg.InsufficientPrivilege, status.HTTP_403_FORBIDDEN, "insufficient_privilege"),

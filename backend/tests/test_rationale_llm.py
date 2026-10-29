@@ -145,6 +145,15 @@ async def test_anthropic_client_without_credentials_becomes_llm_error(monkeypatc
 
 def test_get_llm_writer_selection(monkeypatch):
     assert rat.get_llm_writer(Settings(rationale_generator="template")) is None
+    # auto(기본): 키가 없으면 템플릿, 있으면 LLM
+    for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
+        monkeypatch.delenv(k, raising=False)
+    assert Settings.model_fields["rationale_generator"].default == "auto"
+    monkeypatch.setattr(rat, "build_llm_client", lambda s: FakeLLM("x"))
+    assert rat.get_llm_writer(Settings(rationale_generator="auto")) is None
+    assert rat.get_llm_writer(Settings(rationale_generator="auto", anthropic_api_key="k")) is not None
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    assert rat.get_llm_writer(Settings(rationale_generator="auto")) is not None
     monkeypatch.setattr(rat, "build_llm_client", lambda s: None)          # SDK 미설치·생성 실패
     assert rat.get_llm_writer(Settings(rationale_generator="llm")) is None
     monkeypatch.setattr(rat, "build_llm_client", lambda s: FakeLLM("x"))

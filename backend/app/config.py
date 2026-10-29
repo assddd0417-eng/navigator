@@ -29,8 +29,9 @@ class Settings(BaseSettings):
     hnsw_ef_search: int = 100
     rag_evidence_k: int = 3           # 추천당 RAG 근거 청크 수
 
-    # 연계이유 문장: "template" = 규칙 템플릿(기본), "llm" = LLM 생성(실패·키 없음 시 템플릿으로 대체)
-    rationale_generator: str = "template"
+    # 연계이유 문장: "auto"(기본) = API 키가 있으면 LLM, 없으면 템플릿 / "llm" = 항상 LLM 시도 / "template"
+    # LLM 실패·근거 검증 탈락 시에는 추천별로 템플릿 문장을 쓴다
+    rationale_generator: str = "auto"
     llm_provider: str = "anthropic"
     llm_model: str = "claude-opus-5-5"
     llm_effort: str = "medium"        # low | medium | high | xhigh | max

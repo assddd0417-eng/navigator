@@ -193,6 +193,8 @@ export interface RecommendationOverview {
   rationale: string | null
   /** LLM = AI 작성 문장, TEMPLATE = 규칙 문장, TEMPLATE_RESTRICTED = AI 문장이 있으나 근거 열람권한이 없어 규칙 문장 표시 */
   rationale_source?: 'LLM' | 'TEMPLATE' | 'TEMPLATE_RESTRICTED'
+  /** LLM 생성 기록: OK = AI 문장 저장, FALLBACK = 실패해 규칙 문장 사용, null = LLM 미사용 */
+  rationale_generation?: { status: 'OK' | 'FALLBACK' | null; generator: string | null; error: string | null }
   development_needs: string | null
   source_cards: SourceCard[] | null
   scores: Record<string, Num> | null
@@ -323,6 +325,14 @@ export const submitDecision = (recId: number, body: DecisionCreate) =>
   api<Created>(`/recommendations/${recId}/decisions`, { method: 'POST', body })
 export const addComment = (recId: number, body: string) =>
   api<Created>(`/recommendations/${recId}/comments`, { method: 'POST', body: { body } })
+export interface RationaleRegenerated {
+  status: 'OK' | 'FALLBACK'
+  error: string | null
+  rationale: string
+  rationale_source: 'LLM' | 'TEMPLATE' | 'TEMPLATE_RESTRICTED'
+}
+export const regenerateRationale = (recId: number) =>
+  api<RationaleRegenerated>(`/recommendations/${recId}/rationale`, { method: 'POST' })
 export const getReviewQueue = (mine: boolean) => api<ReviewQueueRow[]>('/reviews/queue', { query: { mine } })
 
 // ---- KPI (/kpi) ------------------------------------------------------------

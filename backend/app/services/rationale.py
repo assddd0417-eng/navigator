@@ -2,7 +2,7 @@
 
 1) TemplateRationale: 규칙 템플릿. 매칭 단계에서 항상 만들어 recommendation.rationale 에 저장한다
    (결정적·근거 범위 밖 내용 없음 → 누구에게나 보여 줄 수 있는 기본 문장).
-2) LLMRationaleWriter: RATIONALE_GENERATOR=llm 일 때, 추천이 저장되고 원문 근거가 붙은 뒤
+2) LLMRationaleWriter: LLM 을 쓸 때(RATIONALE_GENERATOR=auto 이고 키가 있거나 llm), 추천이 저장되고 원문 근거가 붙은 뒤
    그 근거(청크 인용문)와 점수만을 입력으로 연계이유를 다시 쓴다 → recommendation.rationale_llm.
    - 근거에 없는 수치·근거 번호를 쓰면 버리고 템플릿을 쓴다 (validate_llm_text).
    - LLM 호출 실패·키 없음·거절도 템플릿으로 대체한다.
@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
@@ -215,9 +216,24 @@ class LLMRationaleWriter:
                             sorted({e.document_id for e in evidence}), [e.evidence_id for e in evidence])
 
 
+def llm_credentials_configured(settings: Settings) -> bool:
+    """자격증명이 설정돼 있는지 (auto 모드 판단용). 사내 제공자는 키 없이 붙을 수 있어 항상 True."""
+    if settings.llm_provider.lower() != "anthropic":
+        return True
+    return bool(settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
+                or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
+
+
 def get_llm_writer(settings: Settings) -> LLMRationaleWriter | None:
-    """RATIONALE_GENERATOR=llm 이고 클라이언트를 만들 수 있을 때만 생성기를 돌려준다."""
-    if settings.rationale_generator.lower() != "llm":
+    """생성기 선택. RATIONALE_GENERATOR:
+    - auto(기본): 자격증명이 있으면 LLM, 없으면 템플릿
+    - llm: 항상 LLM 시도 (실패 시 추천별로 템플릿 대체)
+    - template: 템플릿만
+    """
+    mode = settings.rationale_generator.lower()
+    if mode == "template" or (mode == "auto" and not llm_credentials_configured(settings)):
+        return None
+    if mode not in ("auto", "llm"):
         return None
     client = build_llm_client(settings)
     return LLMRationaleWriter(client) if client else None

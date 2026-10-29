@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from psycopg import AsyncConnection
 
 from app.config import get_settings
-from app.errors import NotFound
+from app.errors import Conflict, NotFound
 from app.services import embedding as emb
 from app.services.rationale import (
     EvidenceSnippet, LLMError, LLMRationaleWriter, RationaleGenerator, RationaleRejected, TemplateRationale,
@@ -329,7 +329,8 @@ async def write_llm_rationales(conn: AsyncConnection, items: list[tuple[int, Dra
         if isinstance(res, Exception):
             log.warning("추천 %s LLM 연계이유 실패, 템플릿 사용: %s", rec_id, res)
             meta = {"generator": writer.name, "status": "FALLBACK", "error": f"{type(res).__name__}: {res}"}
-            await conn.execute("UPDATE ax.recommendation SET rationale_meta = %s WHERE id = %s",
+            # 재생성 실패 시 예전 LLM 문장도 지운다 (meta 의 근거 문서와 어긋난 문장이 노출되지 않도록)
+            await conn.execute("UPDATE ax.recommendation SET rationale_llm = NULL, rationale_meta = %s WHERE id = %s",
                                (json.dumps(meta, ensure_ascii=False), rec_id))
             continue
         ok += 1
@@ -413,3 +414,41 @@ async def run_demand_matching(conn: AsyncConnection, demand_id: int, user_id: in
     await conn.execute("UPDATE ax.planning_demand SET status = 'MATCHING' WHERE id = %s AND status IN ('DRAFT','OPEN')",
                        (demand_id,))
     return run_id
+
+
+async def regenerate_llm_rationale(conn: AsyncConnection, rec_id: int, writer: LLMRationaleWriter) -> dict:
+    """저장된 추천 하나의 LLM 연계이유를 다시 만든다 (키 설정 후 재매칭 없이 갱신, 프롬프트 개선 후 재생성).
+
+    점수·분류 사유·개발필요사항·출처 카드는 저장값을 그대로 쓰고, 카드 정보만 현재 값으로 다시 읽는다.
+    """
+    rec = await (await conn.execute(
+        "SELECT id, demand_id, linkage_type_code, total_score, development_needs, status "
+        "FROM ax.recommendation WHERE id = %s FOR UPDATE", (rec_id,))).fetchone()
+    if rec is None:
+        raise NotFound("추천", rec_id)
+    if rec["demand_id"] is None:
+        raise Conflict("기획수요 기반 추천만 연계이유를 다시 생성할 수 있습니다")
+    if rec["status"] in ("DECIDED", "WITHDRAWN"):
+        raise Conflict(f"검토가 끝난 추천({rec['status']})의 연계이유는 바꿀 수 없습니다")
+
+    src = await (await conn.execute(
+        "SELECT card_id, contribution FROM ax.recommendation_source_card WHERE recommendation_id = %s "
+        "ORDER BY role <> 'PRIMARY', card_id", (rec_id,))).fetchall()
+    demand = await load_demand(conn, rec["demand_id"])
+    loaded = await load_candidates(conn, rec["demand_id"], [r["card_id"] for r in src])
+    cards = [loaded[r["card_id"]] for r in src if r["card_id"] in loaded]
+    scores = {r["criterion"]: CriterionScore(float(r["score"]), r["method"] or "", r["detail"] or {})
+              for r in await (await conn.execute(
+                  "SELECT criterion, score, method, detail FROM ax.recommendation_score WHERE recommendation_id = %s",
+                  (rec_id,))).fetchall()}
+    reasons = {r["linkage_type_code"]: r["reason"] or "" for r in await (await conn.execute(
+        "SELECT linkage_type_code, reason FROM ax.recommendation_linkage_score WHERE recommendation_id = %s",
+        (rec_id,))).fetchall()}
+    linkage = rec["linkage_type_code"]
+    draft = Draft(linkage, cards, scores, {}, {linkage: reasons.get(linkage, "")}, float(rec["total_score"]),
+                  "", rec["development_needs"],
+                  contributions={r["card_id"]: r["contribution"] for r in src if r["contribution"]} or None)
+    summary = await write_llm_rationales(conn, [(rec_id, draft)], demand, writer)
+    meta = await (await conn.execute("SELECT rationale_meta FROM ax.recommendation WHERE id = %s",
+                                     (rec_id,))).fetchone()
+    return {**summary, "status": meta["rationale_meta"].get("status"), "error": meta["rationale_meta"].get("error")}
