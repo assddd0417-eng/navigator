@@ -89,7 +89,7 @@ async def regenerate_rationale(rec_id: int, user: CurrentUser = Depends(require_
     """LLM 연계이유를 다시 생성한다 (재매칭 없이). 실패하면 템플릿 문장이 유지되고 사유를 돌려준다."""
     writer = get_llm_writer(get_settings())
     if writer is None:
-        raise Conflict("LLM 연계이유 생성이 꺼져 있습니다 (RATIONALE_GENERATOR·ANTHROPIC_API_KEY 확인)")
+        raise Conflict("LLM 연계이유 생성이 꺼져 있습니다 (RATIONALE_GENERATOR·LLM_PROVIDER·API 키 확인)")
     async with transaction(user.id) as conn:
         result = await regenerate_llm_rationale(conn, rec_id, writer)
         shown = await (await conn.execute(

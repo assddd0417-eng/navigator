@@ -26,7 +26,7 @@ BASE_URL="${BASE_URL:-http://localhost:8000}"
 BASE_URL="${BASE_URL%/}"
 RUN_TAG="${RUN_TAG:-$(date +%Y%m%d%H%M%S)-$$}"
 VERBOSE="${VERBOSE:-0}"          # 1 이면 실패하지 않은 응답 본문도 출력
-SMOKE_LLM="${SMOKE_LLM:-0}"      # 1 이면 서버의 실제 LLM 연계이유 재생성까지 확인 (서버에 ANTHROPIC_API_KEY 필요)
+SMOKE_LLM="${SMOKE_LLM:-0}"      # 1 이면 서버의 실제 LLM 연계이유 재생성까지 확인 (서버에 LLM 제공자 API 키 필요)
 
 # 시드 사용자 (seeds/init_test_data.sql)
 PLANNER=1 REVIEWER=2 EXPERT=3 CURATOR=4 VIEWER=5

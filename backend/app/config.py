@@ -38,9 +38,9 @@ class Settings(BaseSettings):
     # 연계이유 문장: "auto"(기본) = API 키가 있으면 LLM, 없으면 템플릿 / "llm" = 항상 LLM 시도 / "template"
     # LLM 실패·근거 검증 탈락 시에는 추천별로 템플릿 문장을 쓴다
     rationale_generator: str = "auto"
-    llm_provider: str = "anthropic"
-    llm_model: str = "claude-opus-5-5"
-    llm_effort: str = "medium"        # low | medium | high | xhigh | max
+    llm_provider: str = "anthropic"   # anthropic | openai
+    llm_model: str = ""               # 비우면 제공자 기본값 (DEFAULT_LLM_MODELS)
+    llm_effort: str = "medium"        # low | medium | high | xhigh | max (비우면 보내지 않음)
     llm_max_tokens: int = 4000        # 사고(thinking) 토큰 포함 상한
     llm_timeout_s: float = 60.0
     llm_max_retries: int = 2
@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     llm_server_fallback: bool = True  # 거절 시 서버측 대체 모델 (Claude API 전용, Bedrock 등에서는 false)
     llm_evidence_max_security: str = "INTERNAL"  # 이 등급을 넘는 문서의 원문은 외부 LLM 에 보내지 않음
     anthropic_api_key: str | None = None  # 비우면 SDK 가 ANTHROPIC_API_KEY 환경변수 등에서 찾음
+    openai_api_key: str | None = None     # 비우면 SDK 가 OPENAI_API_KEY 환경변수에서 찾음
+
+    @property
+    def resolved_llm_model(self) -> str:
+        return self.llm_model or DEFAULT_LLM_MODELS.get(self.llm_provider.lower(), "")
+
+
+DEFAULT_LLM_MODELS = {"anthropic": "claude-opus-5-5", "openai": "gpt-5.5"}
 
 
 @lru_cache

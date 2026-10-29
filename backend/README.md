@@ -150,7 +150,13 @@ curl -X POST localhost:8000/documents/upload -H 'X-User-Id: 4' \
 ```bash
 pip install -e ".[llm]"
 export ANTHROPIC_API_KEY=sk-ant-...   # 모델 기본값 LLM_MODEL=claude-opus-5-5
+
+# 또는 OpenAI
+export LLM_PROVIDER=openai
+export OPENAI_API_KEY=sk-proj-...     # 모델 기본값 gpt-5.5 (LLM_MODEL 로 변경)
 ```
+
+- `LLM_EFFORT` 는 Anthropic 의 `effort`, OpenAI 의 `reasoning_effort` 로 보낸다. 추론 모델이 아닌 OpenAI 모델(gpt-4.1 등)은 `LLM_EFFORT=` 로 비운다.
 
 - 재매칭 없이 다시 만들기: `POST /recommendations/{id}/rationale` (PLANNER, 검토 종료 전 추천만).
   추천 상세 화면의 "AI 연계이유 다시 생성" 버튼이 이 API 를 부른다. LLM 이 꺼져 있으면 409.

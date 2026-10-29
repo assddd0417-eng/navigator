@@ -2,11 +2,12 @@
 from types import SimpleNamespace
 
 import anthropic
+import openai
 import pytest
 
 from app.config import Settings
 from app.services import rationale as rat
-from app.services.llm import AnthropicClient, LLMError
+from app.services.llm import AnthropicClient, LLMError, OpenAIClient, build_llm_client
 from app.services.rationale import EvidenceSnippet, LLMRationaleWriter, RationaleRejected, validate_llm_text
 from app.services.scoring import CardCandidate, CriterionScore, DemandContext, Performance
 
@@ -141,6 +142,76 @@ async def test_anthropic_client_without_credentials_becomes_llm_error(monkeypatc
     c = AnthropicClient(Settings(llm_max_retries=0, llm_timeout_s=2))
     with pytest.raises(LLMError):
         await c.complete("s", "u")
+
+
+class FakeChatCompletions:
+    def __init__(self, resp=None, exc=None):
+        self.resp, self.exc, self.kwargs = resp, exc, None
+
+    async def create(self, **kw):
+        self.kwargs = kw
+        if self.exc:
+            raise self.exc
+        return self.resp
+
+
+def _oai(resp=None, exc=None):
+    comp = FakeChatCompletions(resp, exc)
+    return SimpleNamespace(chat=SimpleNamespace(completions=comp)), comp
+
+
+def _oai_resp(text="문장", finish="stop", refusal=None):
+    msg = SimpleNamespace(content=text, refusal=refusal)
+    return SimpleNamespace(choices=[SimpleNamespace(message=msg, finish_reason=finish)])
+
+
+async def test_openai_client_request_shape():
+    sdk, comp = _oai(_oai_resp(" 연계이유 "))
+    c = OpenAIClient(Settings(llm_provider="openai", llm_effort="low"), sdk_client=sdk)
+    assert await c.complete("sys", "user") == "연계이유"
+    assert c.name == "openai/gpt-5.5"
+    kw = comp.kwargs
+    assert kw["model"] == "gpt-5.5" and kw["reasoning_effort"] == "low"
+    assert kw["messages"] == [{"role": "developer", "content": "sys"}, {"role": "user", "content": "user"}]
+    assert kw["max_completion_tokens"] == Settings().llm_max_tokens
+
+    sdk, comp = _oai(_oai_resp())
+    await OpenAIClient(Settings(llm_provider="openai", llm_model="gpt-4.1", llm_effort=""),
+                       sdk_client=sdk).complete("s", "u")
+    assert comp.kwargs["model"] == "gpt-4.1" and "reasoning_effort" not in comp.kwargs
+
+
+@pytest.mark.parametrize("sdk_args,match", [
+    ({"resp": _oai_resp(text=None, refusal="no")}, "거절"),
+    ({"resp": _oai_resp(finish="content_filter")}, "거절"),
+    ({"resp": _oai_resp(finish="length")}, "잘림"),
+    ({"resp": _oai_resp(text="  ")}, "빈 응답"),
+    ({"exc": openai.OpenAIError("invalid x-api-key")}, "OpenAIError"),
+])
+async def test_openai_client_errors_become_llm_error(sdk_args, match):
+    sdk, _ = _oai(**sdk_args)
+    with pytest.raises(LLMError, match=match):
+        await OpenAIClient(Settings(llm_provider="openai"), sdk_client=sdk).complete("s", "u")
+
+
+def test_build_llm_client_by_provider(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
+    assert isinstance(build_llm_client(Settings(llm_provider="OpenAI")), OpenAIClient)
+    assert isinstance(build_llm_client(Settings(llm_provider="anthropic", anthropic_api_key="k")), AnthropicClient)
+    assert build_llm_client(Settings(llm_provider="nope")) is None
+
+
+def test_openai_credentials_for_auto_mode(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(rat, "build_llm_client", lambda s: FakeLLM("x"))
+    s = Settings(llm_provider="openai", rationale_generator="auto")
+    assert rat.get_llm_writer(s) is None
+    assert rat.get_llm_writer(Settings(llm_provider="openai", rationale_generator="auto", openai_api_key="k")) is not None
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
+    assert rat.get_llm_writer(s) is not None
+    # Anthropic 키만 있으면 openai 제공자는 꺼진 상태
+    monkeypatch.delenv("OPENAI_API_KEY")
+    assert rat.get_llm_writer(Settings(llm_provider="openai", rationale_generator="auto", anthropic_api_key="k")) is None
 
 
 def test_get_llm_writer_selection(monkeypatch):
