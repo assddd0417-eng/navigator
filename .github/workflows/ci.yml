@@ -50,7 +50,7 @@ jobs:
         run: psql "postgresql://postgres:postgres@localhost:5432/relay_ax_ci" -X -v ON_ERROR_STOP=1 -f db/tests/smoke_test.sql
 
       - name: 백엔드 의존성 설치
-        run: pip install -e "backend[dev]"
+        run: pip install -e "backend[dev,llm]"
 
       - name: 백엔드 테스트 (pytest)
         working-directory: backend

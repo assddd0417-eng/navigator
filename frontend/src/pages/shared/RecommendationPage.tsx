@@ -153,7 +153,12 @@ export function RecommendationPage() {
               </div>
             ))}
           </div>
-          {r.rationale && <><h4>연계 이유</h4><p>{r.rationale}</p></>}
+          {r.rationale && <>
+            <h4>연계 이유{r.rationale_source === 'LLM' && <span className="muted"> · AI 작성(원문 근거 기반, 검토 필요)</span>}</h4>
+            <p>{r.rationale}</p>
+            {r.rationale_source === 'TEMPLATE_RESTRICTED' &&
+              <div className="notice">🔒 AI 작성 문장은 열람 권한이 없는 근거 문서를 참고해 가려졌고, 규칙 기반 문장을 표시합니다.</div>}
+          </>}
           {r.development_needs && <><h4>개발 필요사항</h4><p>{r.development_needs}</p></>}
           <div className="muted small">소관부서 {r.owner_department ?? '–'} · 미해결 확인사항 {r.open_confirmations}건</div>
         </Card>

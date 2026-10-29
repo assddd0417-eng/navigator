@@ -7,7 +7,9 @@
 """
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 from dataclasses import dataclass
 
 from psycopg import AsyncConnection
@@ -15,7 +17,10 @@ from psycopg import AsyncConnection
 from app.config import get_settings
 from app.errors import NotFound
 from app.services import embedding as emb
-from app.services.rationale import RationaleGenerator, TemplateRationale
+from app.services.rationale import (
+    EvidenceSnippet, LLMError, LLMRationaleWriter, RationaleGenerator, RationaleRejected, TemplateRationale,
+    get_llm_writer,
+)
 from app.services.scoring import (
     SINGLE_CARD_TYPES, CardCandidate, CriterionScore, DemandContext, FacetHit, Performance,
     classify, criterion_scores, plan_convergence, to_probabilities, weighted_total,
@@ -31,6 +36,8 @@ EXACT_PAIRS = [("OPEN_ISSUE", "TECH_NEED", "OPEN_ISSUE"), ("CORE_TECH", "TECH_NE
                ("APPLICATION_ENV", "APPLICATION_ENV", "APPLICATION_ENV"),
                ("SUMMARY", "PURPOSE", "PURPOSE")]
 CONVERGENCE_THRESHOLD = 0.5
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -273,11 +280,73 @@ async def _attach_candidates(conn: AsyncConnection, rec_id: int, d: Draft, deman
                      FROM ax.organization o WHERE o.id = %s""", (rec_id, co["organization_id"]))
 
 
+async def load_llm_evidence(conn: AsyncConnection, rec_id: int, max_security: str) -> list[EvidenceSnippet]:
+    """LLM 입력용 근거. 보안등급 상한을 넘는 문서는 원문을 보내지 않는다. 같은 청크는 한 번만."""
+    rows = await (await conn.execute(
+        """SELECT e.id AS evidence_id, d.id AS document_id, d.title, s.section_no, e.page_start,
+                  re.retrieved_by, re.relevance_score, COALESCE(e.quote, left(c.content, 300)) AS quote,
+                  COALESCE(e.chunk_id::text, e.id::text) AS dedup_key
+             FROM ax.recommendation_evidence re
+             JOIN ax.evidence e ON e.id = re.evidence_id
+             JOIN ax.source_document d ON d.id = e.document_id
+             JOIN ax.code_security_level dl ON dl.code = d.security_code
+             LEFT JOIN ax.document_section s ON s.id = e.section_id
+             LEFT JOIN ax.document_chunk c ON c.id = e.chunk_id
+            WHERE re.recommendation_id = %s
+              AND dl.level_rank <= (SELECT level_rank FROM ax.code_security_level WHERE code = %s)
+            ORDER BY re.sort_order""", (rec_id, max_security))).fetchall()
+    seen: set[str] = set()
+    out: list[EvidenceSnippet] = []
+    for r in rows:
+        if not r["quote"] or r["dedup_key"] in seen:
+            continue
+        seen.add(r["dedup_key"])
+        label = " ".join(x for x in (r["title"], r["section_no"],
+                                     f"p.{r['page_start']}" if r["page_start"] is not None else None) if x)
+        out.append(EvidenceSnippet(r["evidence_id"], r["document_id"], label, r["quote"], r["retrieved_by"],
+                                   float(r["relevance_score"]) if r["relevance_score"] is not None else None))
+    return out
+
+
+async def write_llm_rationales(conn: AsyncConnection, items: list[tuple[int, Draft]], demand: DemandContext,
+                               writer: LLMRationaleWriter) -> dict:
+    """저장된 추천에 LLM 연계이유를 붙인다. 실패한 추천은 템플릿 문장(rationale)을 그대로 쓴다."""
+    s = get_settings()
+    inputs = [(rec_id, d, await load_llm_evidence(conn, rec_id, s.llm_evidence_max_security)) for rec_id, d in items]
+    sem = asyncio.Semaphore(max(1, s.llm_concurrency))
+
+    async def one(d: Draft, evidence: list[EvidenceSnippet]):
+        async with sem:
+            try:
+                return await writer.write(d.linkage, d.cards, demand, d.scores, d.reasons[d.linkage], d.needs,
+                                          evidence, d.contributions)
+            except (LLMError, RationaleRejected) as e:
+                return e
+
+    results = await asyncio.gather(*(one(d, ev) for _, d, ev in inputs))
+    ok = 0
+    for (rec_id, _, _), res in zip(inputs, results):
+        if isinstance(res, Exception):
+            log.warning("추천 %s LLM 연계이유 실패, 템플릿 사용: %s", rec_id, res)
+            meta = {"generator": writer.name, "status": "FALLBACK", "error": f"{type(res).__name__}: {res}"}
+            await conn.execute("UPDATE ax.recommendation SET rationale_meta = %s WHERE id = %s",
+                               (json.dumps(meta, ensure_ascii=False), rec_id))
+            continue
+        ok += 1
+        meta = {"generator": writer.name, "status": "OK", "document_ids": res.document_ids,
+                "evidence_ids": res.evidence_ids}
+        await conn.execute("UPDATE ax.recommendation SET rationale_llm = %s, rationale_meta = %s WHERE id = %s",
+                           (res.text, json.dumps(meta, ensure_ascii=False), rec_id))
+    return {"generator": writer.name, "ok": ok, "fallback": len(items) - ok}
+
+
 async def run_demand_matching(conn: AsyncConnection, demand_id: int, user_id: int, top_k: int | None = None,
-                              rationale: RationaleGenerator | None = None) -> int:
+                              rationale: RationaleGenerator | None = None,
+                              llm_writer: LLMRationaleWriter | None = None) -> int:
     s = get_settings()
     top_k = top_k or s.match_top_k
     rationale = rationale or TemplateRationale()
+    llm_writer = llm_writer or get_llm_writer(s)
 
     demand = await load_demand(conn, demand_id)
     await emb.sync_demand_embeddings(conn, demand_id)
@@ -289,7 +358,8 @@ async def run_demand_matching(conn: AsyncConnection, demand_id: int, user_id: in
            VALUES ('DEMAND_TO_CARD', %s, %s, %s, %s, %s, 'RUNNING', clock_timestamp()) RETURNING id""",
         (demand_id, model_id, json.dumps(rules, ensure_ascii=False),
          json.dumps({"top_k": top_k, "facet_k": s.match_facet_k, "ef_search": s.hnsw_ef_search,
-                     "min_score": s.match_min_score, "embedder": s.embedder}), user_id))).fetchone()
+                     "min_score": s.match_min_score, "embedder": s.embedder,
+                     "rationale_generator": llm_writer.name if llm_writer else "template"}), user_id))).fetchone()
     run_id = run["id"]
 
     ids = await candidate_card_ids(conn, demand_id, s.match_facet_k)
@@ -299,6 +369,7 @@ async def run_demand_matching(conn: AsyncConnection, demand_id: int, user_id: in
     cards = await load_candidates(conn, demand_id, sorted(ids)) if ids else {}
     drafts = build_drafts(demand, cards, rules, conv, element_names, rationale)[:top_k]
 
+    llm_items: list[tuple[int, Draft]] = []
     for rank, d in enumerate(drafts, start=1):
         excluded = d.total < s.match_min_score
         rec = await (await conn.execute(
@@ -329,6 +400,13 @@ async def run_demand_matching(conn: AsyncConnection, demand_id: int, user_id: in
                 (rec_id, code, round(p, 5), d.reasons.get(code)))
         await _attach_evidence(conn, rec_id, d, demand_id, user_id)
         await _attach_candidates(conn, rec_id, d, demand)
+        if llm_writer and not excluded:  # 제외 후보는 템플릿 문장으로 충분 (호출 비용 절감)
+            llm_items.append((rec_id, d))
+
+    if llm_writer and llm_items:
+        summary = await write_llm_rationales(conn, llm_items, demand, llm_writer)
+        await conn.execute("UPDATE ax.match_run SET params = params || %s WHERE id = %s",
+                           (json.dumps({"rationale_llm": summary}, ensure_ascii=False), run_id))
 
     await conn.execute("UPDATE ax.match_run SET status = 'SUCCEEDED', finished_at = clock_timestamp() WHERE id = %s",
                        (run_id,))

@@ -35,7 +35,8 @@ app/
     embedding.py     Embedder(Hash/BGE-M3), 카드·수요 패싯 텍스트, 임베딩 동기화(sha256 변경 감지)
     scoring.py       5개 기준 점수, 6대 연계유형 분류, 융합형 판정 (순수 함수)
     matching.py      수요→성과 매칭 실행, 추천·점수·근거·부서/기업 후보 저장
-    rationale.py     연계이유·개발필요사항 문장 (템플릿, LLM 생성기로 교체 가능)
+    rationale.py     연계이유·개발필요사항 문장 (템플릿 + LLM 연계이유 생성·근거 검증)
+    llm.py           LLM 제공자 클라이언트 (Anthropic Claude, 교체 가능)
 ```
 
 ## 주요 API
@@ -87,3 +88,25 @@ app/
    - 기업: AI 추정 관계는 '추가 확인 필요' 항목으로 생성한다.
 
 `HashEmbedder` 는 의미를 이해하지 않는 테스트용 임베더다. 추천 품질 평가는 반드시 `EMBEDDER=bge_m3` 로 한다.
+
+## LLM 연계이유 문장 (선택)
+
+기본(`RATIONALE_GENERATOR=template`)은 규칙 템플릿 문장이다. `llm` 으로 바꾸면 추천 저장·근거 연결 뒤에
+**그 추천에 연결된 원문 근거 인용문과 점수만**을 입력으로 LLM 이 연계이유를 다시 쓴다.
+
+```bash
+pip install -e ".[llm]"
+export RATIONALE_GENERATOR=llm ANTHROPIC_API_KEY=sk-ant-...   # 모델 기본값 LLM_MODEL=claude-opus-5-5
+```
+
+- 템플릿 문장은 항상 `recommendation.rationale` 에 저장되고, LLM 문장은 `rationale_llm` 에 따로 저장된다 (0017).
+- 다음 경우 LLM 문장을 버리고 템플릿을 쓴다 (`rationale_meta.status = FALLBACK`, 사유 기록):
+  키 없음·인증 실패·타임아웃·429/5xx·모델 거절·응답 잘림, 그리고 **근거 검증 실패** —
+  입력(근거·점수)에 없는 수치를 쓰거나, 없는 근거 번호를 인용하거나, 근거가 있는데 인용하지 않은 경우.
+- 인용 `[E1]` 은 화면에 `[근거: 문서명 절 p.쪽]` 으로 바뀐다. 개발필요사항은 규칙 산출값 그대로다.
+- 열람권한: LLM 문장에는 근거 문서 내용이 녹아 있으므로, 입력 근거 문서를 **모두 열람할 수 있는 사용자에게만**
+  LLM 문장을 보여 주고 나머지에게는 템플릿 문장을 보여 준다 (`ax.rationale_for_user`, API 응답 `rationale_source`).
+- `LLM_EVIDENCE_MAX_SECURITY`(기본 INTERNAL)를 넘는 보안등급 문서의 원문은 외부 LLM 에 보내지 않는다.
+  폐쇄망 운영 시에는 `app/services/llm.py` 에 사내 LLM 클라이언트를 추가하고 `LLM_PROVIDER` 로 선택한다.
+- 제외 후보(`is_excluded`)는 호출하지 않는다. 실행별 성공/대체 건수는 `match_run.params.rationale_llm` 에 남는다.
+- Bedrock·Vertex 처럼 서버측 대체 모델(`fallbacks`)을 지원하지 않는 경로에서는 `LLM_SERVER_FALLBACK=false`.

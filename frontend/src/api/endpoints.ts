@@ -149,6 +149,8 @@ export interface RecommendationOverview {
   demand_title: string | null
   target_program_name: string | null
   rationale: string | null
+  /** LLM = AI 작성 문장, TEMPLATE = 규칙 문장, TEMPLATE_RESTRICTED = AI 문장이 있으나 근거 열람권한이 없어 규칙 문장 표시 */
+  rationale_source?: 'LLM' | 'TEMPLATE' | 'TEMPLATE_RESTRICTED'
   development_needs: string | null
   source_cards: SourceCard[] | null
   scores: Record<string, Num> | null

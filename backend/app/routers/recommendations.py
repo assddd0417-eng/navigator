@@ -11,6 +11,16 @@ from app.schemas.reviews import (
 
 router = APIRouter(tags=["추천·HITL 검토"])
 
+# 연계이유는 사용자별로 고른다: LLM 문장은 그 입력 근거 문서를 모두 열람할 수 있을 때만 (0017)
+OVERVIEW_SQL = """SELECT o.*, rf.rationale AS visible_rationale, rf.rationale_source
+                    FROM ax.v_recommendation_overview o,
+                         LATERAL ax.rationale_for_user(%s, o.recommendation_id) rf"""
+
+
+def _visible_rationale(rec: dict) -> dict:
+    rec["rationale"] = rec.pop("visible_rationale")
+    return rec
+
 
 @router.get("/match-runs/{run_id}")
 async def get_match_run(run_id: int, user: CurrentUser = Depends(get_current_user)):
@@ -18,8 +28,9 @@ async def get_match_run(run_id: int, user: CurrentUser = Depends(get_current_use
         run = await (await conn.execute("SELECT * FROM ax.match_run WHERE id = %s", (run_id,))).fetchone()
         if run is None:
             raise NotFound("매칭 실행", run_id)
-        run["recommendations"] = await (await conn.execute(
-            "SELECT * FROM ax.v_recommendation_overview WHERE match_run_id = %s ORDER BY rank", (run_id,))).fetchall()
+        rows = await (await conn.execute(
+            OVERVIEW_SQL + " WHERE o.match_run_id = %s ORDER BY o.rank", (user.id, run_id))).fetchall()
+        run["recommendations"] = [_visible_rationale(r) for r in rows]
     return run
 
 
@@ -27,9 +38,10 @@ async def get_match_run(run_id: int, user: CurrentUser = Depends(get_current_use
 async def get_recommendation(rec_id: int, user: CurrentUser = Depends(get_current_user)):
     async with transaction(user.id) as conn:
         rec = await (await conn.execute(
-            "SELECT * FROM ax.v_recommendation_overview WHERE recommendation_id = %s", (rec_id,))).fetchone()
+            OVERVIEW_SQL + " WHERE o.recommendation_id = %s", (user.id, rec_id))).fetchone()
         if rec is None:
             raise NotFound("추천", rec_id)
+        _visible_rationale(rec)
         q = lambda s: conn.execute(s, (rec_id,))  # noqa: E731
         rec["score_details"] = await (await q(
             "SELECT criterion, score, weight, method, detail FROM ax.recommendation_score WHERE recommendation_id = %s")).fetchall()
