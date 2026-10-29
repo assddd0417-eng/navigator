@@ -155,6 +155,7 @@ async def convergence_hits(conn: AsyncConnection, demand_id: int, k: int) -> tup
                    SELECT ce.card_id, 1 - (ce.embedding <=> %(v)s) AS sim
                      FROM ax.card_embedding ce
                     WHERE ce.facet = 'CORE_TECH'
+                      AND ce.model_id = (SELECT id FROM ax.embedding_model WHERE is_active)
                     ORDER BY ce.embedding <=> %(v)s LIMIT %(k)s) h
                  JOIN ax.achievement_card ac ON ac.id = h.card_id AND ac.status = 'PUBLISHED'
                 GROUP BY h.card_id ORDER BY sim DESC""", {"v": e["embedding"], "k": k})).fetchall()
@@ -225,7 +226,8 @@ async def _attach_evidence(conn: AsyncConnection, rec_id: int, d: Draft, demand_
         chunks = await (await conn.execute(
             """SELECT sc.* FROM ax.demand_embedding de,
                       LATERAL ax.search_chunks(de.embedding, %s, %s, NULL, %s) sc
-                WHERE de.demand_id = %s AND de.facet = 'TECH_NEED' AND de.source_table IS NULL""",
+                WHERE de.demand_id = %s AND de.facet = 'TECH_NEED' AND de.source_table IS NULL
+                  AND de.model_id = (SELECT id FROM ax.embedding_model WHERE is_active)""",
             (user_id, s.rag_evidence_k, c.project_id, demand_id))).fetchall()
         for ch in chunks:
             ev = await (await conn.execute(

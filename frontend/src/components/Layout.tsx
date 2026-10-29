@@ -67,7 +67,8 @@ export function Layout() {
           </div>
         </nav>
         <main className="content">
-          <Outlet />
+          {/* 사용자별로 다시 마운트: 같은 화면(예: 큐레이터→전문가의 /my-tasks)으로 전환해도 새 X-User-Id 로 다시 조회한다 */}
+          <Outlet key={user.id} />
         </main>
       </div>
     </div>

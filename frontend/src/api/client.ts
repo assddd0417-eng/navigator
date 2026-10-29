@@ -28,6 +28,8 @@ export class ApiError extends Error {
     readonly requestId?: string | null,
     readonly method?: string,
     readonly path?: string,
+    /** DB 제약 위반일 때 제약 이름 (백엔드 errors.py 의 constraint) */
+    readonly constraint?: string,
   ) {
     super(detail)
     this.name = 'ApiError'
@@ -95,9 +97,9 @@ export async function api<T>(path: string, opts: RequestOptions = {}): Promise<T
   const data: unknown = text ? safeJson(text) : null
 
   if (!res.ok) {
-    const body = (data ?? {}) as { detail?: unknown; kind?: string }
+    const body = (data ?? {}) as { detail?: unknown; kind?: string; constraint?: string }
     throw emit(new ApiError(res.status, formatDetail(body.detail) || res.statusText, body.kind,
-      res.headers.get('X-Request-Id'), method, path), opts.silent)
+      res.headers.get('X-Request-Id'), method, path, body.constraint), opts.silent)
   }
   return data as T
 }

@@ -12,6 +12,7 @@ async def test_health(client):
     assert r.status_code == 200
     latest = max(f.name[:4] for f in (ROOT / "db" / "migrations").glob("[0-9][0-9][0-9][0-9]_*.sql"))
     assert r.json()["schema_version"] == latest
+    assert r.json()["embedding"]["model"] == "relay-ax/hash-ngram"
 
 
 async def test_auth_required(client):

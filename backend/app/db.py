@@ -31,6 +31,8 @@ async def open_pool() -> AsyncConnectionPool:
             min_size=s.db_pool_min,
             max_size=s.db_pool_max,
             configure=_configure,
+            # 대여 전에 연결을 확인: DB 재시작·DB 재생성 후 끊긴 연결로 500 이 나지 않게 한다
+            check=AsyncConnectionPool.check_connection,
             open=False,
         )
         await _pool.open(wait=True)

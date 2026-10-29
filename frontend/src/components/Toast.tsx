@@ -18,6 +18,16 @@ interface ToastApi {
 
 const ToastContext = createContext<ToastApi | null>(null)
 
+/** CHECK·FK 제약은 PostgreSQL 영어 메시지가 그대로 오므로 시연에 나올 만한 것만 한국어로 바꾼다. (트리거 메시지는 이미 한국어) */
+const CONSTRAINT_REASONS: Record<string, string> = {
+  planning_demand_check: '요구 TRL 최소값이 최대값보다 클 수 없습니다.',
+}
+
+function reasonOf(e: ApiError): string {
+  if (!e.constraint) return e.detail
+  return CONSTRAINT_REASONS[e.constraint] ?? `데이터 규칙(${e.constraint})에 맞지 않습니다.`
+}
+
 /** API 오류를 비전공자도 이해할 수 있는 문장으로 바꾼다. 서버의 한국어 사유(detail)는 그대로 덧붙인다. */
 export function describeApiError(e: ApiError): Omit<Toast, 'id'> {
   const meta = e.requestId ? `요청 ID ${e.requestId}` : undefined
@@ -41,7 +51,7 @@ export function describeApiError(e: ApiError): Omit<Toast, 'id'> {
       return {
         kind: 'error',
         title: '처리할 수 없는 요청입니다',
-        message: `입력값이나 업무 규칙(예: 원문 근거 필수)에 맞지 않습니다.\n사유: ${e.detail}`,
+        message: `입력값이나 업무 규칙(예: 원문 근거 필수)에 맞지 않습니다.\n사유: ${reasonOf(e)}`,
         meta,
       }
     default:

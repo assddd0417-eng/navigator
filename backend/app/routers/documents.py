@@ -10,7 +10,7 @@ from app.repositories.sql import insert
 from app.schemas.documents import (ChunkIn, ChunkSearch, DocumentCreate, DocumentCreated, DocumentUploaded,
                                    ParsePreview)
 from app.services.document_parser import ParsedDocument, ParseError, parse_upload
-from app.services.embedding import embed_query, sha256, sync_chunk_embeddings
+from app.services.embedding import active_model_id, embed_query, sha256, sync_chunk_embeddings
 
 router = APIRouter(prefix="/documents", tags=["원문 문서·RAG"])
 
@@ -121,6 +121,7 @@ async def search(body: ChunkSearch, user: CurrentUser = Depends(get_current_user
     """권한 필터가 적용된 RAG 청크 검색 (출처 문서·조항·페이지 포함)."""
     vec = await embed_query(body.query)
     async with transaction(user.id) as conn:
+        await active_model_id(conn)  # 검색 함수가 보는 활성 모델을 이 서버의 EMBEDDER 와 맞춘다
         return await (await conn.execute(
             "SELECT * FROM ax.search_chunks(%s, %s, %s, %s, %s)",
             (vec, user.id, body.k, body.doc_types, body.project_id))).fetchall()
