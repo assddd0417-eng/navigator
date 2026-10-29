@@ -94,8 +94,10 @@ printf '%sAPI 스모크 테스트%s  BASE_URL=%s  RUN_TAG=%s\n' "$B" "$N" "$BASE
 # -----------------------------------------------------------------------------
 section "① 헬스체크"
 api "헬스체크" 200 GET /health - || abort "서버에 연결할 수 없거나 비정상입니다 ($BASE_URL)"
-check "status=ok, 스키마 0015 적용, pgvector 설치" \
-    '.status == "ok" and .schema_version == "0015" and (.pgvector | type) == "string"'
+# 기대 스키마 버전 = db/migrations 의 마지막 번호 (마이그레이션 추가 시 스크립트 수정 불필요)
+LATEST_SCHEMA=$(basename "$(ls "$(dirname "$0")"/../db/migrations/[0-9][0-9][0-9][0-9]_*.sql | sort | tail -1)" | cut -c1-4)
+check "status=ok, 스키마 $LATEST_SCHEMA 적용, pgvector 설치" \
+    '.status == "ok" and .schema_version == $v and (.pgvector | type) == "string"' --arg v "$LATEST_SCHEMA"
 api "인증 헤더 없으면 401" 401 GET /cards -
 api "시드 사용자 확인 (PLANNER=$PLANNER)" 200 GET /cards "$PLANNER" \
     || abort "시드 사용자가 없습니다. seeds/init_test_data.sql 을 먼저 적용하세요"

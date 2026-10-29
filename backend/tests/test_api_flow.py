@@ -1,7 +1,7 @@
 """API 전체 흐름: 문서 등록 → 성과카드 → 수요 → 매칭 → 검토 배정 → 의견 → 최종판정 → 이력·KPI."""
 import pytest
 
-from tests.conftest import as_user
+from tests.conftest import ROOT, as_user
 
 PLANNER, REVIEWER, EXPERT, CURATOR, VIEWER = 1, 2, 3, 4, 5
 state: dict = {}
@@ -10,7 +10,8 @@ state: dict = {}
 async def test_health(client):
     r = await client.get("/health")
     assert r.status_code == 200
-    assert r.json()["schema_version"] == "0015"
+    latest = max(f.name[:4] for f in (ROOT / "db" / "migrations").glob("[0-9][0-9][0-9][0-9]_*.sql"))
+    assert r.json()["schema_version"] == latest
 
 
 async def test_auth_required(client):
@@ -193,3 +194,48 @@ async def test_kpi(client):
     first = rows[0]
     assert first["finally_reviewed"] == 1 and first["adopted"] == 1
     assert float(first["evidence_coverage_pct"]) > 0
+
+
+class _FakeLLM:
+    name = "fake/test"
+
+    def __init__(self, reply: str):
+        self.reply = reply
+
+    async def complete(self, system, user):
+        return self.reply
+
+
+async def _match_with_llm(client, monkeypatch, reply: str) -> list[dict]:
+    from app.services import matching
+    from app.services.rationale import LLMRationaleWriter
+
+    monkeypatch.setattr(matching, "get_llm_writer", lambda s: LLMRationaleWriter(_FakeLLM(reply)))
+    r = await client.post(f"/demands/{state['demand']}/match", headers=as_user(PLANNER), json={"top_k": 10})
+    assert r.status_code == 201, r.text
+    run = (await client.get(f"/match-runs/{r.json()['id']}", headers=as_user(PLANNER))).json()
+    assert run["params"]["rationale_generator"] == "fake/test"
+    return run
+
+
+async def test_llm_rationale_shown_only_with_evidence_access(client, monkeypatch):
+    run = await _match_with_llm(client, monkeypatch,
+                                "이 성과의 동기 유지 시간 6s 는 수요 요구 10s 에 못 미쳐 후속 개발이 필요하다 [E1].")
+    summary = run["params"]["rationale_llm"]
+    assert summary["ok"] >= 1
+    top = next(x for x in run["recommendations"] if x["source_cards"][0]["card_id"] == state["card_a"])
+    assert top["rationale_source"] == "LLM"
+    assert top["rationale"].startswith("[후속형] 이 성과의 동기 유지 시간 6s")
+    assert "[근거: 항재밍 데이터링크 결과보고서" in top["rationale"]
+
+    # 근거 문서(통신팀 소관) 열람권이 없는 전문가에게는 규칙 문장을 보여 준다
+    detail = (await client.get(f"/recommendations/{top['recommendation_id']}", headers=as_user(EXPERT))).json()
+    assert detail["rationale_source"] == "TEMPLATE_RESTRICTED"
+    assert "근거:" not in detail["rationale"] and "기술 유사도" in detail["rationale"]
+
+
+async def test_llm_rationale_falls_back_to_template_when_ungrounded(client, monkeypatch):
+    run = await _match_with_llm(client, monkeypatch, "동기 유지 시간을 99s 로 높이면 충족한다 [E1].")
+    summary = run["params"]["rationale_llm"]
+    assert summary["ok"] == 0 and summary["fallback"] >= 1
+    assert {x["rationale_source"] for x in run["recommendations"]} == {"TEMPLATE"}
