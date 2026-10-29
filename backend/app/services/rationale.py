@@ -218,7 +218,10 @@ class LLMRationaleWriter:
 
 def llm_credentials_configured(settings: Settings) -> bool:
     """자격증명이 설정돼 있는지 (auto 모드 판단용). 사내 제공자는 키 없이 붙을 수 있어 항상 True."""
-    if settings.llm_provider.lower() != "anthropic":
+    provider = settings.llm_provider.lower()
+    if provider == "openai":
+        return bool(settings.openai_api_key or os.environ.get("OPENAI_API_KEY"))
+    if provider != "anthropic":
         return True
     return bool(settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
                 or os.environ.get("ANTHROPIC_AUTH_TOKEN"))

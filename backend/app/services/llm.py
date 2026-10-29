@@ -37,7 +37,7 @@ class AnthropicClient:
             sdk_client = anthropic.AsyncAnthropic(**kw)
         self._client = sdk_client
         self._s = settings
-        self.name = f"anthropic/{settings.llm_model}"
+        self.name = f"anthropic/{settings.resolved_llm_model}"
 
     async def complete(self, system: str, user: str) -> str:
         import anthropic
@@ -46,13 +46,14 @@ class AnthropicClient:
         if self._s.llm_server_fallback:
             # 안전 분류기 거절 시 서버가 권장 모델로 재시도 (Claude API 전용 베타)
             kw = {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
+        if self._s.llm_effort:
+            kw["output_config"] = {"effort": self._s.llm_effort}
         try:
             resp = await self._client.beta.messages.create(
-                model=self._s.llm_model,
+                model=self._s.resolved_llm_model,
                 max_tokens=self._s.llm_max_tokens,
                 system=system,
                 messages=[{"role": "user", "content": user}],
-                output_config={"effort": self._s.llm_effort},
                 **kw,
             )
         # 인증 실패·429·5xx·타임아웃 모두 템플릿 대체 사유.
@@ -69,12 +70,56 @@ class AnthropicClient:
         return text
 
 
+class OpenAIClient:
+    """OpenAI Chat Completions API (openai SDK, pip install ".[llm]"). LLM_PROVIDER=openai."""
+
+    def __init__(self, settings: Settings, sdk_client=None):
+        if sdk_client is None:
+            import openai  # 선택 의존성
+
+            kw: dict = {"timeout": settings.llm_timeout_s, "max_retries": settings.llm_max_retries}
+            if settings.openai_api_key:
+                kw["api_key"] = settings.openai_api_key  # 없으면 SDK 가 OPENAI_API_KEY 환경변수에서 찾는다
+            sdk_client = openai.AsyncOpenAI(**kw)
+        self._client = sdk_client
+        self._s = settings
+        self.name = f"openai/{settings.resolved_llm_model}"
+
+    async def complete(self, system: str, user: str) -> str:
+        import openai
+
+        kw: dict = {}
+        if self._s.llm_effort:
+            kw["reasoning_effort"] = self._s.llm_effort  # 추론 모델 전용. gpt-4.1 등은 LLM_EFFORT= (빈 값)
+        try:
+            resp = await self._client.chat.completions.create(
+                model=self._s.resolved_llm_model,
+                max_completion_tokens=self._s.llm_max_tokens,
+                messages=[{"role": "developer", "content": system}, {"role": "user", "content": user}],
+                **kw,
+            )
+        # 인증 실패(401)·429·5xx·타임아웃 모두 템플릿 대체 사유
+        except openai.OpenAIError as e:
+            raise LLMError(f"{type(e).__name__}: {e}") from e
+        choice = resp.choices[0]
+        if choice.message.refusal or choice.finish_reason == "content_filter":
+            raise LLMError("모델이 요청을 거절함")
+        if choice.finish_reason == "length":
+            raise LLMError("응답이 max_tokens 에서 잘림")
+        text = (choice.message.content or "").strip()
+        if not text:
+            raise LLMError("빈 응답")
+        return text
+
+
 def build_llm_client(settings: Settings) -> LLMClient | None:
     """설정된 제공자의 클라이언트. 만들 수 없으면(SDK 미설치 등) None → 템플릿 사용."""
     provider = settings.llm_provider.lower()
     try:
         if provider == "anthropic":
             return AnthropicClient(settings)
+        if provider == "openai":
+            return OpenAIClient(settings)
     except Exception as e:  # noqa: BLE001 - 생성 실패는 템플릿으로 대체하고 원인만 남긴다
         log.warning("LLM 클라이언트(%s) 생성 실패, 템플릿 문장 사용: %s", provider, e)
         return None
