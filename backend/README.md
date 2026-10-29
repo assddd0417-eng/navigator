@@ -91,13 +91,19 @@ app/
 
 ## LLM 연계이유 문장 (선택)
 
-기본(`RATIONALE_GENERATOR=template`)은 규칙 템플릿 문장이다. `llm` 으로 바꾸면 추천 저장·근거 연결 뒤에
-**그 추천에 연결된 원문 근거 인용문과 점수만**을 입력으로 LLM 이 연계이유를 다시 쓴다.
+`RATIONALE_GENERATOR` 기본값 `auto` 는 API 키가 있으면 LLM, 없으면 규칙 템플릿 문장을 쓴다
+(`llm` = 키 유무와 관계없이 항상 시도, `template` = 끄기). LLM 은 추천 저장·근거 연결 뒤에
+**그 추천에 연결된 원문 근거 인용문과 점수만**을 입력으로 연계이유를 다시 쓴다.
 
 ```bash
 pip install -e ".[llm]"
-export RATIONALE_GENERATOR=llm ANTHROPIC_API_KEY=sk-ant-...   # 모델 기본값 LLM_MODEL=claude-opus-5-5
+export ANTHROPIC_API_KEY=sk-ant-...   # 모델 기본값 LLM_MODEL=claude-opus-5-5
 ```
+
+- 재매칭 없이 다시 만들기: `POST /recommendations/{id}/rationale` (PLANNER, 검토 종료 전 추천만).
+  추천 상세 화면의 "AI 연계이유 다시 생성" 버튼이 이 API 를 부른다. LLM 이 꺼져 있으면 409.
+- 추천 조회 응답의 `rationale_generation` = `{status: OK|FALLBACK|null, generator, error}`.
+- 스모크: 서버에 키를 넣고 `SMOKE_LLM=1 ./scripts/smoke_test.sh` 로 실제 생성까지 확인.
 
 - 템플릿 문장은 항상 `recommendation.rationale` 에 저장되고, LLM 문장은 `rationale_llm` 에 따로 저장된다 (0017).
 - 다음 경우 LLM 문장을 버리고 템플릿을 쓴다 (`rationale_meta.status = FALLBACK`, 사유 기록):

@@ -25,6 +25,7 @@ BASE_URL="${BASE_URL:-http://localhost:8000}"
 BASE_URL="${BASE_URL%/}"
 RUN_TAG="${RUN_TAG:-$(date +%Y%m%d%H%M%S)-$$}"
 VERBOSE="${VERBOSE:-0}"          # 1 이면 실패하지 않은 응답 본문도 출력
+SMOKE_LLM="${SMOKE_LLM:-0}"      # 1 이면 서버의 실제 LLM 연계이유 재생성까지 확인 (서버에 ANTHROPIC_API_KEY 필요)
 
 # 시드 사용자 (seeds/init_test_data.sql)
 PLANNER=1 REVIEWER=2 EXPERT=3 CURATOR=4 VIEWER=5
@@ -214,6 +215,17 @@ api "추천 상세 조회" 200 GET "/recommendations/$REC_ID" "$PLANNER"
 check "5개 기준 점수와 원문 근거 포함" \
     '([.score_details[].criterion] | sort) == ["ENVIRONMENT","PERFORMANCE","PURPOSE","TECH","TRL"]
      and (.evidence | length) > 0 and .status == "GENERATED"'
+check "연계이유와 출처(rationale_source) 포함" \
+    '(.rationale | length) > 0 and (.rationale_source | IN("LLM","TEMPLATE","TEMPLATE_RESTRICTED"))'
+api "EXPERT 는 연계이유 재생성 불가" 403 POST "/recommendations/$REC_ID/rationale" "$EXPERT"
+# 서버에 LLM 키가 있으면 SMOKE_LLM=1 로 실행 (실제 생성 확인), 없으면 409(꺼짐) 확인
+if [[ "${SMOKE_LLM:-0}" == 1 ]]; then
+    api "AI 연계이유 재생성 (PLANNER)" 200 POST "/recommendations/$REC_ID/rationale" "$PLANNER"
+    check "생성 결과 OK 또는 템플릿 대체 사유 포함" \
+        '(.status == "OK" and .rationale_source == "LLM") or (.status == "FALLBACK" and (.error | length) > 0)'
+else
+    api "LLM 꺼짐 상태의 재생성 요청은 409" 409 POST "/recommendations/$REC_ID/rationale" "$PLANNER"
+fi
 
 # -----------------------------------------------------------------------------
 section "⑥ 검토 배정 → 전문가 의견 → 최종판정"

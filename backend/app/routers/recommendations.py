@@ -1,24 +1,35 @@
 from fastapi import APIRouter, Depends
 
 from app.auth import CurrentUser, get_current_user, request_id, require_roles
+from app.config import get_settings
 from app.db import set_status_reason, transaction
-from app.errors import NotFound
+from app.errors import Conflict, NotFound
 from app.repositories.sql import insert
 from app.schemas.common import Created
 from app.schemas.reviews import (
     AssignmentCreate, CommentCreate, ConfirmationCreate, ConfirmationResolve, DecisionCreate, WithdrawRequest,
 )
+from app.services.matching import regenerate_llm_rationale
+from app.services.rationale import get_llm_writer
 
 router = APIRouter(tags=["추천·HITL 검토"])
 
 # 연계이유는 사용자별로 고른다: LLM 문장은 그 입력 근거 문서를 모두 열람할 수 있을 때만 (0017)
-OVERVIEW_SQL = """SELECT o.*, rf.rationale AS visible_rationale, rf.rationale_source
-                    FROM ax.v_recommendation_overview o,
+OVERVIEW_SQL = """SELECT o.*, rf.rationale AS visible_rationale, rf.rationale_source,
+                         r.rationale_meta->>'status' AS rationale_llm_status,
+                         r.rationale_meta->>'generator' AS rationale_generator,
+                         r.rationale_meta->>'error' AS rationale_llm_error
+                    FROM ax.v_recommendation_overview o
+                    JOIN ax.recommendation r ON r.id = o.recommendation_id,
                          LATERAL ax.rationale_for_user(%s, o.recommendation_id) rf"""
 
 
 def _visible_rationale(rec: dict) -> dict:
     rec["rationale"] = rec.pop("visible_rationale")
+    # LLM 생성 기록: status OK | FALLBACK | null(LLM 미사용)
+    rec["rationale_generation"] = {"status": rec.pop("rationale_llm_status"),
+                                   "generator": rec.pop("rationale_generator"),
+                                   "error": rec.pop("rationale_llm_error")}
     return rec
 
 
@@ -71,6 +82,19 @@ async def get_recommendation(rec_id: int, user: CurrentUser = Depends(get_curren
         rec["comments"] = await (await q(
             "SELECT * FROM ax.review_comment WHERE recommendation_id = %s ORDER BY id")).fetchall()
     return rec
+
+
+@router.post("/recommendations/{rec_id}/rationale")
+async def regenerate_rationale(rec_id: int, user: CurrentUser = Depends(require_roles("PLANNER"))):
+    """LLM 연계이유를 다시 생성한다 (재매칭 없이). 실패하면 템플릿 문장이 유지되고 사유를 돌려준다."""
+    writer = get_llm_writer(get_settings())
+    if writer is None:
+        raise Conflict("LLM 연계이유 생성이 꺼져 있습니다 (RATIONALE_GENERATOR·ANTHROPIC_API_KEY 확인)")
+    async with transaction(user.id) as conn:
+        result = await regenerate_llm_rationale(conn, rec_id, writer)
+        shown = await (await conn.execute(
+            "SELECT * FROM ax.rationale_for_user(%s, %s)", (user.id, rec_id))).fetchone()
+    return {**result, "rationale": shown["rationale"], "rationale_source": shown["rationale_source"]}
 
 
 @router.post("/recommendations/{rec_id}/assignments", response_model=Created, status_code=201)
