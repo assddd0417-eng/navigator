@@ -1,9 +1,15 @@
-from fastapi import APIRouter, Depends, Query
+from pathlib import PurePath
+
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from starlette.concurrency import run_in_threadpool
 
 from app.auth import CurrentUser, get_current_user, request_id, require_roles
+from app.config import get_settings
 from app.db import transaction
 from app.repositories.sql import insert
-from app.schemas.documents import ChunkSearch, DocumentCreate, DocumentCreated
+from app.schemas.documents import (ChunkIn, ChunkSearch, DocumentCreate, DocumentCreated, DocumentUploaded,
+                                   ParsePreview)
+from app.services.document_parser import ParsedDocument, ParseError, parse_upload
 from app.services.embedding import embed_query, sha256, sync_chunk_embeddings
 
 router = APIRouter(prefix="/documents", tags=["원문 문서·RAG"])
@@ -12,6 +18,10 @@ router = APIRouter(prefix="/documents", tags=["원문 문서·RAG"])
 @router.post("", response_model=DocumentCreated, status_code=201)
 async def create_document(body: DocumentCreate, user: CurrentUser = Depends(require_roles("CURATOR", "PLANNER")),
                           rid: str = Depends(request_id)):
+    return await _store_document(body, user, rid)
+
+
+async def _store_document(body: DocumentCreate, user: CurrentUser, rid: str) -> DocumentCreated:
     async with transaction(user.id, rid) as conn:
         doc_id = await insert(conn, "source_document", {
             **body.model_dump(exclude={"sections", "chunks"}), "parse_status": "CHUNKED"})
@@ -30,6 +40,61 @@ async def create_document(body: DocumentCreate, user: CurrentUser = Depends(requ
                 "chunk_type": c.chunk_type}))
         embedded = await sync_chunk_embeddings(conn, doc_id)
     return DocumentCreated(id=doc_id, chunk_ids=chunk_ids, embedded=embedded)
+
+
+async def _parse(file: UploadFile) -> ParsedDocument:
+    settings = get_settings()
+    limit = settings.upload_max_mb * 1024 * 1024
+    data = await file.read(limit + 1)
+    if len(data) > limit:
+        raise ParseError("file_too_large", f"파일이 {settings.upload_max_mb}MB 를 넘습니다", 413)
+    return await run_in_threadpool(parse_upload, data, file.filename or "", max_pages=settings.pdf_max_pages,
+                                   chunk_max_chars=settings.chunk_max_chars)
+
+
+@router.post("/parse", response_model=ParsePreview)
+async def parse_document(file: UploadFile = File(..., description="PDF · TXT · MD"),
+                         user: CurrentUser = Depends(require_roles("CURATOR", "PLANNER"))):
+    """업로드 파일에서 텍스트를 추출·청킹해 미리보기로 돌려준다 (DB 저장 없음)."""
+    p = await _parse(file)
+    return ParsePreview(filename=p.filename, file_type=p.file_type, parser=p.parser, page_count=p.page_count,
+                        pages_without_text=p.pages_without_text, char_count=p.char_count, warnings=p.warnings,
+                        chunks=[c.__dict__ for c in p.chunks])
+
+
+@router.post("/upload", response_model=DocumentUploaded, status_code=201)
+async def upload_document(
+    file: UploadFile = File(..., description="PDF · TXT · MD (스캔본 OCR 미지원)"),
+    doc_type_code: str = Form(...),
+    title: str | None = Form(None, description="비우면 파일 이름"),
+    project_id: int | None = Form(None),
+    program_id: int | None = Form(None),
+    owner_dept_id: int | None = Form(None),
+    security_code: str = Form("INTERNAL"),
+    source_system_code: str = Form("PMS"),
+    external_ref: str | None = Form(None),
+    version_label: str | None = Form(None),
+    authored_at: str | None = Form(None),
+    user: CurrentUser = Depends(require_roles("CURATOR", "PLANNER")),
+    rid: str = Depends(request_id),
+):
+    """파일을 올려 텍스트 추출 → 쪽 단위 청킹 → 등록·임베딩까지 한 번에 한다.
+
+    원본 파일 자체는 저장하지 않는다 (storage_uri 없음, 파일 SHA-256 은 metadata 에 기록).
+    """
+    p = await _parse(file)
+    body = DocumentCreate(
+        doc_type_code=doc_type_code, title=(title or "").strip() or PurePath(p.filename).stem or "제목 없음",
+        project_id=project_id, program_id=program_id, owner_dept_id=owner_dept_id, security_code=security_code,
+        external_ref=external_ref, version_label=version_label, authored_at=authored_at,
+        source_system_code=source_system_code, page_count=p.page_count,
+        metadata={"source_filename": p.filename, "file_type": p.file_type, "parser": p.parser,
+                  "file_sha256": p.file_sha256, "pages_without_text": p.pages_without_text},
+        chunks=[ChunkIn(content=c.content, page_start=c.page_start, page_end=c.page_end, location=c.location)
+                for c in p.chunks])
+    created = await _store_document(body, user, rid)
+    return DocumentUploaded(**created.model_dump(), filename=p.filename, file_type=p.file_type,
+                            page_count=p.page_count, pages_without_text=p.pages_without_text, warnings=p.warnings)
 
 
 @router.get("")

@@ -1,5 +1,8 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react'
-import { createCard, createDocument, listDocuments, type DocumentCreated } from '../../api/endpoints'
+import {
+  createCard, createDocument, listDocuments, parseDocumentFile, uploadDocumentFile,
+  type DocumentCreated, type ParsePreview,
+} from '../../api/endpoints'
 import { useAuth } from '../../auth/AuthContext'
 import { useToast } from '../../components/Toast'
 import { Card, Empty, fmtDate, PageHeader, RoleHint, StatusBadge, useAction, useAsync } from '../../components/ui'
@@ -16,26 +19,86 @@ const PROJECTS = [
   { id: 3, label: 'PRJ-2023-004 EO/IR 영상 기반 표적 자동탐지', dept: 2 },
 ]
 
-/** 빈 줄 기준으로 문단을 나눠 RAG 청크로 만든다 (실제 PDF 파싱·청킹은 별도 파이프라인). */
+/** 붙여넣은 텍스트는 빈 줄 기준으로 문단을 나눠 RAG 청크로 만든다. PDF 는 서버가 쪽 단위로 추출·청킹한다. */
 const toChunks = (text: string) => text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean)
+
+const isPdf = (file: File) => file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
+
+/** PDF 추출 미리보기: 쪽 수·청크 수·제외된 쪽 경고와 앞부분 청크 몇 개 */
+function PdfPreview({ preview, onClear }: { preview: ParsePreview; onClear: () => void }) {
+  return (
+    <div className="pdf-preview">
+      <div className="pdf-preview-head">
+        <strong>📕 {preview.filename}</strong>
+        <span className="muted small">
+          {preview.page_count}쪽 · 청크 {preview.chunks.length}개 · {preview.char_count.toLocaleString()}자
+        </span>
+        <button type="button" className="btn btn-ghost" onClick={onClear}>파일 빼기</button>
+      </div>
+      {preview.warnings.map((w) => <div key={w} className="notice small">{w}</div>)}
+      <ul className="evidence">
+        {preview.chunks.slice(0, 3).map((c, i) => (
+          <li key={i}>
+            <span className="evidence-src">{c.page_start}쪽</span>
+            <blockquote>{c.content.length > 220 ? `${c.content.slice(0, 220)}…` : c.content}</blockquote>
+          </li>
+        ))}
+      </ul>
+      {preview.chunks.length > 3 && <p className="muted small">외 {preview.chunks.length - 3}개 청크</p>}
+    </div>
+  )
+}
 
 function UploadForm({ onUploaded }: { onUploaded: (doc: DocumentCreated, projectId: number, title: string) => void }) {
   const toast = useToast()
   const { busy, run } = useAction()
   const [f, setF] = useState({ title: '', doc_type: 'FINAL_REPORT', project: '1', section_no: '', heading: '', page: '', text: '' })
+  const [pdf, setPdf] = useState<{ file: File; preview: ParsePreview } | null>(null)
+  const [parsing, setParsing] = useState(false)
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value })
   const chunks = toChunks(f.text)
+  const chunkCount = pdf ? pdf.preview.chunks.length : chunks.length
 
   const readFile = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
+    const input = e.target
+    const file = input.files?.[0]
+    input.value = '' // 같은 파일을 다시 골라도 change 가 일어나도록
     if (!file) return
-    const text = await file.text()
-    setF((prev) => ({ ...prev, text, title: prev.title || file.name.replace(/\.[^.]+$/, '') }))
+    const stem = file.name.replace(/\.[^.]+$/, '')
+    if (!isPdf(file)) {
+      const text = await file.text()
+      setPdf(null)
+      setF((prev) => ({ ...prev, text, title: prev.title || stem }))
+      return
+    }
+    // PDF: 서버에서 텍스트 추출 → 미리보기 (스캔본·암호·손상 파일은 오류 토스트로 사유 표시)
+    setParsing(true)
+    try {
+      const preview = await parseDocumentFile(file)
+      setPdf({ file, preview })
+      setF((prev) => ({ ...prev, text: '', title: prev.title || stem }))
+    } catch {
+      setPdf(null)
+    } finally {
+      setParsing(false)
+    }
   }
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     const project = PROJECTS.find((p) => p.id === Number(f.project))!
+    if (pdf) {
+      const res = await run(() => uploadDocumentFile(pdf.file, {
+        doc_type_code: f.doc_type, title: f.title, project_id: project.id, owner_dept_id: project.dept,
+      }))
+      if (res) {
+        toast.success('PDF 문서를 등록했습니다', `${res.page_count}쪽 · 청크 ${res.chunk_ids.length}개 · 임베딩 ${res.embedded}개`)
+        onUploaded(res, project.id, f.title)
+        setPdf(null)
+        setF({ ...f, title: '', text: '' })
+      }
+      return
+    }
     const page = f.page ? Number(f.page) : null
     const hasSection = Boolean(f.section_no || f.heading)
     const res = await run(() => createDocument({
@@ -54,8 +117,11 @@ function UploadForm({ onUploaded }: { onUploaded: (doc: DocumentCreated, project
   return (
     <form className="form" onSubmit={submit}>
       <label className="file-drop">
-        <input type="file" accept=".txt,.md,text/plain" onChange={(e) => void readFile(e)} />
-        <span>📄 텍스트 파일(.txt, .md)을 선택하거나 아래에 본문을 붙여넣으세요</span>
+        <input type="file" accept=".pdf,application/pdf,.txt,.md,text/plain" onChange={(e) => void readFile(e)} />
+        <span>{parsing
+          ? '⏳ PDF 에서 텍스트를 추출하는 중…'
+          : '📄 PDF 또는 텍스트 파일(.txt, .md)을 선택하거나 아래에 본문을 붙여넣으세요'}</span>
+        <span className="muted small">스캔 이미지 PDF·암호 걸린 PDF 는 텍스트를 추출할 수 없습니다 (OCR 미지원)</span>
       </label>
       <div className="form-row">
         <label className="grow">문서 제목<input value={f.title} onChange={set('title')} required /></label>
@@ -66,17 +132,22 @@ function UploadForm({ onUploaded }: { onUploaded: (doc: DocumentCreated, project
       <label>과제<select value={f.project} onChange={set('project')}>
         {PROJECTS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
       </select></label>
-      <div className="form-row">
-        <label>조항 번호<input value={f.section_no} onChange={set('section_no')} placeholder="4.3" /></label>
-        <label className="grow">조항 제목<input value={f.heading} onChange={set('heading')} placeholder="미해결 기술 및 후속 연구 필요사항" /></label>
-        <label>쪽<input type="number" min={1} value={f.page} onChange={set('page')} placeholder="88" /></label>
-      </div>
-      <label>본문 (빈 줄로 문단 구분 → 문단마다 검색용 청크 1개)
-        <textarea rows={8} value={f.text} onChange={set('text')} required /></label>
+      {pdf ? <PdfPreview preview={pdf.preview} onClear={() => setPdf(null)} /> : (
+        <>
+          <div className="form-row">
+            <label>조항 번호<input value={f.section_no} onChange={set('section_no')} placeholder="4.3" /></label>
+            <label className="grow">조항 제목<input value={f.heading} onChange={set('heading')} placeholder="미해결 기술 및 후속 연구 필요사항" /></label>
+            <label>쪽<input type="number" min={1} value={f.page} onChange={set('page')} placeholder="88" /></label>
+          </div>
+          <label>본문 (빈 줄로 문단 구분 → 문단마다 검색용 청크 1개)
+            <textarea rows={8} value={f.text} onChange={set('text')} required /></label>
+        </>
+      )}
       <div className="form-foot">
-        <span className="muted small">청크 {chunks.length}개 예정</span>
+        <span className="muted small">청크 {chunkCount}개 예정{pdf ? ' (쪽 번호 자동 기록)' : ''}</span>
         <RoleHint roles={['CURATOR', 'PLANNER']} />
-        <button className="btn btn-primary" disabled={busy || chunks.length === 0}>{busy ? '등록 중…' : '문서 등록'}</button>
+        <button className="btn btn-primary" disabled={busy || parsing || chunkCount === 0}>
+          {busy ? '등록 중…' : pdf ? 'PDF 문서 등록' : '문서 등록'}</button>
       </div>
     </form>
   )
@@ -133,7 +204,7 @@ export function DocumentUploadPage() {
 
   return (
     <>
-      <PageHeader title="문서 업로드" subtitle="과제 결과보고서 등 원문을 올리면 AI 검색용으로 나뉘어 저장되고, 성과카드의 근거가 됩니다." />
+      <PageHeader title="문서 업로드" subtitle="과제 결과보고서 등 원문(PDF·텍스트)을 올리면 AI 검색용으로 나뉘어 저장되고, 성과카드의 근거가 됩니다." />
       {role === 'EXPERT' && (
         <div className="notice">전문가 역할은 문서 등록 권한이 없습니다. 등록을 시도하면 서버가 거부(403)하는 것을 확인할 수 있습니다.</div>
       )}

@@ -12,6 +12,8 @@ dependencies = [
     "psycopg-pool>=3.2",
     "pgvector>=0.3",
     "numpy>=1.26",
+    "python-multipart>=0.0.9",   # 파일 업로드 (multipart/form-data)
+    "pdfplumber>=0.11",          # PDF 텍스트 추출 (pdfminer.six 기반, 순수 Python + 휠)
 ]
 
 [project.optional-dependencies]
@@ -19,7 +21,7 @@ dependencies = [
 bge = ["sentence-transformers>=3.0"]
 # LLM 연계이유 문장 생성 (RATIONALE_GENERATOR=llm)
 llm = ["anthropic>=2.3"]
-dev = ["pytest>=8", "pytest-asyncio>=0.23", "httpx>=0.27"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "httpx>=0.27", "reportlab>=4.0"]  # reportlab: 테스트용 PDF 생성
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

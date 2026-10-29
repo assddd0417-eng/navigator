@@ -2,7 +2,8 @@
 # =============================================================================
 # API 스모크 테스트: 실행 중인 백엔드에 curl 로 전체 흐름을 한 번 돌려 본다.
 #
-#   ① /health  ② 문서 등록(CURATOR)  ③ 문서 검색  ④ 성과카드 생성·발행
+#   ① /health  ② 문서 등록(CURATOR)  ③ 문서 검색
+#   ③-2 PDF 업로드: 미리보기·등록·쪽 번호 검색, 스캔본·암호·손상·미지원 형식 거부  ④ 성과카드 생성·발행
 #   ⑤ 수요 등록 → 매칭 → 매칭 런·추천 조회(PLANNER)
 #   ⑥ 검토 배정(PLANNER) → 전문가 의견(EXPERT) → 전문가 최종판정 시도 403
 #      → 담당부서 최종판정 ADOPT(DEPT_REVIEWER)
@@ -12,7 +13,7 @@
 #   BASE_URL=http://localhost:8000 ./scripts/smoke_test.sh
 #
 # 전제: 마이그레이션 + seeds/init_test_data.sql 적용, 서버 실행 중 (기본 EMBEDDER=hash).
-# 필요 도구: curl, jq
+# 필요 도구: curl, jq   (PDF 픽스처: scripts/fixtures/*.pdf, 커밋되어 있음)
 # 재실행 안전: card_no·demand_no·external_ref 에 실행 태그를 붙여 매번 새 데이터로 돈다.
 #   같은 DB 에서 수십 번 돌리면 같은 내용의 카드가 쌓여 이번 카드가 상위 K 밖으로 밀리고,
 #   그때는 이번 매칭 런의 다른 추천으로 검증하며 2건이 SKIP 된다. 전부 PASS 를 보려면 DB 를 새로 만든다.
@@ -77,6 +78,25 @@ api() {
     return 1
 }
 
+# upload <설명> <기대 상태코드> <경로> <사용자ID> <파일경로> [-F 필드...]  : multipart 파일 업로드
+upload() {
+    local desc=$1 expect=$2 path=$3 user=$4 file=$5; shift 5
+    local args=(-sS -o "$BODY_FILE" -w '%{http_code}' -X POST "$BASE_URL$path"
+                -H 'Accept: application/json' -H "X-Request-Id: smoke-$RUN_TAG" -H "X-User-Id: $user"
+                -F "file=@$file")
+    for field in "$@"; do args+=(-F "$field"); done
+    STATUS=$(curl "${args[@]}" 2>/dev/null) || STATUS="000"
+    BODY=$(cat "$BODY_FILE" 2>/dev/null || true)
+    if [[ "$STATUS" == "$expect" ]]; then
+        pass "$desc → POST $path [$(basename "$file"), X-User-Id: $user] HTTP $STATUS"
+        [[ "$VERBOSE" == 1 ]] && show_body
+        return 0
+    fi
+    fail "$desc → POST $path [$(basename "$file"), X-User-Id: $user] 기대 $expect, 실제 HTTP $STATUS"
+    show_body
+    return 1
+}
+
 # check <설명> <jq 필터(참/거짓)> [jq 인자...]  : 직전 응답 본문 검증
 check() {
     local desc=$1 filter=$2; shift 2
@@ -133,6 +153,38 @@ check "출처(조항 4.3·88쪽) 포함" '.[0].section_no == "4.3" and .[0].page
 api "열람권 없는 부서(EXPERT)의 검색은 해당 문서 제외" 200 POST /documents/search "$EXPERT" \
     "$(jq -n --arg q "$CHUNK1_TEXT" '{query: $q, k: 5, project_id: 1}')"
 check "EXPERT 검색 결과에 과제 1 결과보고서 청크 없음" 'map(select(.content == $q)) | length == 0' --arg q "$CHUNK1_TEXT"
+
+# -----------------------------------------------------------------------------
+section "③-2 PDF 업로드 (CURATOR=$CURATOR)"
+FIX="$(dirname "$0")/fixtures"
+PDF_FIELDS=(doc_type_code=FINAL_REPORT project_id=1 owner_dept_id=$OWNER_DEPT "external_ref=SMOKE-PDF-$RUN_TAG")
+upload "권한 없는 사용자(EXPERT)의 PDF 미리보기 거부" 403 /documents/parse "$EXPERT" "$FIX/report_ko.pdf"
+upload "PDF 미리보기 (저장 없음)" 200 /documents/parse "$CURATOR" "$FIX/report_ko.pdf"
+check "3쪽, 텍스트 없는 2쪽은 제외·경고, 1쪽 청크에 한국어 본문(어절 공백 보존)" \
+    '.page_count == 3 and .pages_without_text == [2] and (.warnings | length) == 1
+     and (.chunks[0].page_start == 1) and (.chunks[0].content | contains("목표 10초 대비 6초로 부족하여"))'
+upload "PDF 업로드·등록 (제목은 파일 이름)" 201 /documents/upload "$CURATOR" "$FIX/report_ko.pdf" "${PDF_FIELDS[@]}" \
+    || abort "PDF 업로드 실패"
+check "page_count=3, 청크 모두 임베딩" '.file_type == "pdf" and .page_count == 3 and .embedded == (.chunk_ids | length) and .embedded > 0'
+PDF_DOC_ID=$(pick '.id')
+api "문서 목록에 PDF 문서(제목=report_ko, 임베딩 완료)" 200 GET /documents "$CURATOR"
+check "업로드한 문서 확인" 'map(select(.id == $id and .title == "report_ko" and .parse_status == "EMBEDDED")) | length == 1' \
+    --argjson id "$PDF_DOC_ID"
+PDF_Q="항재밍 데이터링크 모뎀의 국산화 가능성을 확인하였으며 체계 적용 시험이 남아 있음."
+api "PDF 본문 검색" 200 POST /documents/search "$CURATOR" "$(jq -n --arg q "$PDF_Q" '{query: $q, k: 5, project_id: 1}')"
+check "업로드한 PDF 의 3쪽 청크가 출처 쪽 번호와 함께 검색됨" \
+    'map(select(.document_id == $id and .page_start == 3)) | length >= 1' --argjson id "$PDF_DOC_ID"
+upload "스캔본(텍스트 없음) 거부" 422 /documents/upload "$CURATOR" "$FIX/scanned.pdf" "${PDF_FIELDS[@]}"
+check "kind=no_text_layer, OCR 미지원 안내" '.kind == "no_text_layer" and (.detail | contains("OCR"))'
+upload "암호 걸린 PDF 거부" 422 /documents/upload "$CURATOR" "$FIX/encrypted.pdf" "${PDF_FIELDS[@]}"
+check "kind=encrypted_pdf" '.kind == "encrypted_pdf"'
+BROKEN_PDF="$BODY_FILE.broken.pdf"; head -c 400 "$FIX/report_ko.pdf" > "$BROKEN_PDF"
+upload "손상된 PDF(잘린 파일) 거부" 422 /documents/upload "$CURATOR" "$BROKEN_PDF" "${PDF_FIELDS[@]}"
+check "kind=corrupt_pdf" '.kind == "corrupt_pdf"'
+HWP_FILE="$BODY_FILE.sample.hwp"; printf 'HWP Document File' > "$HWP_FILE"
+upload "지원하지 않는 형식(.hwp) 거부" 415 /documents/parse "$CURATOR" "$HWP_FILE"
+check "kind=unsupported_type" '.kind == "unsupported_type"'
+rm -f "$BROKEN_PDF" "$HWP_FILE"
 
 # -----------------------------------------------------------------------------
 section "④ 성과카드 생성·발행 (CURATOR=$CURATOR)"
