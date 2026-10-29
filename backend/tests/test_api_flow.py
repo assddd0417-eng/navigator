@@ -37,6 +37,15 @@ async def test_register_document(client):
     state["chunk_ids"] = body["chunk_ids"]
 
 
+async def test_me_and_document_list(client):
+    me = (await client.get("/me", headers=as_user(EXPERT))).json()
+    assert me["id"] == EXPERT and me["roles"] == ["EXPERT"]
+    docs = (await client.get("/documents", headers=as_user(CURATOR))).json()
+    assert any(d["parse_status"] == "EMBEDDED" and d["chunk_count"] == 2 for d in docs)
+    # 전문가(지휘정찰팀)는 통신팀 소관 결과보고서를 볼 수 없다
+    assert (await client.get("/documents", headers=as_user(EXPERT))).json() == []
+
+
 async def _create_card(client, payload):
     r = await client.post("/cards", headers=as_user(CURATOR), json=payload)
     assert r.status_code == 201, r.text

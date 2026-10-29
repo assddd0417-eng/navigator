@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.auth import CurrentUser, get_current_user, request_id, require_roles
 from app.db import transaction
@@ -30,6 +30,25 @@ async def create_document(body: DocumentCreate, user: CurrentUser = Depends(requ
                 "chunk_type": c.chunk_type}))
         embedded = await sync_chunk_embeddings(conn, doc_id)
     return DocumentCreated(id=doc_id, chunk_ids=chunk_ids, embedded=embedded)
+
+
+@router.get("")
+async def list_documents(project_id: int | None = None, parse_status: str | None = None,
+                         limit: int = Query(50, le=200), offset: int = 0,
+                         user: CurrentUser = Depends(get_current_user)):
+    """문서 처리 현황 (요청자가 열람 가능한 문서만). 청크·임베딩 수 포함."""
+    async with transaction(user.id) as conn:
+        return await (await conn.execute(
+            """SELECT d.id, d.doc_type_code, t.name_ko AS doc_type_name, d.title, d.project_id,
+                       d.owner_dept_id, d.parse_status, d.security_code, d.created_at,
+                       (SELECT count(*) FROM ax.document_chunk c WHERE c.document_id = d.id) AS chunk_count
+                  FROM ax.source_document d JOIN ax.code_document_type t ON t.code = d.doc_type_code
+                 WHERE (%(project_id)s::bigint IS NULL OR d.project_id = %(project_id)s)
+                   AND (%(parse_status)s::text IS NULL OR d.parse_status = %(parse_status)s)
+                   AND ax.can_read_document(%(uid)s, d.id)
+                 ORDER BY d.created_at DESC LIMIT %(limit)s OFFSET %(offset)s""",
+            {"project_id": project_id, "parse_status": parse_status, "uid": user.id,
+             "limit": limit, "offset": offset})).fetchall()
 
 
 @router.post("/search")
