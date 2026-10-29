@@ -43,6 +43,8 @@ app/
 | 메서드 | 경로 | 역할 | 설명 |
 |---|---|---|---|
 | POST | `/documents` | CURATOR, PLANNER | 파싱·청킹된 문서 등록 + 청크 임베딩 |
+| GET | `/documents` | 모두 | 문서 처리 현황 (열람 가능한 문서만, 처리상태·청크 수) |
+| GET | `/me` | 모두 | 현재 사용자·역할 (프론트엔드 화면 분기용) |
 | POST | `/documents/search` | 모두 | 권한 필터 RAG 검색 |
 | POST/GET | `/cards`, `/cards/{id}` | CURATOR, PLANNER / 모두 | 성과 활용카드 (하위 항목·관계·원문 근거 포함) |
 | PATCH | `/cards/{id}` | CURATOR, PLANNER | 수정 (revision +1, 재임베딩) |

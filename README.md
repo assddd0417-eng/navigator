@@ -10,6 +10,7 @@ seeds/          init_test_data.sql (부서·사용자 1~5·역할·기관·사�
 scripts/         migrate.sh (psql 기반 실행기, 체크섬 검증), smoke_test.sh (curl API 스모크 테스트)
 docs/ERD.md      ERD·설계 설명·가정·요구사항 매핑
 backend/         FastAPI 백엔드 (매칭·추천 엔진, HITL 검토 API) — backend/README.md
+frontend/        Vite + React 역할별 화면 (역할 선택 로그인, 관리자·작업자 대시보드) — frontend/README.md
 ```
 
 ```bash
@@ -31,3 +32,7 @@ BASE_URL=http://localhost:8000 ./scripts/smoke_test.sh                     # 4. 
 
 시드 사용자(`X-User-Id`): 1 PLANNER · 2 DEPT_REVIEWER · 3 EXPERT · 4 CURATOR · 5 VIEWER.
 스모크 스크립트는 단계마다 HTTP 상태코드를 확인해 PASS/FAIL 을 찍고, 하나라도 실패하면 종료 코드 1 을 돌려준다.
+
+## 프론트엔드 시연
+
+위 1~3단계로 백엔드를 띄운 뒤 `cd frontend && npm install && npm run dev` → http://localhost:5173 에서 역할을 골라 로그인한다. 자세한 내용과 시연 순서는 `frontend/README.md`.
