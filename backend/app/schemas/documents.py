@@ -51,3 +51,30 @@ class ChunkSearch(BaseModel):
     k: int = 10
     doc_types: list[str] | None = None
     project_id: int | None = None
+
+
+class ParsedChunkOut(BaseModel):
+    content: str
+    page_start: int | None = None
+    page_end: int | None = None
+    location: dict = {}
+
+
+class ParsePreview(BaseModel):
+    """POST /documents/parse: 저장하지 않고 추출 결과만 돌려준다 (업로드 전 미리보기)."""
+    filename: str
+    file_type: str
+    parser: str
+    page_count: int | None
+    pages_without_text: list[int]
+    char_count: int
+    warnings: list[str]
+    chunks: list[ParsedChunkOut]
+
+
+class DocumentUploaded(DocumentCreated):
+    filename: str
+    file_type: str
+    page_count: int | None
+    pages_without_text: list[int]
+    warnings: list[str]

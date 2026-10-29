@@ -7,6 +7,8 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from psycopg import errors as pg
 
+from app.services.document_parser import ParseError
+
 
 class NotFound(HTTPException):
     def __init__(self, what: str, key: object):
@@ -34,3 +36,9 @@ def install_error_handlers(app: FastAPI) -> None:
             return JSONResponse(body, status_code=code, headers={"X-Request-Id": request.state.request_id})
 
         app.add_exception_handler(exc_type, handler)
+
+    def parse_error(request: Request, exc: ParseError) -> JSONResponse:
+        return JSONResponse({"detail": exc.detail, "kind": exc.kind}, status_code=exc.status_code,
+                            headers={"X-Request-Id": request.state.request_id})
+
+    app.add_exception_handler(ParseError, parse_error)

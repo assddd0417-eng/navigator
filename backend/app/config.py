@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     embedding_model_path: str = "BAAI/bge-m3"
     embedding_dim: int = 1024  # 스키마 vector(1024) 와 일치해야 함
 
+    # 문서 업로드 (POST /documents/upload, /documents/parse)
+    upload_max_mb: int = 30           # 파일 크기 상한
+    pdf_max_pages: int = 1000         # PDF 쪽 수 상한
+    chunk_max_chars: int = 1000       # 청크 최대 글자 수 (청크는 쪽 경계를 넘지 않음)
+
     # 매칭
     match_top_k: int = 20             # 최종 추천 수
     match_facet_k: int = 30           # 패싯별 후보 수

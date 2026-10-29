@@ -44,6 +44,8 @@ app/
 | 메서드 | 경로 | 역할 | 설명 |
 |---|---|---|---|
 | POST | `/documents` | CURATOR, PLANNER | 파싱·청킹된 문서 등록 + 청크 임베딩 |
+| POST | `/documents/upload` | CURATOR, PLANNER | **파일 업로드**(PDF·TXT·MD, multipart) → 텍스트 추출·쪽 단위 청킹·등록·임베딩 |
+| POST | `/documents/parse` | CURATOR, PLANNER | 같은 추출·청킹 결과를 저장 없이 미리보기 |
 | GET | `/documents` | 모두 | 문서 처리 현황 (열람 가능한 문서만, 처리상태·청크 수) |
 | GET | `/me` | 모두 | 현재 사용자·역할 (프론트엔드 화면 분기용) |
 | POST | `/documents/search` | 모두 | 권한 필터 RAG 검색 |
@@ -61,6 +63,33 @@ app/
 | POST | `/recommendations/{id}/confirmations`, PATCH `/confirmations/{id}` | 모두 | 추가 확인 필요사항 |
 | GET | `/reviews/queue` | 모두 | 본인·본인 부서 검토 대기열 |
 | GET | `/kpi/recommendations`, `/kpi/eval`, `/kpi/work-time` | 모두 | PoC 정량목표 |
+
+## 문서 파일 업로드 (PDF)
+
+`app/services/document_parser.py`. `POST /documents/upload` 에 `file` 과 폼 필드(`doc_type_code` 필수, `title`·`project_id`·`owner_dept_id`·`security_code` 등)를 보낸다.
+
+```bash
+curl -X POST localhost:8000/documents/upload -H 'X-User-Id: 4' \
+  -F file=@결과보고서.pdf -F doc_type_code=FINAL_REPORT -F project_id=1 -F owner_dept_id=3
+```
+
+- **파서 = pdfplumber** (pdfminer.six 기반). pypdf 는 한국어 PDF 에서 어절 사이 공백을 자주 잃어 ("정보가부서·사업트랙별로분산") 임베딩·검색 품질이 떨어진다. 실제 과제 제안서 PDF 로 비교해 결정. 순수 Python + 휠이라 폐쇄망 반입이 쉽다.
+- 청크는 **쪽 경계를 넘지 않는다** → 모든 청크에 출처 쪽(`page_start=page_end`, `location.page`)이 붙는다. 쪽 안에서는 시각적 줄바꿈을 이어 붙이고 글머리표(•, ㅇ, -, 1.2. …)·문장 끝에서 문단을 나눈 뒤 `CHUNK_MAX_CHARS`(기본 1000자) 이내로 채운다. 머리·꼬리 쪽 번호 줄은 버린다.
+- 텍스트 파일은 UTF-8, 안 되면 CP949 로 읽고 빈 줄 기준 문단으로 나눈다.
+- 원본 파일은 저장하지 않는다 (`storage_uri` 없음). 파일명·SHA-256·파서·텍스트 없는 쪽은 `source_document.metadata` 에 남는다.
+- 오류 (`detail` + `kind`):
+
+| 상황 | HTTP | kind |
+|---|---|---|
+| 스캔본 등 모든 쪽에 텍스트 없음 (OCR 미지원) | 422 | `no_text_layer` |
+| 일부 쪽만 텍스트 없음 | 201, `warnings`·`pages_without_text` 로 안내 | – |
+| 열람 암호가 걸린 PDF | 422 | `encrypted_pdf` |
+| 손상·잘린 PDF, PDF 시그니처 없는 .pdf | 422 | `corrupt_pdf` |
+| 빈 파일 / 텍스트 인코딩 불명 | 422 | `empty_file` / `invalid_encoding` |
+| HWP 등 지원하지 않는 형식 | 415 | `unsupported_type` |
+| `UPLOAD_MAX_MB`(30) 초과 / `PDF_MAX_PAGES`(1000) 초과 | 413 | `file_too_large` / `too_many_pages` |
+
+범위 밖: OCR, 표 구조 추출(표 글자는 본문으로 들어감), 조항(목차) 자동 인식, 원본 파일 보관.
 
 ## 매칭 로직 요약
 
