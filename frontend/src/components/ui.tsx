@@ -61,7 +61,7 @@ const STATUS_LABELS: Record<string, string> = {
   // 배정·매칭
   IN_PROGRESS: '진행 중', SUBMITTED: '제출', SUCCEEDED: '완료', RUNNING: '실행 중', QUEUED: '대기',
   // 수요
-  OPEN: '접수', CLOSED: '종료',
+  OPEN: '접수', MATCHING: '매칭됨', PLANNED: '기획 반영', CLOSED: '종료',
   // 판정
   ADOPT: '채택', HOLD: '보류', EXCLUDE: '제외',
 }
@@ -69,7 +69,7 @@ const STATUS_LABELS: Record<string, string> = {
 const STATUS_TONES: Record<string, string> = {
   DECIDED: 'ok', PUBLISHED: 'ok', SUCCEEDED: 'ok', ADOPT: 'ok', EMBEDDED: 'ok', CHUNKED: 'ok', SUBMITTED: 'ok',
   IN_REVIEW: 'warn', ASSIGNED: 'warn', NEEDS_INFO: 'warn', PENDING: 'warn', IN_PROGRESS: 'warn', HOLD: 'warn',
-  DRAFT: 'muted', GENERATED: 'muted', OPEN: 'info',
+  DRAFT: 'muted', GENERATED: 'muted', OPEN: 'info', MATCHING: 'info', PLANNED: 'ok',
   FAILED: 'bad', WITHDRAWN: 'bad', EXCLUDE: 'bad',
 }
 
