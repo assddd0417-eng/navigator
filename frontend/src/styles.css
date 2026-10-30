@@ -250,3 +250,20 @@ blockquote { margin: 4px 0 0; padding: 6px 10px; border-left: 3px solid var(--pr
   .flow-step::after { display: none; }
   .grid-2 { grid-template-columns: 1fr; }
 }
+
+/* 추천 상위 3건 */
+.top3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.top3-card { display: flex; flex-direction: column; gap: 6px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; color: inherit; text-decoration: none; background: #fff; }
+.top3-card:hover { border-color: var(--primary); }
+.top3-head { display: flex; align-items: center; gap: 8px; }
+.top3-rank { font-weight: 700; color: var(--primary); }
+.top3-score { margin-left: auto; font-weight: 700; }
+.top3-scores { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--muted, #666); }
+.linkage-FOLLOW_UP { background: #e6f0ff; color: #1d4ed8; }
+.linkage-ADVANCEMENT { background: #e8f7ee; color: #15803d; }
+.linkage-TRANSITION { background: #fff4e5; color: #b45309; }
+.linkage-CONVERGENCE { background: #f3e8ff; color: #7e22ce; }
+.linkage-UTILIZATION { background: #e0f7fa; color: #0e7490; }
+.linkage-COMMERCIALIZATION { background: #fde8ec; color: #be123c; }
+.search-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.search-row input { flex: 1; }
