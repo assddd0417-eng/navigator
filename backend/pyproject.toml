@@ -14,6 +14,7 @@ dependencies = [
     "numpy>=1.26",
     "python-multipart>=0.0.9",   # 파일 업로드 (multipart/form-data)
     "pdfplumber>=0.11",          # PDF 텍스트 추출 (pdfminer.six 기반, 순수 Python + 휠)
+    "httpx>=0.27",               # app.synthetic: API 를 프로세스 안에서 호출
 ]
 
 [project.optional-dependencies]
