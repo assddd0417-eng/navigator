@@ -58,6 +58,22 @@ export const listDocuments = (query: { project_id?: number; parse_status?: strin
 export const createDocument = (body: DocumentCreate) =>
   api<DocumentCreated>('/documents', { method: 'POST', body })
 
+export interface ChunkHit {
+  chunk_id: number
+  document_id: number
+  document_title: string
+  doc_type_code: string
+  section_no: string | null
+  heading: string | null
+  page_start: number | null
+  content: string
+  similarity: Num
+}
+
+/** 원문 의미 검색 (열람 권한이 있는 문서만) */
+export const searchDocuments = (query: string, k = 8) =>
+  api<ChunkHit[]>('/documents/search', { method: 'POST', body: { query, k } })
+
 /** 파일(PDF·TXT·MD)에서 추출한 결과. 텍스트 없는 쪽(스캔본)은 pages_without_text 로 알려 준다. */
 export interface ParsePreview {
   filename: string

@@ -141,6 +141,15 @@ curl -X POST localhost:8000/documents/upload -H 'X-User-Id: 4' \
 
 `HashEmbedder` 는 의미를 이해하지 않는 테스트용 임베더다. 추천 품질 평가는 반드시 `EMBEDDER=bge_m3` 로 한다.
 
+## 합성 데이터로 추천 적중률 재기
+
+공개 사례(국기연·방사청 보도자료, 공개 논문)를 뼈대로 만든 합성 과제 60개와 기획수요 15개, 정답 연계 17쌍을 넣고
+기획수요마다 매칭을 돌려 정답이 상위 5·10 안에 드는지 잰다 (제안서 목표 80%). 자세한 내용은 `seeds/synthetic/README.md`.
+
+```bash
+python -m app.synthetic all     # 서버를 띄우지 않아도 된다. EMBEDDER=bge_m3 로 잴 것
+```
+
 ## LLM 연계이유 문장 (선택)
 
 `RATIONALE_GENERATOR` 기본값 `auto` 는 API 키가 있으면 LLM, 없으면 규칙 템플릿 문장을 쓴다

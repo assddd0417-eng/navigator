@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   addComment, getRecommendation, getRecommendationHistory, regenerateRationale, submitDecision,
-  type DecisionCode, type RecommendationDetail,
+  type DecisionCode, type EvidenceRow, type RecommendationDetail,
 } from '../../api/endpoints'
 import { useAuth } from '../../auth/AuthContext'
 import { homePath, SEED_USERS } from '../../auth/roles'
@@ -11,6 +11,20 @@ import {
   Card, CRITERIA_LABELS, DEPT_NAMES, Empty, fmtDate, LINKAGE_TYPES, num, PageHeader, REVIEW_ROLE_LABELS, RoleHint, score,
   StatusBadge, statusLabel, useAction, useAsync,
 } from '../../components/ui'
+
+/** 같은 문단이 성과·수요·RAG 근거로 여러 번 연결되면 한 번만 보이고 기준 표시만 모은다 */
+function groupEvidence(rows: EvidenceRow[]) {
+  const out: (EvidenceRow & { key: string; criteria: string[] })[] = []
+  const seen = new Map<string, (typeof out)[number]>()
+  for (const e of rows) {
+    const key = `${e.document_id}|${e.page_start ?? ''}|${e.quote ?? e.evidence_id}`
+    const hit = seen.get(key)
+    const crit = e.criterion ? [e.criterion] : []
+    if (hit) hit.criteria = [...new Set([...hit.criteria, ...crit])]
+    else { const g = { ...e, key, criteria: crit }; seen.set(key, g); out.push(g) }
+  }
+  return out
+}
 
 const userName = (id: number | null) => SEED_USERS.find((u) => u.id === id)?.name ?? (id == null ? '–' : `사용자 ${id}`)
 
@@ -153,6 +167,7 @@ export function RecommendationPage() {
   const r = rec.data
   if (!r) return <Empty>추천을 불러오지 못했습니다. <Link to={role ? homePath(role) : '/'}>돌아가기</Link></Empty>
   const hiddenEvidence = r.evidence_count > 0 && r.evidence.length === 0
+  const evidence = groupEvidence(r.evidence)
   const finalDecision = r.decisions.find((d) => d.is_final)
 
   return (
@@ -188,16 +203,18 @@ export function RecommendationPage() {
           <div className="muted small">소관부서 {r.owner_department ?? '–'} · 미해결 확인사항 {r.open_confirmations}건</div>
         </Card>
 
-        <Card title={`원문 근거 (${r.evidence_count}건)`}>
+        <Card title={`원문 근거 (${hiddenEvidence ? r.evidence_count : evidence.length}건)`}>
           {hiddenEvidence ? (
             <div className="notice">🔒 근거 문서 {r.evidence_count}건이 있지만 현재 계정의 부서·보안등급으로는 열람할 수 없어 가려졌습니다.</div>
-          ) : r.evidence.length === 0 ? <Empty>연결된 원문 근거가 없습니다.</Empty> : (
+          ) : evidence.length === 0 ? <Empty>연결된 원문 근거가 없습니다.</Empty> : (
             <ul className="evidence">
-              {r.evidence.map((e, i) => (
-                <li key={`${e.evidence_id}-${i}`}>
+              {evidence.map((e) => (
+                <li key={e.key}>
                   <div className="evidence-src">
-                    📄 {e.document_title}{e.section_no && ` · ${e.section_no}`}{e.page_start && ` · ${e.page_start}쪽`}
-                    {e.criterion && <span className="pill">{CRITERIA_LABELS[e.criterion] ?? e.criterion}</span>}
+                    📄 {e.document_title}
+                    {e.section_no && ` · ${e.section_no}${e.section_heading ? ` ${e.section_heading}` : ''}`}
+                    {e.page_start && ` · ${e.page_start}쪽`}
+                    {e.criteria.map((c) => <span key={c} className="pill">{CRITERIA_LABELS[c] ?? c}</span>)}
                   </div>
                   {e.quote && <blockquote>{e.quote}</blockquote>}
                 </li>

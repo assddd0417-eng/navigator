@@ -1,12 +1,12 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  assignReview, createDemand, getDemand, getMatchRun, listCards, listDemands, runMatch,
-  type AssignmentCreate, type RecommendationOverview,
+  assignReview, createDemand, getDemand, getMatchRun, getRecommendation, listCards, listDemands, runMatch,
+  searchDocuments, type AssignmentCreate, type ChunkHit, type RecommendationOverview,
 } from '../../api/endpoints'
 import { useToast } from '../../components/Toast'
 import {
-  Card, Empty, fmtDate, PageHeader, RoleHint, score, StatusBadge, useAction, useAsync,
+  Card, CRITERIA_LABELS, Empty, fmtDate, PageHeader, RoleHint, score, StatusBadge, useAction, useAsync,
 } from '../../components/ui'
 
 /** 시드 사업 (seeds/init_test_data.sql) */
@@ -74,6 +74,47 @@ function DemandForm({ onCreated }: { onCreated: (id: number) => void }) {
   )
 }
 
+/** 상위 3건: 연계유형·기준별 점수·첫 원문 근거를 한눈에 (시연 핵심 화면) */
+function TopThree({ recs }: { recs: RecommendationOverview[] }) {
+  const top = recs.slice(0, 3)
+  const ids = top.map((r) => r.recommendation_id).join(',')
+  const { data } = useAsync(() => Promise.all(top.map((r) => getRecommendation(r.recommendation_id))), [ids])
+  if (top.length === 0) return null
+  return (
+    <div className="top3">
+      {top.map((r, i) => {
+        const d = data?.[i]
+        const ev = d?.evidence.find((e) => e.quote)
+        return (
+          <Link key={r.recommendation_id} to={`/recommendations/${r.recommendation_id}`} className="top3-card">
+            <div className="top3-head">
+              <span className="top3-rank">{r.rank}위</span>
+              <span className={`pill linkage-${r.linkage_type_code}`}>{r.linkage_type_name}</span>
+              <span className="top3-score">{score(r.total_score)}</span>
+            </div>
+            <strong>{(r.source_cards ?? []).map((c) => c.title).join(' + ')}</strong>
+            <div className="muted small">{r.owner_department ?? ''}</div>
+            {r.scores && (
+              <div className="top3-scores">
+                {Object.entries(CRITERIA_LABELS).map(([k, label]) => (
+                  <span key={k} title={label}>{label} {score(r.scores?.[k] ?? null)}</span>
+                ))}
+              </div>
+            )}
+            {d && d.evidence.length === 0 && r.evidence_count > 0 && <div className="notice small">🔒 근거 문서 열람 권한 없음</div>}
+            {ev && (
+              <div className="top3-ev">
+                <div className="evidence-src">📄 {ev.document_title}{ev.section_heading && ` · ${ev.section_heading}`}{ev.page_start && ` · ${ev.page_start}쪽`}</div>
+                <blockquote>{ev.quote && ev.quote.length > 90 ? `${ev.quote.slice(0, 90)}…` : ev.quote}</blockquote>
+              </div>
+            )}
+          </Link>
+        )
+      })}
+    </div>
+  )
+}
+
 function Recommendations({ runId }: { runId: number }) {
   const toast = useToast()
   const { busy, run } = useAction()
@@ -92,7 +133,9 @@ function Recommendations({ runId }: { runId: number }) {
   const recs = data.recommendations.filter((r) => !r.is_excluded)
   return (
     <Card title={`매칭 실행 #${data.id} 추천 결과`} actions={<StatusBadge status={data.status} />}>
-      {recs.length === 0 ? <Empty>기준 점수를 넘은 추천이 없습니다.</Empty> : (
+      {recs.length === 0 ? <Empty>기준 점수를 넘은 추천이 없습니다.</Empty> : (<>
+        <TopThree recs={recs} />
+        <h4>전체 추천 ({recs.length}건)</h4>
         <table className="table">
           <thead>
             <tr><th>순위</th><th>연계유형</th><th>기존 성과</th><th>점수</th><th>근거</th><th>상태</th><th>검토 배정 <RoleHint roles={['PLANNER']} /></th></tr>
@@ -121,7 +164,7 @@ function Recommendations({ runId }: { runId: number }) {
             ))}
           </tbody>
         </table>
-      )}
+      </>)}
       <p className="muted small">근거가 없는 추천이나 성과카드 1개짜리 융합형은 DB 규칙에 따라 배정이 거부됩니다 (422).</p>
     </Card>
   )
@@ -169,12 +212,47 @@ function DemandDetailPanel({ demandId }: { demandId: number }) {
   )
 }
 
+/** R&D 성과물 원문 검색: 결과보고서 문단을 의미로 찾는다 (열람 권한이 있는 문서만) */
+function OutcomeSearch() {
+  const { busy, run } = useAction()
+  const [q, setQ] = useState('')
+  const [hits, setHits] = useState<ChunkHit[] | null>(null)
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!q.trim()) return
+    const res = await run(() => searchDocuments(q.trim()))
+    if (res) setHits(res)
+  }
+  return (
+    <Card title="🔍 R&D 성과물 검색">
+      <form className="search-row" onSubmit={submit}>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="예: 광대역 재밍 환경 통신 유지, 회전익 자동비행" />
+        <button className="btn btn-primary" disabled={busy}>{busy ? '검색 중…' : '검색'}</button>
+      </form>
+      {hits && (hits.length === 0 ? <Empty>찾은 원문이 없습니다.</Empty> : (
+        <ul className="evidence">
+          {hits.map((h) => (
+            <li key={h.chunk_id}>
+              <div className="evidence-src">
+                📄 {h.document_title}{h.heading && ` · ${h.heading}`}{h.page_start && ` · ${h.page_start}쪽`}
+                <span className="pill">유사도 {score(h.similarity)}</span>
+              </div>
+              <blockquote>{h.content}</blockquote>
+            </li>
+          ))}
+        </ul>
+      ))}
+    </Card>
+  )
+}
+
 /** 프로젝트 관리: 기획수요 → AI 매칭 → 검토 배정, 성과카드 현황 */
 export function ProjectsPage() {
   const demands = useAsync(listDemands)
   const cards = useAsync(() => listCards())
   const [selected, setSelected] = useState<number | null>(null)
   const [showForm, setShowForm] = useState(false)
+  const [allCards, setAllCards] = useState(false)
   const current = selected ?? demands.data?.[0]?.id ?? null
 
   return (
@@ -207,12 +285,16 @@ export function ProjectsPage() {
         </div>
       </div>
 
-      <Card title="성과 활용카드 (기존 과제 성과)">
+      <OutcomeSearch />
+
+      <Card title={`성과 활용카드 (기존 과제 성과 ${cards.data?.length ?? 0}건)`}
+        actions={(cards.data?.length ?? 0) > 10 && (
+          <button className="btn btn-sm" onClick={() => setAllCards((v) => !v)}>{allCards ? '10건만 보기' : '전체 보기'}</button>)}>
         {cards.data?.length === 0 ? <Empty>성과카드가 없습니다. 큐레이터가 문서 업로드 화면에서 만들 수 있습니다.</Empty> : (
           <table className="table">
             <thead><tr><th>카드번호</th><th>제목</th><th>과제</th><th>TRL</th><th>상태</th><th>수정일</th></tr></thead>
             <tbody>
-              {cards.data?.map((c) => (
+              {cards.data?.slice(0, allCards ? undefined : 10).map((c) => (
                 <tr key={c.id}>
                   <td>{c.card_no}</td><td>{c.title}</td>
                   <td>{c.project_no} <span className="muted small">{c.project_title}</span></td>
