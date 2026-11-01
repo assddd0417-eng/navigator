@@ -152,12 +152,15 @@ python -m app.synthetic all     # 서버를 띄우지 않아도 된다. EMBEDDER
 
 ## LLM 연계이유 문장 (선택)
 
-`RATIONALE_GENERATOR` 기본값 `auto` 는 API 키가 있으면 LLM, 없으면 규칙 템플릿 문장을 쓴다
-(`llm` = 키 유무와 관계없이 항상 시도, `template` = 끄기). LLM 은 추천 저장·근거 연결 뒤에
-**그 추천에 연결된 원문 근거 인용문과 점수만**을 입력으로 연계이유를 다시 쓴다.
+`RATIONALE_GENERATOR` 기본값은 `template`(규칙 템플릿 문장, **외부 전송 없음**)이다.
+`auto` = API 키가 있으면 LLM, 없으면 템플릿 / `llm` = 키 유무와 관계없이 항상 시도.
+LLM 은 추천 저장·근거 연결 뒤에 **그 추천에 연결된 원문 근거 인용문과 점수, 수요·카드 요약(제목·TRL·성능·미해결 기술)**을
+입력으로 연계이유를 다시 쓴다. Anthropic·OpenAI 제공자는 이 내용을 **외부 API 로 전송**한다.
+켜져 있는지는 `curl localhost:8000/health` 의 `rationale.external` 로 확인한다 (`false` 면 외부 전송 없음).
 
 ```bash
 pip install -e ".[llm]"
+export RATIONALE_GENERATOR=auto       # 명시적으로 켜야 한다
 export ANTHROPIC_API_KEY=sk-ant-...   # 모델 기본값 LLM_MODEL=claude-opus-5-5
 
 # 또는 OpenAI
@@ -180,6 +183,7 @@ export OPENAI_API_KEY=sk-proj-...     # 모델 기본값 gpt-5.5 (LLM_MODEL 로 
 - 열람권한: LLM 문장에는 근거 문서 내용이 녹아 있으므로, 입력 근거 문서를 **모두 열람할 수 있는 사용자에게만**
   LLM 문장을 보여 주고 나머지에게는 템플릿 문장을 보여 준다 (`ax.rationale_for_user`, API 응답 `rationale_source`).
 - `LLM_EVIDENCE_MAX_SECURITY`(기본 INTERNAL)를 넘는 보안등급 문서의 원문은 외부 LLM 에 보내지 않는다.
+  수요나 출처 성과카드 자체가 이 등급을 넘으면 그 추천은 아예 호출하지 않고 템플릿을 쓴다 (0018 점검 때 추가).
   폐쇄망 운영 시에는 `app/services/llm.py` 에 사내 LLM 클라이언트를 추가하고 `LLM_PROVIDER` 로 선택한다.
 - 제외 후보(`is_excluded`)는 호출하지 않는다. 실행별 성공/대체 건수는 `match_run.params.rationale_llm` 에 남는다.
 - Bedrock·Vertex 처럼 서버측 대체 모델(`fallbacks`)을 지원하지 않는 경로에서는 `LLM_SERVER_FALLBACK=false`.
