@@ -11,7 +11,14 @@ from dataclasses import dataclass, field
 
 CRITERIA = ("TECH", "PERFORMANCE", "TRL", "ENVIRONMENT", "PURPOSE")
 SINGLE_CARD_TYPES = ("FOLLOW_UP", "ADVANCEMENT", "TRANSITION", "UTILIZATION", "COMMERCIALIZATION")
-COMMERCIAL_PROGRAM_TYPES = {"PARTS_LOCALIZATION", "EXPORT_SUPPORT", "DEFENSE_VENTURE", "CIVIL_MILITARY"}
+# 사업화형 가산을 받는 사업트랙 (linkage_rule.conditions.COMMERCIALIZATION.bonus_program_types 로 바꿀 수 있음).
+# 2026-11-01 BGE-M3 실측에서 전환형 정답 4건이 모두 사업화형으로 예측돼 조정:
+# - 민군겸용(CIVIL_MILITARY)은 뺐다 (정답이 활용·후속형)
+# - 성과가 수요와 다른 무기체계 소속이면 가산하지 않는다 (그건 전환형 신호다)
+COMMERCIAL_PROGRAM_TYPES = ("PARTS_LOCALIZATION", "EXPORT_SUPPORT", "DEFENSE_VENTURE")
+COMMERCIAL_TECH_FACTOR = 0.7   # 기업·품목이 있을 때 사업화형 = 기술유사도 × 이 값 (+ 트랙 가산)
+COMMERCIAL_PROGRAM_BONUS = 0.3
+UTILIZATION_UNKNOWN_PERF = 0.8  # TRL 충족·요구성능 비교 불가일 때 활용형 계수 (충족 1.0, 미달 0.2)
 NEUTRAL = 0.5
 
 
@@ -190,11 +197,18 @@ def classify(c: CardCandidate, d: DemandContext, scores: dict[str, CriterionScor
 
     min_trl = conditions.get("UTILIZATION", {}).get("min_trl", 6)
     mature = c.trl is not None and c.trl >= min_trl
-    signals["UTILIZATION"] = tech * (1.0 if mature and all_met else 0.6 if mature and all_met is None else 0.2)
+    util = conditions.get("UTILIZATION", {})
+    unknown = util.get("unknown_performance_factor", UTILIZATION_UNKNOWN_PERF)
+    signals["UTILIZATION"] = tech * (1.0 if mature and all_met else unknown if mature and all_met is None else 0.2)
     reasons["UTILIZATION"] = f"TRL {c.trl} (기준 {min_trl})" + (", 요구성능 충족" if all_met else "")
 
-    commercial = d.target_program_type in COMMERCIAL_PROGRAM_TYPES
-    signals["COMMERCIALIZATION"] = (tech * 0.7 + (0.3 if commercial else 0.0)) if c.has_company_or_item else tech * 0.15
+    com = conditions.get("COMMERCIALIZATION", {})
+    commercial = d.target_program_type in com.get("bonus_program_types", COMMERCIAL_PROGRAM_TYPES)
+    if diff_ws and com.get("no_bonus_on_different_weapon_system", True):
+        commercial = False
+    bonus = com.get("program_bonus", COMMERCIAL_PROGRAM_BONUS) if commercial else 0.0
+    signals["COMMERCIALIZATION"] = (tech * com.get("tech_factor", COMMERCIAL_TECH_FACTOR) + bonus) \
+        if c.has_company_or_item else tech * 0.15
     reasons["COMMERCIALIZATION"] = ("관련 기업·품목 정보 있음" if c.has_company_or_item else "기업·품목 연계 없음") \
         + (", 사업화 성격 사업트랙" if commercial else "")
 

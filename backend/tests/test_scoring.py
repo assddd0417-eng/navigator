@@ -65,3 +65,32 @@ def test_weighted_total_uses_rule_weights():
     scores = criterion_scores(c, DemandContext(1, "d", 5, 7), None)
     total = weighted_total(scores, {"tech": 1.0, "performance": 0, "trl": 0, "environment": 0, "purpose": 0})
     assert total == 1.0
+
+
+def test_commercialization_bonus_rules():
+    """사업화 가산: 국산화·수출·벤처 트랙만, 민군겸용 제외, 다른 무기체계 성과면 가산 없음 (전환형 신호)."""
+    hits = {"PRINCIPLE": FacetHit(0.6), "CORE_TECH": FacetHit(0.6)}
+    same_ws = _card(weapon_system_ids={1}, hits=hits, has_company_or_item=True)
+    diff_ws = _card(weapon_system_ids={2}, hits=hits, has_company_or_item=True)
+
+    def top(c, program):
+        d = DemandContext(1, "d", None, None, weapon_system_ids={1}, target_program_type=program)
+        s, _ = classify(c, d, criterion_scores(c, d, None), {})
+        return max(s, key=s.get)
+
+    assert top(same_ws, "PARTS_LOCALIZATION") == "COMMERCIALIZATION"
+    assert top(diff_ws, "PARTS_LOCALIZATION") == "TRANSITION"
+    assert top(same_ws, "CIVIL_MILITARY") != "COMMERCIALIZATION"
+    # 규칙 표(linkage_rule.conditions)로 가산 트랙을 바꿀 수 있다
+    d = DemandContext(1, "d", None, None, weapon_system_ids={1}, target_program_type="CIVIL_MILITARY")
+    s, _ = classify(same_ws, d, criterion_scores(same_ws, d, None),
+                    {"COMMERCIALIZATION": {"bonus_program_types": ["CIVIL_MILITARY"]}})
+    assert max(s, key=s.get) == "COMMERCIALIZATION"
+
+
+def test_utilization_when_performance_unknown():
+    """TRL 충족·요구성능 비교 불가면 활용형이 고도화형(성능 격차 없음)보다 앞선다."""
+    c = _card(trl=7, hits={"CORE_TECH": FacetHit(0.7)})
+    d = DemandContext(1, "d", 6, 9)
+    s, _ = classify(c, d, criterion_scores(c, d, None), {})
+    assert s["UTILIZATION"] > s["ADVANCEMENT"]
