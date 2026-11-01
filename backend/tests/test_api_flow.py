@@ -273,3 +273,109 @@ async def test_regenerate_rationale_endpoint(client, monkeypatch):
     # 최종판정이 끝난 추천은 바꿀 수 없다
     r = await client.post(f"/recommendations/{state['rec']}/rationale", headers=as_user(PLANNER))
     assert r.status_code == 409 and "DECIDED" in r.json()["detail"]
+
+
+# -----------------------------------------------------------------------------
+# 0018 권한·감사 보강 (2026-11 최종 점검)
+# -----------------------------------------------------------------------------
+async def test_health_reports_no_external_llm_by_default(client):
+    rationale = (await client.get("/health")).json()["rationale"]
+    assert rationale == {"generator": "template", "external": False, "max_security_sent": None}
+
+
+async def test_recommendation_hidden_below_card_clearance(client):
+    """VIEWER(PUBLIC)는 INTERNAL 카드·수요를 직접 못 보므로 추천·매칭 실행·이력으로도 못 본다."""
+    rec = state["rec"]
+    assert (await client.get(f"/cards/{state['card_a']}", headers=as_user(VIEWER))).status_code == 404
+    assert (await client.get(f"/recommendations/{rec}", headers=as_user(VIEWER))).status_code == 404
+    assert (await client.get(f"/recommendations/{rec}/history", headers=as_user(VIEWER))).status_code == 404
+    run_id = (await client.get(f"/recommendations/{rec}", headers=as_user(PLANNER))).json()["match_run_id"]
+    assert (await client.get(f"/match-runs/{run_id}", headers=as_user(VIEWER))).json()["recommendations"] == []
+    assert (await client.get(f"/match-runs/{run_id}", headers=as_user(PLANNER))).json()["recommendations"]
+
+
+async def test_viewer_cannot_write_review_items(client):
+    rec = state["rec"]
+    r = await client.post(f"/recommendations/{rec}/comments", headers=as_user(VIEWER), json={"body": "조회자 의견"})
+    assert r.status_code == 403
+    r = await client.post(f"/recommendations/{rec}/confirmations", headers=as_user(VIEWER),
+                          json={"subject_type": "OTHER", "description": "x"})
+    assert r.status_code == 403
+    r = await client.post(f"/recommendations/{rec}/comments", headers=as_user(EXPERT), json={"body": "전문가 의견"})
+    assert r.status_code == 201
+    hist = (await client.get(f"/recommendations/{rec}/history", headers=as_user(PLANNER))).json()
+    assert any(a["table_name"] == "review_comment" for a in await _audit_rows("review_comment"))
+    # 감사 로그 응답에는 LLM 문장 컬럼이 없다 (열람권한별 표시는 rationale_for_user 가 담당)
+    assert all("rationale_llm" not in (a["new_data"] or {}) and "rationale_llm" not in (a["old_data"] or {})
+               for a in hist["audit"])
+
+
+async def _audit_rows(table: str) -> list[dict]:
+    import psycopg
+    from psycopg.rows import dict_row
+
+    from tests.conftest import TEST_URL
+    async with await psycopg.AsyncConnection.connect(TEST_URL, row_factory=dict_row) as conn:
+        return await (await conn.execute("SELECT * FROM ax.audit_log WHERE table_name = %s", (table,))).fetchall()
+
+
+async def _sql(query: str, params=()):
+    import psycopg
+
+    from tests.conftest import TEST_URL
+    async with await psycopg.AsyncConnection.connect(TEST_URL, autocommit=True) as conn:
+        await conn.execute(query, params)
+
+
+async def test_final_decision_only_by_owner_department(client):
+    """타 부서 DEPT_REVIEWER 는 최종판정 불가. 소관부서(통신팀=3) 검토자는 가능."""
+    await _sql("INSERT INTO ax.app_user (id, login_id, name, department_id, clearance_code) "
+               "VALUES (6, 'reviewer2', '타부서검토자', 2, 'RESTRICTED') ON CONFLICT DO NOTHING")
+    await _sql("INSERT INTO ax.user_role (user_id, role_code) VALUES (6, 'DEPT_REVIEWER') ON CONFLICT DO NOTHING")
+    r = await client.post("/demands", headers=as_user(PLANNER), json={
+        "demand_no": "DM-2026-018", "title": "항재밍 동기 유지 개선", "tech_need": "광대역 재밍 환경 주파수 도약 동기 유지"})
+    run_id = (await client.post(f"/demands/{r.json()['id']}/match", headers=as_user(PLANNER))).json()["id"]
+    recs = (await client.get(f"/match-runs/{run_id}", headers=as_user(PLANNER))).json()["recommendations"]
+    rec = next(x for x in recs if x["source_cards"][0]["card_id"] == state["card_a"]
+               and x["linkage_type_code"] != "CONVERGENCE")["recommendation_id"]
+    r = await client.post(f"/recommendations/{rec}/assignments", headers=as_user(PLANNER),
+                          json={"review_role": "DEPT_OWNER", "assignee_dept_id": 3})
+    assert r.status_code == 201, r.text
+    r = await client.post(f"/recommendations/{rec}/decisions", headers=as_user(6),
+                          json={"decision_code": "ADOPT", "is_final": True})
+    assert r.status_code == 403 and "소관부서" in r.json()["detail"]
+    r = await client.post(f"/recommendations/{rec}/decisions", headers=as_user(REVIEWER),
+                          json={"decision_code": "ADOPT", "is_final": True})
+    assert r.status_code == 201, r.text
+
+
+async def test_append_only_tables_cannot_be_truncated(client):
+    import psycopg
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        await _sql("TRUNCATE ax.audit_log")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        await _sql("TRUNCATE ax.review_decision")
+
+
+async def test_llm_not_called_above_security_cap(client, monkeypatch):
+    """성과카드가 LLM_EVIDENCE_MAX_SECURITY(INTERNAL)를 넘으면 카드 정보도 외부 LLM 에 보내지 않는다."""
+    calls: list[str] = []
+
+    class Spy(_FakeLLM):
+        async def complete(self, system, user):
+            calls.append(user)
+            return self.reply
+
+    from app.services import matching
+    from app.services.rationale import LLMRationaleWriter
+    await _sql("UPDATE ax.achievement_card SET security_code = 'RESTRICTED' WHERE id = %s", (state["card_a"],))
+    try:
+        monkeypatch.setattr(matching, "get_llm_writer", lambda s: LLMRationaleWriter(Spy("x [E1].")))
+        r = await client.post(f"/demands/{state['demand']}/match", headers=as_user(PLANNER), json={"top_k": 10})
+        run = (await client.get(f"/match-runs/{r.json()['id']}", headers=as_user(PLANNER))).json()
+        top = next(x for x in run["recommendations"] if x["source_cards"][0]["card_id"] == state["card_a"])
+        assert top["rationale_generation"]["status"] == "FALLBACK"
+        assert "보안등급" in top["rationale_generation"]["error"]
+        assert not any("항재밍 주파수 도약 데이터링크" in u for u in calls)
+    finally:
+        await _sql("UPDATE ax.achievement_card SET security_code = 'INTERNAL' WHERE id = %s", (state["card_a"],))

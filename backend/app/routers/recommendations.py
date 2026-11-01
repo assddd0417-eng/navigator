@@ -13,6 +13,17 @@ from app.services.matching import regenerate_llm_rationale
 from app.services.rationale import get_llm_writer
 
 router = APIRouter(tags=["추천·HITL 검토"])
+# 검토 참여(의견·확인사항) 가능 역할. VIEWER 는 조회 전용
+PARTICIPANTS = ("PLANNER", "DEPT_REVIEWER", "EXPERT", "CURATOR")
+# 감사 로그 응답에서 빼는 컬럼: LLM 문장은 열람권한별로 ax.rationale_for_user 가 고른다 (0017)
+AUDIT_HIDDEN = ["rationale_llm", "rationale_meta"]
+
+
+async def ensure_visible(conn, user_id: int, rec_id: int) -> None:
+    """수요·출처 성과카드 보안등급을 모두 열람할 수 있어야 추천을 볼 수 있다 (0018). 아니면 404."""
+    row = await (await conn.execute("SELECT ax.can_view_recommendation(%s, %s) AS ok", (user_id, rec_id))).fetchone()
+    if not row["ok"]:
+        raise NotFound("추천", rec_id)
 
 # 연계이유는 사용자별로 고른다: LLM 문장은 그 입력 근거 문서를 모두 열람할 수 있을 때만 (0017)
 OVERVIEW_SQL = """SELECT o.*, rf.rationale AS visible_rationale, rf.rationale_source,
@@ -40,7 +51,8 @@ async def get_match_run(run_id: int, user: CurrentUser = Depends(get_current_use
         if run is None:
             raise NotFound("매칭 실행", run_id)
         rows = await (await conn.execute(
-            OVERVIEW_SQL + " WHERE o.match_run_id = %s ORDER BY o.rank", (user.id, run_id))).fetchall()
+            OVERVIEW_SQL + " WHERE o.match_run_id = %s AND ax.can_view_recommendation(%s, o.recommendation_id) "
+            "ORDER BY o.rank", (user.id, run_id, user.id))).fetchall()
         run["recommendations"] = [_visible_rationale(r) for r in rows]
     return run
 
@@ -49,7 +61,8 @@ async def get_match_run(run_id: int, user: CurrentUser = Depends(get_current_use
 async def get_recommendation(rec_id: int, user: CurrentUser = Depends(get_current_user)):
     async with transaction(user.id) as conn:
         rec = await (await conn.execute(
-            OVERVIEW_SQL + " WHERE o.recommendation_id = %s", (user.id, rec_id))).fetchone()
+            OVERVIEW_SQL + " WHERE o.recommendation_id = %s AND ax.can_view_recommendation(%s, o.recommendation_id)",
+            (user.id, rec_id, user.id))).fetchone()
         if rec is None:
             raise NotFound("추천", rec_id)
         _visible_rationale(rec)
@@ -91,6 +104,7 @@ async def regenerate_rationale(rec_id: int, user: CurrentUser = Depends(require_
     if writer is None:
         raise Conflict("LLM 연계이유 생성이 꺼져 있습니다 (RATIONALE_GENERATOR·LLM_PROVIDER·API 키 확인)")
     async with transaction(user.id) as conn:
+        await ensure_visible(conn, user.id, rec_id)
         result = await regenerate_llm_rationale(conn, rec_id, writer)
         shown = await (await conn.execute(
             "SELECT * FROM ax.rationale_for_user(%s, %s)", (user.id, rec_id))).fetchone()
@@ -102,6 +116,7 @@ async def assign(rec_id: int, body: AssignmentCreate, user: CurrentUser = Depend
                  rid: str = Depends(request_id)):
     """검토 배정. 근거 없는 추천·카드 1개 융합형은 DB 가드가 거부한다 (422)."""
     async with transaction(user.id, rid) as conn:
+        await ensure_visible(conn, user.id, rec_id)
         return Created(id=await insert(conn, "review_assignment", {
             **body.model_dump(), "recommendation_id": rec_id, "assigned_by": user.id}))
 
@@ -112,6 +127,7 @@ async def decide(rec_id: int, body: DecisionCreate,
                  rid: str = Depends(request_id)):
     """검토 의견·판정. 최종판정(is_final)은 DEPT_REVIEWER 만 가능하며 DB 가 다시 검증한다."""
     async with transaction(user.id, rid) as conn:
+        await ensure_visible(conn, user.id, rec_id)
         await set_status_reason(conn, body.opinion)
         return Created(id=await insert(conn, "review_decision", {
             **body.model_dump(), "recommendation_id": rec_id, "reviewer_id": user.id}))
@@ -121,6 +137,7 @@ async def decide(rec_id: int, body: DecisionCreate,
 async def withdraw(rec_id: int, body: WithdrawRequest, user: CurrentUser = Depends(require_roles("PLANNER")),
                    rid: str = Depends(request_id)):
     async with transaction(user.id, rid) as conn:
+        await ensure_visible(conn, user.id, rec_id)
         await set_status_reason(conn, body.reason)
         cur = await conn.execute(
             "UPDATE ax.recommendation SET status = 'WITHDRAWN' WHERE id = %s AND status <> 'DECIDED'", (rec_id,))
@@ -130,45 +147,50 @@ async def withdraw(rec_id: int, body: WithdrawRequest, user: CurrentUser = Depen
 
 @router.get("/recommendations/{rec_id}/history")
 async def history(rec_id: int, user: CurrentUser = Depends(get_current_user)):
-    """검토 이력: 상태 변경 + 판정 + 감사 로그."""
+    """검토 이력: 상태 변경 + 판정 + 감사 로그 (LLM 문장 컬럼은 뺀다)."""
     async with transaction(user.id) as conn:
+        await ensure_visible(conn, user.id, rec_id)
         status_rows = await (await conn.execute(
             "SELECT h.*, u.name AS changed_by_name FROM ax.recommendation_status_history h "
             "LEFT JOIN ax.app_user u ON u.id = h.changed_by WHERE h.recommendation_id = %s ORDER BY h.id",
             (rec_id,))).fetchall()
         audit = await (await conn.execute(
-            """SELECT a.occurred_at, a.table_name, a.action, a.actor_user_id, a.changed_fields, a.old_data, a.new_data
+            """SELECT a.occurred_at, a.table_name, a.action, a.actor_user_id, a.changed_fields,
+                      a.old_data - %(hidden)s::text[] AS old_data, a.new_data - %(hidden)s::text[] AS new_data
                  FROM ax.audit_log a
                 WHERE (a.table_name = 'recommendation' AND a.row_pk = jsonb_build_object('id', %(id)s::bigint))
                    OR (a.table_name IN ('review_decision','review_assignment','recommendation_source_card',
                                         'recommendation_department','recommendation_company','confirmation_item')
                        AND COALESCE(a.new_data, a.old_data) ->> 'recommendation_id' = %(id)s::text)
-                ORDER BY a.id""", {"id": rec_id})).fetchall()
+                ORDER BY a.id""", {"id": rec_id, "hidden": AUDIT_HIDDEN})).fetchall()
     return {"status_history": status_rows, "audit": audit}
 
 
 @router.post("/recommendations/{rec_id}/comments", response_model=Created, status_code=201)
-async def comment(rec_id: int, body: CommentCreate, user: CurrentUser = Depends(get_current_user),
+async def comment(rec_id: int, body: CommentCreate, user: CurrentUser = Depends(require_roles(*PARTICIPANTS)),
                   rid: str = Depends(request_id)):
     async with transaction(user.id, rid) as conn:
+        await ensure_visible(conn, user.id, rec_id)
         return Created(id=await insert(conn, "review_comment", {
             **body.model_dump(), "recommendation_id": rec_id, "author_id": user.id}))
 
 
 @router.post("/recommendations/{rec_id}/confirmations", response_model=Created, status_code=201)
-async def add_confirmation(rec_id: int, body: ConfirmationCreate, user: CurrentUser = Depends(get_current_user),
-                           rid: str = Depends(request_id)):
+async def add_confirmation(rec_id: int, body: ConfirmationCreate,
+                           user: CurrentUser = Depends(require_roles(*PARTICIPANTS)), rid: str = Depends(request_id)):
     async with transaction(user.id, rid) as conn:
+        await ensure_visible(conn, user.id, rec_id)
         return Created(id=await insert(conn, "confirmation_item", {**body.model_dump(), "recommendation_id": rec_id}))
 
 
 @router.patch("/confirmations/{item_id}", status_code=204)
-async def resolve_confirmation(item_id: int, body: ConfirmationResolve, user: CurrentUser = Depends(get_current_user),
-                               rid: str = Depends(request_id)):
+async def resolve_confirmation(item_id: int, body: ConfirmationResolve,
+                               user: CurrentUser = Depends(require_roles(*PARTICIPANTS)), rid: str = Depends(request_id)):
     async with transaction(user.id, rid) as conn:
         cur = await conn.execute(
             "UPDATE ax.confirmation_item SET status = %s, resolution_note = %s, resolved_by = %s, resolved_at = now() "
-            "WHERE id = %s AND status = 'OPEN'", (body.status, body.resolution_note, user.id, item_id))
+            "WHERE id = %s AND status = 'OPEN' AND ax.can_view_recommendation(%s, recommendation_id)",
+            (body.status, body.resolution_note, user.id, item_id, user.id))
         if cur.rowcount == 0:
             raise NotFound("미해결 확인사항", item_id)
 
@@ -179,6 +201,7 @@ async def review_queue(mine: bool = True, user: CurrentUser = Depends(get_curren
     async with transaction(user.id) as conn:
         return await (await conn.execute(
             """SELECT * FROM ax.v_review_queue
-                WHERE NOT %(mine)s OR assignee_user_id = %(uid)s OR assignee_dept_id = %(dept)s
+                WHERE (NOT %(mine)s OR assignee_user_id = %(uid)s OR assignee_dept_id = %(dept)s)
+                  AND ax.can_view_recommendation(%(uid)s, recommendation_id)
                 ORDER BY is_overdue DESC, due_at NULLS LAST, assigned_at""",
             {"mine": mine, "uid": user.id, "dept": user.department_id})).fetchall()

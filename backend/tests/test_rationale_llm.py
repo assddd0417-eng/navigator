@@ -216,10 +216,10 @@ def test_openai_credentials_for_auto_mode(monkeypatch):
 
 def test_get_llm_writer_selection(monkeypatch):
     assert rat.get_llm_writer(Settings(rationale_generator="template")) is None
-    # auto(기본): 키가 없으면 템플릿, 있으면 LLM
+    # 기본은 template (외부 전송 없음). auto: 키가 없으면 템플릿, 있으면 LLM
     for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
         monkeypatch.delenv(k, raising=False)
-    assert Settings.model_fields["rationale_generator"].default == "auto"
+    assert Settings.model_fields["rationale_generator"].default == "template"
     monkeypatch.setattr(rat, "build_llm_client", lambda s: FakeLLM("x"))
     assert rat.get_llm_writer(Settings(rationale_generator="auto")) is None
     assert rat.get_llm_writer(Settings(rationale_generator="auto", anthropic_api_key="k")) is not None

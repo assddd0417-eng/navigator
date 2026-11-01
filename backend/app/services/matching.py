@@ -314,7 +314,20 @@ async def write_llm_rationales(conn: AsyncConnection, items: list[tuple[int, Dra
                                writer: LLMRationaleWriter) -> dict:
     """저장된 추천에 LLM 연계이유를 붙인다. 실패한 추천은 템플릿 문장(rationale)을 그대로 쓴다."""
     s = get_settings()
-    inputs = [(rec_id, d, await load_llm_evidence(conn, rec_id, s.llm_evidence_max_security)) for rec_id, d in items]
+    # 수요·성과카드 자체가 상한 등급을 넘으면 제목·성능·미해결 기술(facts)도 외부로 보내지 않는다
+    blocked = {r["id"] for r in await (await conn.execute(
+        """SELECT r.id FROM ax.recommendation r
+            WHERE r.id = ANY(%(ids)s) AND (
+                  EXISTS (SELECT 1 FROM ax.planning_demand d JOIN ax.code_security_level l ON l.code = d.security_code
+                           WHERE d.id = r.demand_id AND l.level_rank > (SELECT level_rank FROM ax.code_security_level WHERE code = %(max)s))
+               OR EXISTS (SELECT 1 FROM ax.recommendation_source_card rsc
+                            JOIN ax.achievement_card ac ON ac.id = rsc.card_id
+                            JOIN ax.code_security_level l ON l.code = ac.security_code
+                           WHERE rsc.recommendation_id = r.id
+                             AND l.level_rank > (SELECT level_rank FROM ax.code_security_level WHERE code = %(max)s)))""",
+        {"ids": [rec_id for rec_id, _ in items], "max": s.llm_evidence_max_security})).fetchall()}
+    inputs = [(rec_id, d, await load_llm_evidence(conn, rec_id, s.llm_evidence_max_security))
+              for rec_id, d in items if rec_id not in blocked]
     sem = asyncio.Semaphore(max(1, s.llm_concurrency))
 
     async def one(d: Draft, evidence: list[EvidenceSnippet]):
@@ -327,6 +340,11 @@ async def write_llm_rationales(conn: AsyncConnection, items: list[tuple[int, Dra
 
     results = await asyncio.gather(*(one(d, ev) for _, d, ev in inputs))
     ok = 0
+    for rec_id in blocked:
+        meta = {"generator": writer.name, "status": "FALLBACK",
+                "error": f"보안등급 상한({s.llm_evidence_max_security}) 초과 수요·성과카드: 외부 LLM 에 보내지 않음"}
+        await conn.execute("UPDATE ax.recommendation SET rationale_llm = NULL, rationale_meta = %s WHERE id = %s",
+                           (json.dumps(meta, ensure_ascii=False), rec_id))
     for (rec_id, _, _), res in zip(inputs, results):
         if isinstance(res, Exception):
             log.warning("추천 %s LLM 연계이유 실패, 템플릿 사용: %s", rec_id, res)

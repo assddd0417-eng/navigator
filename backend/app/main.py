@@ -6,10 +6,12 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Request
 
 from app.auth import CurrentUser, get_current_user
+from app.config import get_settings
 from app.db import close_pool, open_pool, transaction
 from app.errors import install_error_handlers
 from app.routers import cards, demands, documents, kpi, recommendations
 from app.services.embedding import activate_model, embedding_status, get_embedder
+from app.services.rationale import get_llm_writer
 
 log = logging.getLogger("app")
 
@@ -53,7 +55,12 @@ async def health():
             "SELECT max(version) AS schema_version, (SELECT extversion FROM pg_extension WHERE extname = 'vector') AS pgvector "
             "FROM ax.schema_migrations")).fetchone()
         embedding = await embedding_status(conn)
-    return {"status": "ok", **row, "embedding": embedding}
+    s = get_settings()
+    writer = get_llm_writer(s)
+    # 외부 전송 여부를 한눈에: LLM 연계이유가 켜져 있으면 external=true (전송 대상 제공자 표시)
+    rationale = {"generator": writer.name if writer else "template", "external": writer is not None,
+                 "max_security_sent": s.llm_evidence_max_security if writer else None}
+    return {"status": "ok", **row, "embedding": embedding, "rationale": rationale}
 
 
 @app.get("/me", tags=["시스템"])
