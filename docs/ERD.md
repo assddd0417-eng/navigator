@@ -131,6 +131,7 @@ erDiagram
 | `0020_navigator_field_sources` | Navigator 출처 기록 | `external_source`, `external_fetch_job`, `external_raw_record`, `company_field_source`, `v_company_field_compare` |
 | `0021_navigator_announcements` | Navigator 공고 | `announcement`, `announcement_requirement`, `announcement_tech_need`, `code_requirement_type`, `code_credit_grade`, `v_announcement` |
 | `0022_navigator_matching` | Navigator 매칭·판정 | `company_embedding`, `announcement_embedding`, `company_match_run`, `company_recommendation`, `company_recommendation_score`, `eligibility_check`, `company_recommendation_evidence`, `eligibility_answer` |
+| `0024_navigator_alerts` | Navigator 공고 알림 | `alert_subscription`, `alert_notification` |
 
 합계: 테이블 90개, 뷰 7개.
 

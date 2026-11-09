@@ -395,4 +395,11 @@ check "사업자번호 없음 · 신용등급 요건 결과 가림" \
          and all(.checks[]; (.req_type_code != "MIN_CREDIT_GRADE") or (.result == null)))'
 api "관리 링크 없이 내 매칭" 401 POST /navigator/manage/matches -
 
+
+section "⑪ Navigator 공고 알림"
+api "관리 링크 없이 구독 목록" 401 GET /navigator/manage/subscriptions -
+api "잘못된 확인 링크" 404 POST /navigator/subscriptions/confirm - '{"token":"xxxxxxxxxxxxxxxx"}'
+api "잘못된 해지 링크" 404 POST /navigator/subscriptions/unsubscribe - '{"token":"xxxxxxxxxxxxxxxx"}'
+api "공고 알림 현황은 담당자만 (VIEWER)" 403 GET /navigator/alerts/announcements/101 "$VIEWER"
+api "공고 101 알림 현황 (PLANNER)" 200 GET /navigator/alerts/announcements/101 "$PLANNER"
 summary

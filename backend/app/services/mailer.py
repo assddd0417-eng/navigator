@@ -25,6 +25,7 @@ def send(to: str, subject: str, body: str) -> None:
         raise NotImplementedError(f"MAILER={mode} 미지원")
     OUTBOX.append(Mail(to, subject, body))
     log.info("[목업 메일] to=%s subject=%s", mask_email(to), subject)
+    log.debug("[목업 메일 본문]\n%s", body)
 
 
 def mask_email(email: str) -> str:

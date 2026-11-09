@@ -47,7 +47,7 @@ src/
   pages/worker/         MyTasksPage, DocumentUploadPage
   pages/shared/         RecommendationPage (추천 근거·검토 판정·의견·이력)
   api/navigator.ts      Navigator API (기업 쪽은 X-User-Id 없음, 관리 링크는 X-Manage-Token)
-  pages/navigator/      기업 화면 (로그인 없음): CompanySearchPage(/navigator), CompanyRegisterPage, CompanyManagePage(관리 링크)
+  pages/navigator/      기업 화면 (로그인 없음): CompanySearchPage(/navigator), CompanyRegisterPage, CompanyManagePage(관리 링크), AlertsPanel, SubscriptionLinkPage(메일 링크)
   pages/admin/NavigatorStaffPage  담당자: 공고별 적합 기업 (/staff/navigator)
 ```
 

@@ -48,6 +48,7 @@ ON CONFLICT (id) DO UPDATE SET
 
 DELETE FROM announcement_requirement WHERE announcement_id BETWEEN 101 AND 105;
 DELETE FROM announcement_tech_need   WHERE announcement_id BETWEEN 101 AND 105;
+DELETE FROM announcement_embedding   WHERE announcement_id BETWEEN 101 AND 105;  -- 요구기술 id 가 바뀌므로 다시 임베딩
 
 -- 자격요건
 INSERT INTO announcement_requirement (announcement_id, req_type_code, rule, is_mandatory, description,

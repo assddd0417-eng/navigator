@@ -61,7 +61,8 @@ async def latest_announcement_run(ann_id: int, verdict: str | None = None,
     async with transaction() as conn:
         row = await (await conn.execute(
             """SELECT id FROM ax.company_match_run WHERE announcement_id = %s
-                  AND direction = 'ANNOUNCEMENT_TO_COMPANY' ORDER BY created_at DESC, id DESC LIMIT 1""",
+                  AND direction = 'ANNOUNCEMENT_TO_COMPANY' AND requested_via <> 'SYSTEM'
+                ORDER BY created_at DESC, id DESC LIMIT 1""",
             (ann_id,))).fetchone()
         if row is None:
             return {"run": None, "summary": {v: 0 for v in VERDICTS}, "recommendations": []}

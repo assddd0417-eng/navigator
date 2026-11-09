@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  latestAnnouncementRun, listAnnouncements, runAnnouncementMatching, SIZE_LABELS, staffCompanyProfile,
-  VERDICT_LABELS, type AnnouncementRow, type FullProfile, type MatchRun, type Verdict,
+  dispatchAnnouncementAlerts, getAnnouncementAlerts, latestAnnouncementRun, listAnnouncements, runAnnouncementMatching, SIZE_LABELS, staffCompanyProfile,
+  VERDICT_LABELS, VERDICT_TONES, type AnnouncementAlerts, type AnnouncementRow, type FullProfile, type MatchRun, type Verdict,
 } from '../../api/navigator'
 import { Card, Empty, fmtDate, PageHeader, RoleHint, useAction, useAsync } from '../../components/ui'
 import { fmtDay, fmtKrw, MatchItem, VerdictSummary } from '../navigator/components'
@@ -103,6 +103,8 @@ export function NavigatorStaffPage() {
           )}
 
           {company && <CompanyCard p={company} onClose={() => setCompany(null)} />}
+
+          {ann && <AlertsCard ann={ann} />}
         </div>
       </div>
     </>
@@ -159,5 +161,56 @@ function CompanyCard({ p, onClose }: { p: FullProfile; onClose: () => void }) {
       </div>
     </Card>
     </div>
+  )
+}
+
+const ALERT_STATUS: Record<string, [string, string]> = {
+  PENDING: ['대기', 'warn'], SENT: ['보냄', 'ok'], FAILED: ['실패', 'bad'], READ: ['읽음', 'muted'],
+}
+
+function AlertsCard({ ann }: { ann: AnnouncementRow }) {
+  const [data, setData] = useState<AnnouncementAlerts | null>(null)
+  const [last, setLast] = useState<string | null>(null)
+  const { busy, run } = useAction()
+
+  useEffect(() => {
+    setData(null); setLast(null)
+    void run(async () => setData(await getAnnouncementAlerts(ann.id)))
+  }, [ann.id, run])
+
+  const send = () => run(async () => {
+    const r = await dispatchAnnouncementAlerts(ann.id)
+    setLast(`새 알림 ${r.notifications}건, 메일 ${r.emails_sent}건 발송${r.emails_failed ? `, 실패 ${r.emails_failed}건` : ''}`)
+    setData(await getAnnouncementAlerts(ann.id))
+  })
+
+  const canSend = ann.status === 'PUBLISHED' && ann.receipt_state !== 'CLOSED'
+  return (
+    <Card title="구독 기업 알림" actions={canSend &&
+      <button className="btn btn-sm" disabled={busy} onClick={() => void send()}>미발송 기업에 보내기</button>}>
+      <p className="small muted">
+        공고가 공개되면 알림을 구독한 기업만 판정해서 적합·정보부족이면 화면과 이메일로 알립니다.
+        {data && ` 구독 기업 ${data.subscribed_companies}곳.`}
+      </p>
+      {last && <div className="notice notice-ok small">{last}</div>}
+      {!data ? <div className="page-loading">불러오는 중…</div> : data.notifications.length === 0 ? (
+        <Empty>보낸 알림이 없습니다.</Empty>
+      ) : (
+        <table className="table">
+          <thead><tr><th>기업</th><th>판정</th><th>총점</th><th>상태</th><th>보낸 시각</th></tr></thead>
+          <tbody>
+            {data.notifications.map((n) => (
+              <tr key={n.id}>
+                <td>{n.company_name}</td>
+                <td><span className={`badge badge-${VERDICT_TONES[n.verdict]}`}>{n.verdict_label}</span></td>
+                <td className="num">{n.total_score.toFixed(2)}</td>
+                <td><span className={`badge badge-${ALERT_STATUS[n.status][1]}`}>{ALERT_STATUS[n.status][0]}</span></td>
+                <td className="nowrap">{fmtDate(n.sent_at ?? n.created_at)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </Card>
   )
 }
