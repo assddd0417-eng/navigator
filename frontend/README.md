@@ -46,7 +46,12 @@ src/
   pages/admin/          DashboardPage, ProjectsPage, ReviewQueuePage
   pages/worker/         MyTasksPage, DocumentUploadPage
   pages/shared/         RecommendationPage (추천 근거·검토 판정·의견·이력)
+  api/navigator.ts      Navigator API (기업 쪽은 X-User-Id 없음, 관리 링크는 X-Manage-Token)
+  pages/navigator/      기업 화면 (로그인 없음): CompanySearchPage(/navigator), CompanyRegisterPage, CompanyManagePage(관리 링크)
+  pages/admin/NavigatorStaffPage  담당자: 공고별 적합 기업 (/staff/navigator)
 ```
+
+Navigator 화면 확인 순서는 `docs/navigator.md` 참고.
 
 운영 전환 시 `api/client.ts` 의 X-User-Id 주입을 SSO 토큰(Authorization 헤더)으로, `LoginPage` 를 SSO 리다이렉트로 바꾸면 된다.
 

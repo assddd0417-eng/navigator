@@ -1,4 +1,4 @@
-"""Navigator 3단계: 자격요건 판정 · 기업↔공고 매칭 (두 방향) · 보완질문과 답 · 공개 조회 가리기."""
+"""Navigator 매칭·자격요건 판정 테스트."""
 import os
 import re
 import subprocess
@@ -25,7 +25,7 @@ HANBIT, NURI, SAEBOM = 101, 102, 103            # 가상 기업 (seeds/navigator
 SEED_ANNS = {101, 102, 103, 104, 105}            # 가상 공고 (seeds/navigator_announcements.sql)
 AS_OF = date(2026, 12, 15)
 
-# 의도한 판정 (docs/navigator.md 3단계 표): 공고 → {기업: 판정}
+# 공고별 기대 판정 (docs/navigator.md 와 같음)
 EXPECTED = {
     101: {HANBIT: "ELIGIBLE", NURI: "INELIGIBLE", SAEBOM: "INELIGIBLE"},
     102: {HANBIT: "INELIGIBLE", NURI: "ELIGIBLE", SAEBOM: "INELIGIBLE"},
@@ -45,9 +45,6 @@ def _req(t: str, rule: dict, mandatory: bool = True, rid: int = 1) -> Requiremen
     return Requirement(rid, t, rule, mandatory, t)
 
 
-# ---------------------------------------------------------------------------
-# 판정기 (DB 없이)
-# ---------------------------------------------------------------------------
 def test_judge_basic_rules():
     c = CompanyFacts(1, "가", company_size="SME", opened_on=date(2020, 1, 1), region="대전", employee_count=30,
                      business_status="ACTIVE", certs=[Cert("VENTURE", date(2024, 1, 1), date(2027, 1, 1), True)])
@@ -84,7 +81,7 @@ def test_judge_credit_has_no_grade_value():
     ch = judge(_req("MIN_CREDIT_GRADE", {"min_grade": "BBB-", "min_rank": 13}), c, AS_OF)
     assert ch.result == "UNMET"
     assert "B " not in ch.reason.replace("BBB-", "") and set(ch.detail) == {"verified"}
-    # 유효기간 지난 등급은 없는 것과 같다 → 모름
+    # 유효기간 지난 등급은 없는 것으로 봄
     c.credits = [Credit(20, date(2024, 1, 1), date(2025, 1, 1), True)]
     assert judge(_req("MIN_CREDIT_GRADE", {"min_grade": "B", "min_rank": 8}), c, AS_OF).result == "UNKNOWN"
 
@@ -106,9 +103,6 @@ def test_rnd_role_lead():
     assert judge(_req("RND_EXPERIENCE", {"min_count": 1, "role": "LEAD"}), c, AS_OF).result == "MET"
 
 
-# ---------------------------------------------------------------------------
-# 통합: 가상 기업 3곳 × 공고 5건
-# ---------------------------------------------------------------------------
 def _seed():
     env = {**os.environ, "PGPASSWORD": os.environ.get("PGPASSWORD", "")}
     for f in ("navigator_companies.sql", "navigator_announcements.sql"):
@@ -139,13 +133,13 @@ async def test_announcement_to_company_matrix(client):
         order = [x["verdict"] for x in body["recommendations"]]
         assert order == sorted(order, key=["ELIGIBLE", "NEEDS_INFO", "INELIGIBLE"].index)   # 판정 순
 
-    # 공고 101 의 1순위는 한빛: 기준별 점수 4개 + 요구기술 근거 + 연계이유
+    # 101 1순위는 한빛
     body = (await client.post("/navigator/matching/announcements/101", headers=as_user(PLANNER))).json()
     top = body["recommendations"][0]
     assert top["organization_id"] == HANBIT and top["verdict_label"] == "적합"
     assert set(top["scores"]) == {"TECH", "IPC", "PURPOSE", "PREFERENCE"}
     assert abs(sum(s["weight"] for s in top["scores"].values()) - 1) < 1e-6
-    assert top["scores"]["IPC"]["score"] == 1.0          # H04B 특허 ↔ 요구기술 H04B
+    assert top["scores"]["IPC"]["score"] == 1.0
     assert any(e["kind"] == "TECH_MATCH" and e["tech_name"] for e in top["evidence"])
     assert "필수 요건 4/4개 충족" in top["rationale"]
     assert top["business_reg_no"] == "9998100015"        # 담당자에게는 보임
@@ -209,7 +203,7 @@ async def test_company_link_questions_and_answers(client):
     check = next(c for c in rec["checks"] if c["requirement_id"] == trl["requirement_id"])
     assert check["self_declared"] and check["result"] == "MET"
 
-    # 다시 조회하면 저장된 결과를 그대로 쓴다 (그 사이 바뀐 게 없음)
+    # 변경 없으면 같은 run 재사용
     a = (await client.post("/navigator/manage/matches", headers=h)).json()["run"]["id"]
     b = (await client.post("/navigator/manage/matches", headers=h)).json()["run"]["id"]
     assert a == b
@@ -234,12 +228,12 @@ async def test_public_matches_hide_credit(client):
         for c in x["checks"]:
             if c["req_type_code"] in ("MIN_CREDIT_GRADE", "REVENUE"):
                 assert c["result"] is None and c["detail"] == {} and c["result_label"] == "관리 링크로 확인"
-        assert "신용" not in x["rationale"].split("신용등급·매출 등")[0]
+        assert not re.search(r"\b(A|B|C)+[+-]?\b", x["rationale"])
     assert (await client.get("/navigator/companies/9998999990/matches")).status_code in (404, 422)
 
 
 async def test_public_verdict_ignores_hidden_credit(client):
-    """신용등급만 미달인 기업은 공개 조회에서 부적격으로 보이지 않는다 (가린 요건이 판정으로 새지 않게)."""
+    # 신용등급만 미달이면 공개 조회에서는 부적격으로 안 보여야 함
     _seed()
     with psycopg.connect(TEST_URL, autocommit=True) as conn:
         orig = conn.execute("SELECT id, grade FROM ax.company_credit_rating WHERE organization_id = 101").fetchall()
@@ -259,7 +253,7 @@ async def test_public_verdict_ignores_hidden_credit(client):
 
 
 async def test_internal_project_counts_as_rnd(client):
-    """성과카드 참여기업(card_company, 확인됨)으로 이어진 내부 과제는 R&D 이력으로 쓴다."""
+    # card_company(CONFIRMED) 로 연결된 내부 과제도 R&D 이력에 포함
     from psycopg import AsyncConnection
     from psycopg.rows import dict_row
 
@@ -279,3 +273,20 @@ async def test_internal_project_counts_as_rnd(client):
     finally:
         with psycopg.connect(TEST_URL, autocommit=True) as conn:
             conn.execute("DELETE FROM ax.card_company WHERE card_id = %s AND organization_id = 103", (card[0],))
+
+
+async def test_staff_latest_run_and_profile(client):
+    _seed()
+    r = await client.get("/navigator/matching/announcements/104", headers=as_user(PLANNER))
+    assert r.status_code == 200
+    await client.post("/navigator/matching/announcements/104", headers=as_user(PLANNER))
+    latest = (await client.get("/navigator/matching/announcements/104", headers=as_user(PLANNER))).json()
+    assert latest["run"]["announcement_id"] == 104 and latest["recommendations"]
+    assert (await client.get("/navigator/matching/announcements/104")).status_code == 401
+
+    p = await client.get(f"/navigator/matching/companies/{HANBIT}/profile", headers=as_user(PLANNER))
+    assert p.status_code == 200
+    body = p.json()
+    assert body["visibility"] == "STAFF" and body["credit_ratings"] and "***" in body["registered_email"]
+    assert (await client.get(f"/navigator/matching/companies/{HANBIT}/profile",
+                             headers=as_user(VIEWER))).status_code == 403

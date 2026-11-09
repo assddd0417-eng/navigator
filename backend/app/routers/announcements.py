@@ -1,17 +1,4 @@
-"""Navigator 공고 API.
-
-등록·수정은 기관 담당자(로그인, PLANNER 또는 ADMIN). 조회는 로그인 없이도 되며 공개(PUBLISHED) 공고만 보인다.
-담당자(X-User-Id)로 조회하면 작성중(DRAFT)·취소 공고까지 보인다.
-
-- POST   /navigator/announcements                       직접 입력 (자격요건·요구기술 함께)
-- POST   /navigator/announcements/upload                PDF 업로드 → 원문 추출·청크 저장(기존 문서 기능) → 공고 초안
-- GET    /navigator/announcements                       목록 (접수 상태: 접수전/접수중/마감)
-- GET    /navigator/announcements/{id}                  상세 (자격요건·요구기술·원문 근거)
-- PATCH  /navigator/announcements/{id}                  수정 (공개·취소 포함)
-- GET    /navigator/announcements/{id}/chunks           공고문 청크 (자격요건 근거로 고를 줄)
-- POST/PATCH/DELETE .../requirements[/{rid}]            자격요건 한 줄씩
-- POST/DELETE       .../tech-needs[/{tid}]              요구 기술
-"""
+"""공고 API. 등록·수정은 PLANNER, 조회는 공개(PUBLISHED 만, 담당자는 전체)."""
 from pathlib import PurePath
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Response, UploadFile, status
@@ -47,7 +34,6 @@ def _is_staff(user: CurrentUser | None) -> bool:
 
 
 async def _check_codes(conn: AsyncConnection, req_type: str, rule: dict) -> None:
-    """코드표에 있는 값인지 (인증 종류, 신용등급)."""
     if req_type == "REQUIRED_CERT":
         rows = await (await conn.execute(
             "SELECT code FROM ax.code_certification_type WHERE code = ANY(%s) AND is_active",
@@ -93,7 +79,7 @@ async def _insert_tech_need(conn: AsyncConnection, ann_id: int, t: TechNeedIn, s
 
 
 async def _changed(conn: AsyncConnection, ann_id: int) -> None:
-    """공고·자격요건·요구기술이 바뀌면: 공고의 바뀐 시각을 남기고 (저장된 매칭 결과를 다시 쓰지 않게) 매칭용 벡터를 다시 만든다."""
+    # updated_at 은 매칭 캐시 무효화에 씀
     await conn.execute("UPDATE ax.announcement SET updated_at = now() WHERE id = %s", (ann_id,))
     await sync_announcement_embeddings(conn, ann_id)
 
@@ -127,7 +113,6 @@ async def _create(conn: AsyncConnection, body: AnnouncementCreate, user: Current
 @router.post("", response_model=AnnouncementCreated, status_code=201)
 async def create_announcement(body: AnnouncementCreate, user: CurrentUser = Depends(require_roles(*STAFF)),
                               rid: str = Depends(request_id)):
-    """공고를 직접 입력한다. 자격요건은 종류별 규칙 형식을 검사한 뒤 저장한다."""
     async with transaction(user.id, rid) as conn:
         return await _create(conn, body, user)
 
@@ -146,10 +131,7 @@ async def upload_announcement(
     user: CurrentUser = Depends(require_roles(*STAFF)),
     rid: str = Depends(request_id),
 ):
-    """공고문 파일을 올리면 원문을 쪽 단위로 저장하고(기존 문서 기능) 작성중(DRAFT) 공고를 만든다.
-
-    자격요건은 GET .../chunks 로 원문 줄을 보고 POST .../requirements 로 한 줄씩 넣은 뒤, PATCH status=PUBLISHED 로 공개한다.
-    """
+    """공고문 업로드 → 원문 청크 저장 + DRAFT 공고 생성. 자격요건은 chunks 보고 따로 입력."""
     p = await parse_file(file)
     title = (title or "").strip() or PurePath(p.filename).stem or "제목 없음"
     try:
@@ -227,7 +209,6 @@ async def get_announcement(ann_id: int, user: CurrentUser | None = Depends(optio
 @router.get("/{ann_id}/chunks", dependencies=[Depends(public_rate_limit)])
 async def get_announcement_chunks(ann_id: int, q: str | None = Query(None, description="본문 검색 (예: 신용등급)"),
                                   user: CurrentUser | None = Depends(optional_user)):
-    """공고문 원문 청크 (쪽 번호 포함). 자격요건 근거로 chunk_id 를 고를 때 쓴다."""
     async with transaction() as conn:
         a = await _announcement(conn, ann_id, user)
         if not a["document_id"]:

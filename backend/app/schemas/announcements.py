@@ -1,8 +1,4 @@
-"""Navigator 공고·자격요건 스키마.
-
-자격요건의 rule 칸은 종류(req_type_code)마다 형식이 정해져 있다. RULE_MODELS 가 형식을 검사하고
-정규화한 dict 를 저장한다. 3단계 판정기는 이 형식을 그대로 읽는다.
-"""
+"""공고·자격요건 스키마. rule 형식은 종류별로 RULE_MODELS 에서 검사·정규화 (eligibility.py 가 읽음)."""
 from datetime import date
 from typing import Any, Literal
 
@@ -115,7 +111,6 @@ RULE_MODELS: dict[str, type[_Rule]] = {
 
 
 def normalize_rule(req_type_code: str, rule: dict[str, Any]) -> dict[str, Any]:
-    """종류별 형식 검사 후 정규화한 rule. 틀리면 ValueError (한국어 메시지)."""
     model = RULE_MODELS.get(req_type_code)
     if model is None:
         raise ValueError(f"알 수 없는 자격요건 종류: {req_type_code} (가능: {', '.join(RULE_MODELS)})")
@@ -123,7 +118,7 @@ def normalize_rule(req_type_code: str, rule: dict[str, Any]) -> dict[str, Any]:
         return model.model_validate(rule).model_dump(exclude_none=True)
     except ValidationError as e:
         msgs = "; ".join(f"{'.'.join(map(str, err['loc'])) or 'rule'}: {err['msg']}" for err in e.errors())
-        raise ValueError(f"{req_type_code} 규칙 형식 오류 — {msgs}") from None
+        raise ValueError(f"{req_type_code} 규칙 형식 오류: {msgs}") from None
 
 
 class RequirementIn(BaseModel):

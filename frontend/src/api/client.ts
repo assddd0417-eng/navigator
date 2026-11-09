@@ -63,6 +63,10 @@ export interface RequestOptions {
   silent?: boolean
   /** 로그인 전 확인처럼 특정 사용자로 호출할 때 */
   userId?: number
+  /** true 면 X-User-Id 를 싣지 않는다 (로그인 없는 기업 화면) */
+  anonymous?: boolean
+  /** 추가 헤더 (예: 기업 관리 링크 X-Manage-Token) */
+  headers?: Record<string, string>
 }
 
 export async function api<T>(path: string, opts: RequestOptions = {}): Promise<T> {
@@ -73,8 +77,8 @@ export async function api<T>(path: string, opts: RequestOptions = {}): Promise<T
   }
   const url = `${BASE_URL}${path}${params.size ? `?${params}` : ''}`
 
-  const headers: Record<string, string> = { Accept: 'application/json' }
-  const userId = opts.userId ?? currentUserId
+  const headers: Record<string, string> = { Accept: 'application/json', ...(opts.headers ?? {}) }
+  const userId = opts.anonymous ? null : opts.userId ?? currentUserId
   if (userId != null) headers['X-User-Id'] = String(userId)
   const isForm = opts.body instanceof FormData
   // multipart 경계(boundary)는 브라우저가 붙이므로 Content-Type 을 직접 지정하지 않는다

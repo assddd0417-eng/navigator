@@ -1,9 +1,4 @@
-"""Navigator 기업 프로필 저장·조회 (기업 자가입력 + 칸별 출처 기록).
-
-공개 범위
-- 사업자번호만으로(공개): 상호, 확인됨/미확인, 휴·폐업 상태, 특허 (특허는 원래 공개 정보)
-- 관리 링크가 있어야(기업 본인): 위 + 신용등급, 매출·직원 수 등 자가입력 내용, 인증, R&D 이력, 칸별 출처
-"""
+"""기업 프로필 저장·조회. public_view 는 사업자번호만으로 보는 범위(신용·매출 제외), full_view 는 관리 링크용."""
 from datetime import date, datetime
 from typing import Any
 
@@ -17,7 +12,6 @@ from app.services.bizno import format_bizno
 VERIFY_LABEL = {"VERIFIED": "확인됨", "UNVERIFIED": "미확인", "FAILED": "불일치"}
 BUSINESS_STATUS_LABEL = {"ACTIVE": "계속사업자", "SUSPENDED": "휴업", "CLOSED": "폐업", "UNKNOWN": "모름"}
 
-# company_profile 의 자가입력 칸 (company_field_source.field_name 과 같은 이름)
 PROFILE_FIELDS = ("main_business", "homepage", "company_size", "established_on", "employee_count",
                   "annual_revenue_krw", "revenue_year", "region", "address")
 
@@ -36,7 +30,6 @@ def _json_value(v: Any) -> Any:
 async def record_field(conn: AsyncConnection, org_id: int, field_name: str, value: Any, source_kind: str, *,
                        source_code: str | None = None, raw_record_id: int | None = None,
                        verified: bool = False) -> None:
-    """칸 하나의 출처별 현재값을 남긴다. 같은 기업·칸·출처면 덮어쓰고, 이전 값은 감사 로그에 남는다."""
     await conn.execute(
         """INSERT INTO ax.company_field_source
                   (organization_id, field_name, value, source_kind, external_source_id, raw_record_id,
@@ -56,7 +49,7 @@ async def insert_list_items(conn: AsyncConnection, org_id: int, key: str, items:
     for item in items:
         data = {**item.model_dump(), "organization_id": org_id, "origin": origin}
         if isinstance(item, RndHistoryIn) and item.project_no:
-            # 내부 과제와 과제번호가 같으면 연결 (성과카드·과제 DB 와 이어짐)
+            # 내부 과제번호와 같으면 연결
             row = await (await conn.execute(
                 "SELECT id FROM ax.project WHERE project_no = %s", (item.project_no,))).fetchone()
             data["internal_project_id"] = row["id"] if row else None
@@ -66,7 +59,7 @@ async def insert_list_items(conn: AsyncConnection, org_id: int, key: str, items:
 async def replace_self_items(conn: AsyncConnection, org_id: int, key: str,
                              items: list[PatentIn] | list[CertificationIn] | list[CreditRatingIn] | list[RndHistoryIn]
                              ) -> None:
-    """자가입력(SELF) 행만 지우고 새로 넣는다. 외부·내부 출처 행은 건드리지 않는다."""
+    # SELF 행만 교체
     await conn.execute(
         f"DELETE FROM ax.{LIST_TABLES[key]} WHERE organization_id = %s AND origin = 'SELF'", (org_id,))
     await insert_list_items(conn, org_id, key, items)

@@ -6,7 +6,7 @@ from psycopg import AsyncConnection
 
 
 class ConnectorUnavailable(RuntimeError):
-    """출처에 연결할 수 없음 (키 없음, 실제 연결 미구현, 네트워크 오류). 값은 '미확인'으로 둔다."""
+    """키 없음·미구현·네트워크 오류. 호출부는 미확인으로 처리."""
 
 
 def content_hash(payload: Any) -> str:
@@ -16,7 +16,7 @@ def content_hash(payload: Any) -> str:
 async def record_fetch(conn: AsyncConnection, *, source_code: str, mode: str, organization_id: int | None,
                        external_key: str, payload: Any | None, error: str | None = None,
                        trigger_kind: str = "ON_DEMAND", request_params: dict | None = None) -> int | None:
-    """수집 실행 1건과 받은 원본을 기록한다. 원본 레코드 id (실패면 None) 를 돌려준다."""
+    """fetch_job + raw_record 기록. raw_record id 반환 (실패 시 None)."""
     job = await (await conn.execute(
         """INSERT INTO ax.external_fetch_job
                   (source_id, organization_id, mode, trigger_kind, request_params, status,

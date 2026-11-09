@@ -1,4 +1,4 @@
-"""Navigator 기업 프로필 (로그인 없는 자가입력) 스키마."""
+"""Navigator 기업 프로필 스키마."""
 from datetime import date
 from typing import Literal
 
@@ -55,7 +55,6 @@ class RndHistoryIn(BaseModel):
 
 
 class ProfileFields(BaseModel):
-    """기업이 직접 적는 기본 정보 (전부 '자가입력·미확인'으로 기록된다)."""
     main_business: str | None = Field(default=None, max_length=2000)
     homepage: str | None = None
     company_size: CompanySize | None = None
@@ -84,7 +83,7 @@ class CompanyRegister(ProfileFields, CompanyLists):
 
 
 class CompanyUpdate(ProfileFields):
-    """관리 링크로 고치기. 목록 칸을 보내면 자가입력 행만 통째로 바꾼다 (외부·내부 출처 행은 그대로)."""
+    # 목록 칸을 보내면 SELF 행 전체 교체
     company_name: str | None = Field(default=None, min_length=1, max_length=200)
     patents: list[PatentIn] | None = None
     certifications: list[CertificationIn] | None = None

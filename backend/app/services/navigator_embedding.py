@@ -1,8 +1,6 @@
-"""Navigator 기업·공고 관점별 벡터 (기존 embedding._sync 를 그대로 쓴다: 원문 해시가 같으면 다시 임베딩하지 않음).
+"""기업·공고 facet 별 임베딩.
 
-기업 관점: SUMMARY(상호+주요사업), BUSINESS(주요사업), TECH(보유기술 행별), PATENT(특허 행별), RND(R&D 이력 행별)
-공고 관점: SUMMARY(제목+개요+지원대상), TECH_NEED(요구기술 행별), PURPOSE(사업트랙 목적+개요)
-R&D 이력에는 성과카드 참여기업(card_company)으로 이어진 내부 과제도 포함한다 (rnd_facts 참조).
+기업: SUMMARY, BUSINESS, TECH, PATENT, RND / 공고: SUMMARY, TECH_NEED, PURPOSE
 """
 from __future__ import annotations
 
@@ -12,8 +10,7 @@ from app.services.embedding import FacetText, _join, _sync, active_model_id
 
 
 async def rnd_facts(conn: AsyncConnection, org_id: int) -> list[dict]:
-    """기업 R&D 이력 = 자가입력·외부(company_rnd_history) + 성과카드 참여기업으로 이어진 내부 과제.
-    같은 내부 과제가 양쪽에 있으면 company_rnd_history 를 쓴다."""
+    """company_rnd_history + card_company 로 연결된 내부 과제 (중복이면 rnd_history 우선)."""
     return await (await conn.execute(
         """SELECT 'company_rnd_history' AS source_table, h.id AS source_id, h.title, h.summary, h.role,
                   h.start_date, h.end_date, h.origin, h.verified_at IS NOT NULL AS is_verified
@@ -81,8 +78,7 @@ async def sync_announcement_embeddings(conn: AsyncConnection, ann_id: int) -> in
 
 
 async def ensure_embeddings(conn: AsyncConnection) -> dict[str, int]:
-    """활성 모델 벡터가 하나도 없는 기업·공고를 임베딩한다 (SQL 시드로 넣은 데이터 등).
-    API 로 고친 기업·공고는 저장할 때 이미 다시 임베딩된다."""
+    """활성 모델 벡터가 없는 기업·공고만 임베딩 (SQL 로 넣은 데이터용)."""
     model_id = await active_model_id(conn)
     orgs = await (await conn.execute(
         """SELECT cp.organization_id AS id FROM ax.company_profile cp

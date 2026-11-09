@@ -1,13 +1,4 @@
-"""Navigator 기업 프로필 API (로그인 없음).
-
-- POST /navigator/companies                       자가입력 등록: 사업자번호 형식 검사 → 국세청 진위확인(목업) → 저장 → 관리 링크 메일
-- GET  /navigator/companies/{사업자번호}             공개 정보만 (상호, 확인됨/미확인, 휴·폐업, 특허)
-- POST /navigator/companies/{사업자번호}/access-link 관리 링크 다시 받기 (등록 이메일로만 보냄)
-- GET  /navigator/manage/profile                  관리 링크(X-Manage-Token)로 내 프로필 전체 (신용등급 포함)
-- PATCH /navigator/manage/profile                 관리 링크로 고치기
-
-기관 담당자 화면은 기존 로그인(X-User-Id) 그대로이며 4단계에서 추가한다.
-"""
+"""Navigator 기업 프로필 (공개 API). 수정·민감정보 조회는 관리 링크(X-Manage-Token) 필요."""
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 
 from app.auth import request_id
@@ -46,7 +37,6 @@ def _send_link(email: str, company_name: str, link: access_link.IssuedLink, firs
 
 
 def _verify(body: CompanyRegister, bizno: str) -> tuple[BizVerifyResult, str, str | None]:
-    """(결과, 실행 모드, 연결 오류). 연결할 수 없으면 '미확인'으로 진행한다."""
     connector = get_nts_connector()
     try:
         return connector.verify(bizno, body.representative_name, body.opened_on), connector.mode, None
@@ -58,12 +48,7 @@ def _verify(body: CompanyRegister, bizno: str) -> tuple[BizVerifyResult, str, st
 @router.post("/companies", response_model=RegisterResult, status_code=201,
              dependencies=[Depends(public_rate_limit)])
 async def register_company(body: CompanyRegister, rid: str = Depends(request_id)):
-    """사업자번호로 기업 프로필을 처음 만든다. 사업자번호당 프로필은 하나다.
-
-    - 진위확인 '불일치'(대표자명·개업일이 다름)면 저장하지 않는다 (422).
-    - 확인할 수 없으면 저장하되 '미확인'으로 표시한다.
-    - 기관 DB 에 이미 있는 기업(내부 과제 수행 기업 등)은 진위확인을 통과해야 이어서 등록할 수 있다.
-    """
+    """진위확인 불일치면 422. 확인 불가면 미확인으로 저장. 기존 기관 DB 기업은 진위확인 통과해야 등록."""
     bizno = _bizno(body.business_reg_no)
     result, mode, conn_error = _verify(body, bizno)
     params = {"b_no": bizno}
@@ -114,7 +99,6 @@ async def register_company(body: CompanyRegister, rid: str = Depends(request_id)
              **fields, "bstat": result.business_status, "vstat": result.verify_status, "ver": verified,
              "email": body.email})
 
-        # 칸별 출처: 기업이 적은 값은 SELF(미확인), 국세청이 확인한 값은 EXTERNAL(확인됨)
         await record_field(conn, org_id, "company_name", body.company_name, "SELF")
         await record_field(conn, org_id, "representative_name", body.representative_name, "SELF")
         await record_field(conn, org_id, "opened_on", body.opened_on, "SELF")
@@ -134,7 +118,7 @@ async def register_company(body: CompanyRegister, rid: str = Depends(request_id)
 
         for key in LIST_TABLES:
             await insert_list_items(conn, org_id, key, getattr(body, key))
-        await sync_company_embeddings(conn, org_id)   # 매칭(3단계)에 쓰는 관점별 벡터
+        await sync_company_embeddings(conn, org_id)
         link = await access_link.issue(conn, org_id, body.email)
 
     sent = _send_link(body.email, body.company_name, link, first=True)
@@ -147,7 +131,6 @@ async def register_company(body: CompanyRegister, rid: str = Depends(request_id)
 
 @router.get("/companies/{business_reg_no}", dependencies=[Depends(public_rate_limit)])
 async def get_company_public(business_reg_no: str):
-    """사업자번호로 공개 정보만 본다 (신용등급·매출·자가입력 내용은 관리 링크가 있어야 보임)."""
     bizno = _bizno(business_reg_no)
     async with transaction() as conn:
         found = await find_by_bizno(conn, bizno)
@@ -159,7 +142,6 @@ async def get_company_public(business_reg_no: str):
 @router.post("/companies/{business_reg_no}/access-link", response_model=LinkSent, status_code=202,
              dependencies=[Depends(public_rate_limit)])
 async def resend_access_link(business_reg_no: str, rid: str = Depends(request_id)):
-    """관리 링크를 다시 받는다. 처음 등록한 이메일로만 보내고, 이전 링크는 폐기된다."""
     bizno = _bizno(business_reg_no)
     async with transaction(None, rid) as conn:
         found = await find_by_bizno(conn, bizno, lock=True)
@@ -191,11 +173,10 @@ async def get_my_profile(link: dict = Depends(manage_link)):
 
 @router.patch("/manage/profile", dependencies=[Depends(public_rate_limit)])
 async def update_my_profile(body: CompanyUpdate, link: dict = Depends(manage_link), rid: str = Depends(request_id)):
-    """관리 링크로 고친다. 보낸 칸만 바꾸고, 바꾼 값은 '자가입력·미확인'으로 기록된다.
-    사업자번호·대표자명·개업일(진위확인 값)은 여기서 바꿀 수 없다."""
+    """보낸 칸만 수정 (자가입력으로 기록). 사업자번호·대표자명·개업일은 수정 불가."""
     org_id = link["organization_id"]
     data = body.model_dump(exclude_unset=True)
-    # 감사 로그에서 어느 관리 링크로 바꿨는지 추적 (기업은 app_user 가 아니므로 request_id 에 남긴다)
+    # 기업은 app_user 가 없어서 감사 로그 추적용으로 링크 id 를 request_id 에 붙임
     async with transaction(None, f"{rid}|company-link:{link['link_id']}") as conn:
         if "company_name" in data and data["company_name"]:
             await conn.execute("UPDATE ax.organization SET name = %s WHERE id = %s", (data["company_name"], org_id))
@@ -211,7 +192,7 @@ async def update_my_profile(body: CompanyUpdate, link: dict = Depends(manage_lin
             items = getattr(body, key)
             if items is not None:
                 await replace_self_items(conn, org_id, key, items)
-        # 저장된 매칭 결과를 다시 쓰지 않도록 바뀐 시각을 남기고, 매칭용 벡터를 다시 만든다 (원문이 같으면 건너뜀)
+        # 매칭 캐시 무효화용
         await conn.execute("UPDATE ax.company_profile SET updated_at = now() WHERE organization_id = %s", (org_id,))
         await sync_company_embeddings(conn, org_id)
         return await full_view(conn, org_id)

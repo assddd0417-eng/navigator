@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { homePath, ROLES, SEED_USERS } from '../auth/roles'
 import { useToast } from '../components/Toast'
@@ -38,6 +38,7 @@ export function LoginPage() {
         <span className="brand-mark brand-mark-lg">AX</span>
         <h1>국방 R&amp;D 성과연계 · 이어달리기 AX</h1>
         <p>시연할 역할을 선택하세요. 로그인 후에도 상단에서 언제든 역할을 바꿀 수 있습니다.</p>
+        <p><Link to="/navigator" className="btn">기업 사용자 (Navigator)</Link></p>
       </div>
 
       {(['ADMIN', 'WORKER'] as const).map((group) => (

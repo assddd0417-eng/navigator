@@ -1,14 +1,8 @@
-"""자격요건 판정 (DB 와 무관한 순수 함수).
+"""자격요건 판정.
 
-요건 한 줄마다 충족(MET) / 미충족(UNMET) / 모름(UNKNOWN). 모름이면 보완질문 문장을 만든다.
-공고 전체 판정: 필수 요건 중 미충족이 하나라도 있으면 부적격, 미충족 없이 모름이 있으면 정보부족, 모두 충족이면 적합.
-(우대 요건은 판정에 쓰지 않고 점수(PREFERENCE)에만 쓴다)
-
-'모름'과 '미충족'의 경계
-- 값이 아예 없으면 모름: 규모·지역·업력·직원 수·매출 칸이 비었거나, 인증·특허·R&D 이력을 하나도 입력하지 않은 경우.
-- 무언가 입력했는데 요건에 맞는 것이 없으면 미충족: 인증을 입력했지만 요구 인증이 없음, 특허는 있지만 분야가 다름 등.
-- 기업 프로필에 없는 값(TRL, '기타' 요건)은 기업의 답(eligibility_answer)이 있으면 그 답으로 판정하고 self_declared 로 표시한다.
-신용등급은 detail 에 등급 값을 남기지 않는다 (충족 여부와 확인 여부만).
+요건별 MET / UNMET / UNKNOWN. 필수 중 UNMET 있으면 INELIGIBLE, UNKNOWN 있으면 NEEDS_INFO, 나머지 ELIGIBLE.
+값 자체가 없으면(목록이 비어 있어도) UNKNOWN 으로 보고 보완질문을 붙인다.
+신용등급은 detail 에 등급을 넣지 않는다.
 """
 from __future__ import annotations
 
@@ -68,7 +62,7 @@ class CompanyFacts:
     credits: list[Credit] = field(default_factory=list)
     rnd: list[Rnd] = field(default_factory=list)
     patents: list[Patent] = field(default_factory=list)
-    answers: dict[int, Any] = field(default_factory=dict)   # requirement_id → answer["value"]
+    answers: dict[int, Any] = field(default_factory=dict)   # requirement_id: answer value
 
 
 @dataclass
@@ -108,7 +102,7 @@ def valid_certs(c: CompanyFacts, as_of: date) -> list[Cert]:
 
 
 def effective_sizes(c: CompanyFacts, as_of: date) -> set[str]:
-    """기업이 해당하는 규모 집합. 창업·벤처는 중소기업에 포함되고, 벤처확인서가 있으면 벤처, 업력 7년 이내 중소기업이면 창업."""
+    # 창업·벤처는 SME 에 포함. 벤처확인 있으면 VENTURE, 7년 이내면 STARTUP
     sizes = {c.company_size} if c.company_size else set()
     if sizes & {"STARTUP", "VENTURE"}:
         sizes.add("SME")
@@ -120,7 +114,6 @@ def effective_sizes(c: CompanyFacts, as_of: date) -> set[str]:
 
 
 def _answer(req: Requirement, c: CompanyFacts, question: str) -> Check:
-    """프로필에 값이 없을 때: 기업 답이 있으면 그것으로, 없으면 모름 + 보완질문."""
     if req.id not in c.answers:
         return Check("UNKNOWN", "기업 정보에 없어 판단할 수 없음", question)
     v = c.answers[req.id]
@@ -149,7 +142,7 @@ def judge(req: Requirement, c: CompanyFacts, as_of: date) -> Check:
         sizes = effective_sizes(c, as_of)
         ok = bool(sizes & set(allowed))
         return Check("MET" if ok else "UNMET",
-                     f"기업 규모 {SIZE_KO[c.company_size]} → 요건 {', '.join(SIZE_KO[a] for a in allowed)} "
+                     f"기업 규모 {SIZE_KO[c.company_size]}, 요건 {', '.join(SIZE_KO[a] for a in allowed)} "
                      f"{'해당' if ok else '해당 없음'}", detail={"sizes": sorted(sizes)})
 
     if t == "BUSINESS_AGE":
@@ -158,7 +151,7 @@ def judge(req: Requirement, c: CompanyFacts, as_of: date) -> Check:
             return _answer(req, c, f"개업일을 알려 주세요 (요건: 업력 {_range_text(lo, hi, '년')})")
         age = years_between(c.opened_on, as_of)
         ok = _in_range(age, lo, hi)
-        return Check("MET" if ok else "UNMET", f"업력 {age:.1f}년 (기준일 {as_of}) → 요건 {_range_text(lo, hi, '년')}",
+        return Check("MET" if ok else "UNMET", f"업력 {age:.1f}년 (기준일 {as_of}), 요건 {_range_text(lo, hi, '년')}",
                      detail={"years": round(age, 1), "as_of": as_of.isoformat()})
 
     if t == "REQUIRED_CERT":
@@ -180,7 +173,6 @@ def judge(req: Requirement, c: CompanyFacts, as_of: date) -> Check:
             return _answer(req, c, q)
         latest = max(valid, key=lambda x: (x.rated_on or date.min))
         ok = latest.rank >= r["min_rank"]
-        # 등급 값은 남기지 않는다 (신용정보: 충족 여부와 확인 여부만)
         return Check("MET" if ok else "UNMET", f"신용등급 요건 {r['min_grade']} 이상 {'충족' if ok else '미달'}"
                      f"{'' if latest.verified else ' (자가입력·미확인)'}", detail={"verified": latest.verified})
 
@@ -188,7 +180,7 @@ def judge(req: Requirement, c: CompanyFacts, as_of: date) -> Check:
         if not c.region:
             return _answer(req, c, f"본사 소재 시·도를 알려 주세요 (요건: {', '.join(r['allowed'])})")
         ok = c.region in r["allowed"]
-        return Check("MET" if ok else "UNMET", f"본사 {c.region} → 요건 {', '.join(r['allowed'])}",
+        return Check("MET" if ok else "UNMET", f"본사 {c.region}, 요건 {', '.join(r['allowed'])}",
                      detail={"region": c.region})
 
     if t == "TRL":
@@ -199,7 +191,7 @@ def judge(req: Requirement, c: CompanyFacts, as_of: date) -> Check:
         if c.employee_count is None:
             return _answer(req, c, f"상시 근로자 수를 알려 주세요 (요건: {_range_text(lo, hi, '명')})")
         ok = _in_range(c.employee_count, lo, hi)
-        return Check("MET" if ok else "UNMET", f"직원 {c.employee_count}명 → 요건 {_range_text(lo, hi, '명')}",
+        return Check("MET" if ok else "UNMET", f"직원 {c.employee_count}명, 요건 {_range_text(lo, hi, '명')}",
                      detail={"employee_count": c.employee_count})
 
     if t == "REVENUE":
@@ -229,7 +221,7 @@ def judge(req: Requirement, c: CompanyFacts, as_of: date) -> Check:
         hits = [x for x in c.rnd if (role is None or x.role == role)
                 and (within is None or (x.end_date and years_between(x.end_date, as_of) <= within))]
         ok = len(hits) >= n_min
-        return Check("MET" if ok else "UNMET", f"{what} → {len(hits)}건", detail={"count": len(hits)})
+        return Check("MET" if ok else "UNMET", f"{what}: {len(hits)}건", detail={"count": len(hits)})
 
     if t == "PATENT":
         n_min, status, prefixes = r.get("min_count", 1), r.get("status"), r.get("ipc_prefixes") or []
@@ -243,7 +235,7 @@ def judge(req: Requirement, c: CompanyFacts, as_of: date) -> Check:
         return Check("MET" if ok else "UNMET", f"{cond}특허 {len(hits)}건 (요건 {n_min}건 이상)",
                      detail={"count": len(hits), "titles": [p.title for p in hits][:3]})
 
-    # OTHER 및 알 수 없는 종류: 문장 요건 → 기업 답
+    # OTHER
     return _answer(req, c, f"다음 요건을 충족하나요? {req.description} (예/아니오)")
 
 
