@@ -64,6 +64,8 @@ jobs:
         run: |
           psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -f seeds/init_test_data.sql
           psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -f seeds/init_test_data.sql
+          psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -f seeds/navigator_companies.sql
+          psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -f seeds/navigator_companies.sql
           (cd backend && uvicorn app.main:app --port 8000 > ../uvicorn.log 2>&1 &)
           for i in $(seq 30); do curl -sf http://localhost:8000/health >/dev/null && break; sleep 1; done
           ./scripts/smoke_test.sh || { cat uvicorn.log; exit 1; }

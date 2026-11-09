@@ -175,5 +175,22 @@ EXPLAIN (COSTS OFF)
 SELECT card_id FROM card_embedding WHERE facet = 'OPEN_ISSUE'
 ORDER BY embedding <=> (SELECT embedding FROM demand_embedding LIMIT 1) LIMIT 5;
 
+\echo '--- Navigator: 사업자번호로 기업 넣고 조회 (0019·0020)'
+INSERT INTO organization (id, name, org_type, business_reg_no) VALUES (900, '(가상)스모크기업', 'COMPANY', '9998400049');
+INSERT INTO company_profile (organization_id, company_size, representative_name, opened_on, employee_count, region,
+                             biz_verify_status, registered_email, registration_channel)
+VALUES (900, 'SME', '홍길동', '2019-03-01', 10, '대전', 'UNVERIFIED', 'a@example.com', 'SELF');
+INSERT INTO company_patent (organization_id, application_no, title, status) VALUES (900, '10-2026-0000001', '스모크 특허', 'APPLIED');
+INSERT INTO company_certification (organization_id, cert_type_code) VALUES (900, 'VENTURE');
+INSERT INTO company_credit_rating (organization_id, agency, grade) VALUES (900, 'SELF', 'BB');
+INSERT INTO company_access_link (organization_id, email, token_hash, expires_at)
+VALUES (900, 'a@example.com', repeat('a', 64), now() + interval '30 days');
+INSERT INTO company_field_source (organization_id, field_name, value, source_kind) VALUES (900, 'employee_count', '10', 'SELF');
+INSERT INTO company_field_source (organization_id, field_name, value, source_kind, external_source_id, is_verified, verified_at)
+SELECT 900, 'employee_count', '12', 'EXTERNAL', id, true, now() FROM external_source WHERE code = 'DART';
+SELECT o.name, cp.biz_verify_status, cp.region, (SELECT count(*) FROM company_patent WHERE organization_id = o.id) AS patents
+  FROM organization o JOIN company_profile cp ON cp.organization_id = o.id WHERE o.business_reg_no = '9998400049';
+SELECT field_name, preferred_value, differs FROM v_company_field_compare WHERE organization_id = 900;
+
 ROLLBACK;
 \echo '스모크 테스트 완료 (ROLLBACK)'
