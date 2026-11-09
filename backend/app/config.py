@@ -52,14 +52,13 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None  # 비우면 SDK 가 ANTHROPIC_API_KEY 환경변수 등에서 찾음
     openai_api_key: str | None = None     # 비우면 SDK 가 OPENAI_API_KEY 환경변수에서 찾음
 
-    # Navigator (기업 대상 서비스): 기업은 로그인 없이 사업자번호 + 관리 링크로 쓴다
-    navigator_public_base_url: str = "http://localhost:5173"  # 관리 링크 주소의 앞부분 (기업 화면)
-    navigator_link_ttl_days: int = 30          # 관리 링크 유효 기간
-    navigator_rate_limit_per_minute: int = 60  # 로그인 없는 API: 같은 곳에서 1분에 이 횟수까지
-    navigator_dev_expose_link: bool = False    # true = 응답에 관리 링크를 그대로 실어 줌 (로컬 확인용, 운영 금지)
-    navigator_match_candidate_k: int = 50     # 매칭 한 번에 벡터로 먼저 고르는 후보 수
-    mailer: str = "mock"                       # mock = 보내지 않고 기록만 (실제 발송은 5단계)
-    # 외부 출처 연결 부품: mock | live (출처 코드 = ax.external_source.code)
+    # Navigator
+    navigator_public_base_url: str = "http://localhost:5173"  # 관리 링크 base URL
+    navigator_link_ttl_days: int = 30
+    navigator_rate_limit_per_minute: int = 60  # 공개 API, IP당
+    navigator_dev_expose_link: bool = False    # 응답에 관리 링크 포함 (로컬 전용)
+    navigator_match_candidate_k: int = 50
+    mailer: str = "mock"
     source_nts_biz: str = "mock"
 
     @property

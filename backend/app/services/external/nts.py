@@ -1,12 +1,7 @@
-"""국세청 사업자등록정보 진위확인·상태조회 (공공데이터포털) 연결 부품.
+"""국세청 사업자 진위확인·상태조회.
 
-진위확인은 사업자번호·대표자명·개업일이 모두 맞아야 통과한다.
-- VERIFIED   세 값이 일치 (화면: 확인됨)
-- FAILED     등록부에 있으나 대표자명·개업일 불일치 → 등록 거절 (남의 사업자번호로 만든 거짓 프로필 방지)
-- UNVERIFIED 확인할 수 없음(등록부에 없음·연결 불가) → 저장하되 '미확인' 표시
-
-SOURCE_NTS_BIZ=mock (기본): fixtures/nts_mock.json 의 가상 등록부로 응답한다. 응답 모양은 실제 API 를 흉내 낸다.
-SOURCE_NTS_BIZ=live: 6단계(외부 자동수집)에서 실제 호출을 붙인다. 지금은 ConnectorUnavailable → 미확인.
+VERIFIED: 번호·대표자명·개업일 일치 / FAILED: 등록부에 있으나 불일치(등록 거절) / UNVERIFIED: 확인 불가(미확인 저장)
+mock 은 fixtures/nts_mock.json 사용. live 는 아직 미구현.
 """
 import json
 from dataclasses import dataclass, field
@@ -27,7 +22,7 @@ class BizVerifyResult:
     verify_status: Literal["VERIFIED", "UNVERIFIED", "FAILED"]
     business_status: Literal["ACTIVE", "SUSPENDED", "CLOSED", "UNKNOWN"]
     message: str
-    raw: dict[str, Any] = field(default_factory=dict)   # 받은 원본 (external_raw_record.payload)
+    raw: dict[str, Any] = field(default_factory=dict)
 
 
 class MockNtsConnector:
@@ -56,7 +51,7 @@ class LiveNtsConnector:
     mode = "live"
 
     def verify(self, b_no: str, representative_name: str, opened_on: date) -> BizVerifyResult:
-        raise ConnectorUnavailable("국세청 실제 연결은 6단계(외부 자동수집)에서 붙입니다")
+        raise ConnectorUnavailable("국세청 live 연결 미구현")
 
 
 @lru_cache

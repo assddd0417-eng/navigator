@@ -1,15 +1,4 @@
-"""Navigator 매칭과 판정 API (3단계).
-
-담당자(로그인, PLANNER):
-  POST /navigator/matching/announcements/{ann_id}   공고 → 기업 순위 (새로 실행)
-  POST /navigator/matching/companies/{org_id}       기업 → 공고 순위 (새로 실행)
-  GET  /navigator/matching/runs/{run_id}            저장된 실행 결과 (근거·판정 전부)
-기업(로그인 없음):
-  GET  /navigator/companies/{brn}/matches           사업자번호만으로: 공개 정보 기준 결과 (신용등급·매출 요건은 가림)
-  POST /navigator/manage/matches                    관리 링크로: 내 결과 전부
-  GET  /navigator/manage/questions                  관리 링크로: 정보부족 공고의 보완질문
-  POST /navigator/manage/answers                    관리 링크로: 보완질문에 답 → 다시 판정
-"""
+"""Navigator 매칭 API. /matching/* 는 담당자, /companies/{brn}/matches·/manage/* 는 기업."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -45,14 +34,10 @@ def _verdicts(raw: str | None) -> tuple[str, ...] | None:
     return vs
 
 
-# ---------------------------------------------------------------------------
-# 담당자
-# ---------------------------------------------------------------------------
 @router.post("/matching/announcements/{ann_id}", status_code=201)
 async def run_announcement_matching(ann_id: int, verdict: str | None = Query(None, description="ELIGIBLE,NEEDS_INFO"),
                                     user: CurrentUser = Depends(require_roles(*STAFF)),
                                     rid: str = Depends(request_id)):
-    """이 공고에 맞는 기업을 찾는다. 판정(적합→정보부족→부적격)·총점 순."""
     vs = _verdicts(verdict)
     async with transaction(user.id, rid) as conn:
         run_id = await match_announcement(conn, ann_id, requested_by=user.id)
@@ -62,7 +47,6 @@ async def run_announcement_matching(ann_id: int, verdict: str | None = Query(Non
 @router.post("/matching/companies/{org_id}", status_code=201)
 async def run_company_matching(org_id: int, include_closed: bool = False, verdict: str | None = None,
                                user: CurrentUser = Depends(require_roles(*STAFF)), rid: str = Depends(request_id)):
-    """이 기업이 지원할 만한 공고를 찾는다 (담당자가 대신 실행)."""
     vs = _verdicts(verdict)
     async with transaction(user.id, rid) as conn:
         run_id = await match_company(conn, org_id, include_closed=include_closed, requested_by=user.id, via="STAFF")
@@ -72,7 +56,7 @@ async def run_company_matching(org_id: int, include_closed: bool = False, verdic
 @router.get("/matching/announcements/{ann_id}")
 async def latest_announcement_run(ann_id: int, verdict: str | None = None,
                                   _: CurrentUser = Depends(require_roles(*STAFF))):
-    """이 공고의 마지막 매칭 결과 (아직 없으면 run = null). 화면이 열릴 때 다시 돌리지 않고 보여 준다."""
+    """마지막 실행 결과. 없으면 run=null."""
     vs = _verdicts(verdict)
     async with transaction() as conn:
         row = await (await conn.execute(
@@ -86,7 +70,6 @@ async def latest_announcement_run(ann_id: int, verdict: str | None = None,
 
 @router.get("/matching/companies/{org_id}/profile")
 async def staff_company_profile(org_id: int, _: CurrentUser = Depends(require_roles(*STAFF))):
-    """담당자가 보는 기업 프로필 전부 (권한 있는 담당자에게만 신용등급·매출이 보인다)."""
     async with transaction() as conn:
         if not await (await conn.execute(
                 "SELECT 1 FROM ax.company_profile WHERE organization_id = %s", (org_id,))).fetchone():
@@ -94,7 +77,7 @@ async def staff_company_profile(org_id: int, _: CurrentUser = Depends(require_ro
         view = await full_view(conn, org_id)
     view["visibility"] = "STAFF"
     if view.get("registered_email"):
-        view["registered_email"] = mailer.mask_email(view["registered_email"])   # 연락은 기업이 관리 링크로
+        view["registered_email"] = mailer.mask_email(view["registered_email"])
     return view
 
 
@@ -104,9 +87,6 @@ async def get_run(run_id: int, verdict: str | None = None, _: CurrentUser = Depe
         return await run_results(conn, run_id, verdicts=_verdicts(verdict))
 
 
-# ---------------------------------------------------------------------------
-# 기업 (로그인 없음)
-# ---------------------------------------------------------------------------
 async def _company_run(conn, org_id: int, include_closed: bool, refresh: bool, via: str) -> int:
     run_id = None if refresh else await fresh_company_run(conn, org_id, include_closed)
     return run_id or await match_company(conn, org_id, include_closed=include_closed, via=via)
@@ -114,8 +94,7 @@ async def _company_run(conn, org_id: int, include_closed: bool, refresh: bool, v
 
 @router.get("/companies/{business_reg_no}/matches", dependencies=[Depends(public_rate_limit)])
 async def public_matches(business_reg_no: str, rid: str = Depends(request_id)):
-    """사업자번호만으로 보는 추천 공고. 신용등급·매출 요건은 결과를 가리고, 판정도 공개 정보만으로 낸다.
-    전체 결과와 보완질문은 관리 링크로 본다."""
+    """공개 조회. 신용등급·매출 요건은 가리고 나머지로만 판정."""
     bizno = _bizno(business_reg_no)
     async with transaction(None, rid) as conn:
         found = await find_by_bizno(conn, bizno)
@@ -128,7 +107,6 @@ async def public_matches(business_reg_no: str, rid: str = Depends(request_id)):
 @router.post("/manage/matches", dependencies=[Depends(public_rate_limit)])
 async def my_matches(include_closed: bool = False, refresh: bool = False, verdict: str | None = None,
                      link: dict = Depends(manage_link), rid: str = Depends(request_id)):
-    """관리 링크로 보는 내 추천 공고 (오늘 결과가 있고 그 뒤 바뀐 게 없으면 그 결과를 다시 쓴다)."""
     vs = _verdicts(verdict)
     async with transaction(None, f"{rid}|company-link:{link['link_id']}") as conn:
         run_id = await _company_run(conn, link["organization_id"], include_closed, refresh, "COMPANY_LINK")
@@ -137,14 +115,13 @@ async def my_matches(include_closed: bool = False, refresh: bool = False, verdic
 
 @router.get("/manage/questions", dependencies=[Depends(public_rate_limit)])
 async def my_questions(link: dict = Depends(manage_link), rid: str = Depends(request_id)):
-    """정보부족(또는 우대 요건 모름)으로 남은 보완질문. 같은 요건은 한 번만."""
     async with transaction(None, f"{rid}|company-link:{link['link_id']}") as conn:
         run_id = await _company_run(conn, link["organization_id"], False, False, "COMPANY_LINK")
         res = await run_results(conn, run_id)
     out: dict[int, dict] = {}
     for r in res["recommendations"]:
         if r["verdict"] == "INELIGIBLE":
-            continue   # 이미 부적격이면 답해도 바뀌지 않는다
+            continue
         for c in r["checks"]:
             if c["result"] == "UNKNOWN" and c["question"] and c["requirement_id"] not in out:
                 out[c["requirement_id"]] = {
@@ -166,8 +143,7 @@ class AnswersIn(BaseModel):
 
 @router.post("/manage/answers", dependencies=[Depends(public_rate_limit)])
 async def answer_questions(body: AnswersIn, link: dict = Depends(manage_link), rid: str = Depends(request_id)):
-    """보완질문에 답한다 (같은 요건은 최신 답 하나). 답한 뒤 다시 판정한 결과를 돌려준다.
-    답은 '자가 신고'로 표시된다."""
+    """답 저장(요건당 최신 1건) 후 재판정 결과 반환."""
     org_id = link["organization_id"]
     async with transaction(None, f"{rid}|company-link:{link['link_id']}") as conn:
         for a in body.answers:

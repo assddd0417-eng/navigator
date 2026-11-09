@@ -10,7 +10,7 @@ seeds/          init_test_data.sql (부서·사용자 1~5·역할·기관·사�
 scripts/         migrate.sh (psql 기반 실행기, 체크섬 검증), smoke_test.sh (curl API 스모크 테스트)
 docs/ERD.md      ERD·설계 설명·가정·요구사항 매핑
 backend/         FastAPI 백엔드 (매칭·추천 엔진, HITL 검토 API) — backend/README.md
-docs/navigator.md Navigator(기업 대상 서비스) 단계별 설명 — 1단계: 기업 프로필·관리 링크
+docs/navigator.md Navigator(기업 대상 서비스) API·판정 규칙·로컬 실행
 frontend/        Vite + React 역할별 화면 (역할 선택 로그인, 관리자·작업자 대시보드) — frontend/README.md
 ```
 

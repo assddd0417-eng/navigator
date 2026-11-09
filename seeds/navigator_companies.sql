@@ -1,22 +1,9 @@
--- =============================================================================
--- Navigator 1단계 시드: 가상 기업 3곳 (분야가 서로 다름). 모든 사업자번호는 가상(999- 로 시작)이다.
---
---   101 (가상)한빛전자통신  999-81-00015  전술 데이터링크·통신   대전  SME      국세청 확인됨
---   102 (가상)누리복합소재  999-82-00026  방탄·항공 복합소재     경남  MIDSIZE  국세청 확인됨, 방산업체 지정
---   103 (가상)새봄비전AI    999-83-00038  EO/IR 영상 AI        경기  STARTUP  미확인 (자가입력만, R&D 이력 없음)
---
---   보여 주려는 것
---   - 확인됨/미확인 표시, 출처(SELF/EXTERNAL/INTERNAL)
---   - 102 매출: 자가입력 1,240억 vs DART(목업) 1,198억 → 칸별 비교에서 differs = true
---   - 101 R&D 이력 하나는 내부 과제 PRJ-2022-001 과 연결 (seeds/init_test_data.sql 이 있으면)
---   - 103 은 신용등급이 자가입력(평가서 없음), R&D 이력 없음 → 3단계 판정에서 '정보부족'이 나올 기업
---
--- 관리 링크는 시드에 넣지 않는다 (비밀값이므로). 필요하면 API 로 다시 받는다:
---   POST /navigator/companies/9998100015/access-link   (NAVIGATOR_DEV_EXPOSE_LINK=true 면 응답에 링크가 실림)
---
--- 전제: 마이그레이션 0019·0020 적용. 재실행 안전: 세 기업의 행을 지우고 다시 넣어 처음 상태로 되돌린다.
---   psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f seeds/navigator_companies.sql
--- =============================================================================
+-- Navigator 테스트 기업 3곳 (사업자번호 999- 는 가상)
+--   101 한빛전자통신 999-81-00015  통신   대전 SME      NTS 확인
+--   102 누리복합소재 999-82-00026  복합재 경남 MIDSIZE  NTS 확인, 방산업체, 매출 자가입력≠DART
+--   103 새봄비전AI   999-83-00038  영상AI 경기 STARTUP  미확인, R&D 이력 없음
+-- 관리 링크는 넣지 않음 (POST /navigator/companies/{brn}/access-link).
+-- 재실행 가능: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f seeds/navigator_companies.sql
 \set ON_ERROR_STOP on
 BEGIN;
 SET LOCAL search_path = ax, public;
@@ -52,7 +39,7 @@ ON CONFLICT (organization_id) DO UPDATE SET
   biz_verify_status = EXCLUDED.biz_verify_status, biz_verified_at = EXCLUDED.biz_verified_at,
   registered_email = EXCLUDED.registered_email, registration_channel = EXCLUDED.registration_channel;
 
--- 처음 상태로: 세 기업의 목록·출처·관리 링크를 지우고 다시 넣는다
+-- 초기화
 DELETE FROM company_patent        WHERE organization_id IN (101,102,103);
 DELETE FROM company_certification WHERE organization_id IN (101,102,103);
 DELETE FROM company_credit_rating WHERE organization_id IN (101,102,103);
@@ -84,7 +71,7 @@ INSERT INTO company_certification (organization_id, cert_type_code, cert_no, iss
                                    origin, verified_at) VALUES
   (101, 'VENTURE',         'V-2024-101', '벤처기업확인기관',     '2024-05-10', '2027-05-09', 'SELF', NULL),
   (101, 'RND_LAB',         'L-2013-101', '한국산업기술진흥협회', '2013-02-01', NULL,         'SELF', NULL),
-  (101, 'ISO9001',         'Q-2023-101', '(가상)인증원',        '2023-11-01', '2026-10-31', 'SELF', NULL),  -- 만료 (기준일 2026-11-09)
+  (101, 'ISO9001',         'Q-2023-101', '(가상)인증원',        '2023-11-01', '2026-10-31', 'SELF', NULL),  -- 만료
   (102, 'INNOBIZ',         'I-2024-102', '중소벤처기업부',       '2024-01-15', '2027-01-14', 'SELF', NULL),
   (102, 'AS9100',          'A-2025-102', '(가상)인증원',        '2025-03-01', '2028-02-28', 'SELF', NULL),
   (102, 'DEFENSE_COMPANY', 'D-2011-102', '산업통상자원부',       '2011-06-30', NULL,         'STAFF', now()),
@@ -92,13 +79,13 @@ INSERT INTO company_certification (organization_id, cert_type_code, cert_no, iss
   (102, 'RND_LAB',         'L-2007-102', '한국산업기술진흥협회', '2007-04-01', NULL,         'SELF', NULL),
   (103, 'VENTURE',         'V-2025-103', '벤처기업확인기관',     '2025-02-01', '2028-01-31', 'SELF', NULL);
 
--- 신용등급 (NICE/KED 는 계약 전 목업값 = EXTERNAL, 103 은 평가서 없는 자가입력)
+-- 신용등급 (NICE/KED 는 목업값)
 INSERT INTO company_credit_rating (organization_id, agency, grade, rated_on, valid_until, origin, verified_at) VALUES
   (101, 'NICE', 'BBB-', '2026-04-10', '2027-04-09', 'EXTERNAL', now()),
   (102, 'KED',  'A-',   '2026-05-20', '2027-05-19', 'EXTERNAL', now()),
   (103, 'SELF', 'B+',   '2026-01-15', NULL,         'SELF',     NULL);
 
--- R&D 수행 이력 (과제번호가 내부 과제와 같으면 연결)
+-- R&D 이력
 INSERT INTO company_rnd_history (organization_id, project_no, title, funding_agency, start_date, end_date,
                                  amount_krw, role, summary, internal_project_id, origin, verified_at)
 SELECT v.org, v.pno, v.title, v.agency, v.s::date, v.e::date, v.amt, v.role, v.summary,
@@ -114,7 +101,7 @@ SELECT v.org, v.pno, v.title, v.agency, v.s::date, v.e::date, v.amt, v.role, v.s
      1800000000::bigint, 'PARTICIPANT', '성형 공정 개발 담당', 'SELF')
   ) AS v(org, pno, title, agency, s, e, amt, role, summary, origin);
 
--- 칸별 출처 (자가입력 = 미확인, 외부 = 확인됨)
+-- 칸별 출처
 INSERT INTO company_field_source (organization_id, field_name, value, source_kind, external_source_id, is_verified, verified_at)
 SELECT v.org, v.field, v.val::jsonb, v.kind, (SELECT id FROM external_source WHERE code = v.src),
        v.ver, CASE WHEN v.ver THEN now() END
@@ -142,7 +129,7 @@ SELECT v.org, v.field, v.val::jsonb, v.kind, (SELECT id FROM external_source WHE
     (103, 'opened_on',           '"2021-06-01"',        'SELF',     NULL,      false)
   ) AS v(org, field, val, kind, src, ver);
 
--- 시퀀스를 고정 ID 뒤로 (줄이지는 않음)
+-- 시퀀스
 DO $$ BEGIN
   PERFORM setval(pg_get_serial_sequence('ax.organization', 'id'), GREATEST((SELECT max(id) FROM ax.organization), 10));
 END $$;

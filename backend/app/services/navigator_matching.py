@@ -1,13 +1,4 @@
-"""Navigator 기업 ↔ 공고 매칭 (공고→기업, 기업→공고 두 방향).
-
-기존 이어달리기 매칭(services/matching.py)과 같은 순서를 따른다.
-  1) 벡터 확인 (없는 기업·공고는 임베딩)
-  2) 후보 많이 뽑기: 관점별 HNSW 최근접 (ANNOUNCEMENT_TO_COMPANY: 공고 벡터 → 기업, COMPANY_TO_ANNOUNCEMENT: 기업 벡터 → 공고)
-  3) 정확히 다시 재기: 후보 쌍의 관점별 유사도를 전부 계산
-  4) 자격요건 판정 (services/eligibility.py) + 기준별 점수 (TECH·IPC·PURPOSE·PREFERENCE)
-  5) 판정 순(적합 → 정보부족 → 부적격) · 총점 순으로 순위 → 근거·연계이유와 함께 저장
-연계이유는 규칙 템플릿 문장이다 (외부 전송 없음, 신용등급 값 없음).
-"""
+"""기업-공고 매칭 (양방향). HNSW 로 후보를 뽑고 쌍별 유사도, 자격요건 판정, 점수를 계산해 저장한다."""
 from __future__ import annotations
 
 import json
@@ -55,8 +46,8 @@ class AnnInfo:
     receipt_state: str
     receipt_end: date | None
     requirements: list[Requirement] = field(default_factory=list)
-    req_meta: dict[int, dict] = field(default_factory=dict)      # requirement_id → 근거·종류 이름
-    tech_needs: dict[int, dict] = field(default_factory=dict)    # tech_need_id → {tech_name, ipc_codes, is_core}
+    req_meta: dict[int, dict] = field(default_factory=dict)      # requirement_id: 근거·종류명
+    tech_needs: dict[int, dict] = field(default_factory=dict)    # tech_need_id: row
 
 
 @dataclass
@@ -65,16 +56,13 @@ class Scored:
     ann: AnnInfo
     checks: list[tuple[Requirement, Check]]
     verdict: str
-    scores: dict[str, tuple[float, str, dict]]    # criterion → (score, method, detail)
+    scores: dict[str, tuple[float, str, dict]]    # criterion: (score, method, detail)
     total: float
     evidence: list[dict]
     rationale: str
     counts: dict[str, int]
 
 
-# ---------------------------------------------------------------------------
-# 불러오기
-# ---------------------------------------------------------------------------
 async def load_announcements(conn: AsyncConnection, ann_ids: list[int]) -> dict[int, AnnInfo]:
     rows = await (await conn.execute(
         "SELECT id, title, agency_name, receipt_end, receipt_state FROM ax.v_announcement WHERE id = ANY(%s)",
@@ -111,7 +99,7 @@ async def load_companies(conn: AsyncConnection, org_ids: list[int]) -> dict[int,
     facts = {r["id"]: CompanyFacts(r["id"], r["name"], r["company_size"], r["opened_on"], r["region"],
                                    r["employee_count"], r["annual_revenue_krw"], r["business_status"],
                                    r["is_defense_company"]) for r in rows}
-    # 외부에서 확인된 값이 있으면 그것을 쓴다 (자가입력과 다를 때)
+    # 외부 확인값 우선
     for r in await (await conn.execute(
             """SELECT organization_id, field_name, preferred_value FROM ax.v_company_field_compare
                 WHERE organization_id = ANY(%s) AND any_verified
@@ -144,9 +132,6 @@ async def load_companies(conn: AsyncConnection, org_ids: list[int]) -> dict[int,
     return facts
 
 
-# ---------------------------------------------------------------------------
-# 후보 뽑기 (HNSW) → 정확한 유사도
-# ---------------------------------------------------------------------------
 async def candidate_companies(conn: AsyncConnection, ann_id: int, k: int) -> set[int]:
     ids: set[int] = set()
     for afacet, cfacets in (("TECH_NEED", "('TECH','PATENT','RND')"), ("SUMMARY", "('SUMMARY','BUSINESS')"),
@@ -193,7 +178,6 @@ async def candidate_announcements(conn: AsyncConnection, org_id: int, k: int, st
 
 
 async def pair_similarities(conn: AsyncConnection, org_ids: list[int], ann_ids: list[int]) -> list[dict]:
-    """후보 쌍의 관점별 유사도 전부 (요구기술 ↔ 기업 기술·특허·R&D·주요사업, 공고 요약·목적 ↔ 기업 요약·주요사업)."""
     return await (await conn.execute(
         """SELECT ae.announcement_id, ae.facet AS afacet, ae.source_id AS tech_need_id,
                   ce.organization_id, ce.facet AS cfacet, ce.source_table, ce.source_id, ce.source_text,
@@ -207,9 +191,6 @@ async def pair_similarities(conn: AsyncConnection, org_ids: list[int], ann_ids: 
         (ann_ids, org_ids))).fetchall()
 
 
-# ---------------------------------------------------------------------------
-# 점수·판정 (순수)
-# ---------------------------------------------------------------------------
 def _clamp(x: float) -> float:
     return max(0.0, min(1.0, x))
 
@@ -226,7 +207,7 @@ def score_pair(org: CompanyFacts, ann: AnnInfo, sims: list[dict]) -> Scored:
     counts = {"mandatory_met": sum(c.result == "MET" for c in mand), "mandatory_total": len(mand),
               "preferred_met": sum(c.result == "MET" for c in pref), "preferred_total": len(pref)}
 
-    # TECH: 요구기술마다 가장 가까운 기업 근거 (핵심 요구기술 가중치 2)
+    # TECH: 요구기술별 최대 유사도, 핵심 요구기술 x2
     best: dict[int, dict] = {}
     for s in sims:
         if s["afacet"] == "TECH_NEED" and s["tech_need_id"] in ann.tech_needs:
@@ -247,11 +228,11 @@ def score_pair(org: CompanyFacts, ann: AnnInfo, sims: list[dict]) -> Scored:
                 evidence.append({"kind": "TECH_MATCH", "company_source_table": hit["source_table"],
                                  "company_source_id": hit["source_id"], "company_text": hit["source_text"][:300],
                                  "tech_need_id": tn_id, "similarity": round(sim, 5)})
-        tech = (num / den, "cosine:요구기술↔기업 기술·특허·R&D(최댓값, 핵심×2 가중평균)", {"per_tech_need": per_need})
+        tech = (num / den, "cosine max per tech need, core x2", {"per_tech_need": per_need})
     else:
         tech = (NEUTRAL, "neutral:요구기술 없음", {})
 
-    # IPC: 요구기술 IPC 소분류(4자리)와 기업 특허 IPC 가 겹치는 비율
+    # IPC: 서브클래스(4자리) 일치 비율
     company_ipc = {_ipc_subclass(c) for p in org.patents if p.status != "LAPSED" for c in p.ipc_codes}
     with_ipc = [(tn_id, tn) for tn_id, tn in ann.tech_needs.items() if tn["ipc_codes"]]
     if with_ipc and org.patents:
@@ -265,12 +246,10 @@ def score_pair(org: CompanyFacts, ann: AnnInfo, sims: list[dict]) -> Scored:
     else:
         ipc = (NEUTRAL, "neutral:" + ("요구기술 IPC 없음" if not with_ipc else "기업 특허 없음"), {})
 
-    # PURPOSE: 공고 요약·목적 ↔ 기업 요약·주요사업
     purpose_sims = [float(s["sim"]) for s in sims if s["afacet"] in ("SUMMARY", "PURPOSE")]
-    purpose = ((_clamp(max(purpose_sims)), "cosine:공고 요약·목적↔기업 요약·주요사업(최댓값)", {})
+    purpose = ((_clamp(max(purpose_sims)), "cosine max (summary/purpose vs summary/business)", {})
                if purpose_sims else (NEUTRAL, "neutral:벡터 없음", {}))
 
-    # PREFERENCE: 우대 요건 충족 비율
     preference = ((counts["preferred_met"] / len(pref), "rule:우대 요건 충족 비율",
                    {"met": counts["preferred_met"], "total": len(pref)})
                   if pref else (NEUTRAL, "neutral:우대 요건 없음", {}))
@@ -289,14 +268,13 @@ def score_pair(org: CompanyFacts, ann: AnnInfo, sims: list[dict]) -> Scored:
 
 def rationale_text(org: CompanyFacts, ann: AnnInfo, checks: list[tuple[Requirement, Check]], verdict: str,
                    scores: dict, best: dict[int, dict], counts: dict[str, int]) -> str:
-    head = (f"[{VERDICT_KO[verdict]}] '{org.name}' ↔ 공고 '{ann.title}': 필수 요건 "
-            f"{counts['mandatory_met']}/{counts['mandatory_total']}개 충족")
+    head = f"필수 요건 {counts['mandatory_met']}/{counts['mandatory_total']}개 충족"
     if counts["preferred_total"]:
         head += f", 우대 {counts['preferred_met']}/{counts['preferred_total']}개"
     head += f". 기술 적합도 {scores['TECH'][0]:.2f}"
     if best:
         tn_id, hit = max(best.items(), key=lambda kv: kv[1]["sim"])
-        head += (f" (요구기술 '{ann.tech_needs[tn_id]['tech_name']}' ↔ {SOURCE_KO.get(hit['source_table'], '기업 정보')} "
+        head += (f" (요구기술 '{ann.tech_needs[tn_id]['tech_name']}'와 가장 가까운 {SOURCE_KO.get(hit['source_table'], '기업 정보')}: "
                  f"'{hit['source_text'].splitlines()[0][:60]}')")
     head += "."
     if verdict == "INELIGIBLE":
@@ -312,13 +290,10 @@ def rank(scored: list[Scored]) -> list[Scored]:
     return sorted(scored, key=lambda s: (VERDICT_ORDER[s.verdict], -s.total, s.org.organization_id, s.ann.id))
 
 
-# ---------------------------------------------------------------------------
-# 실행·저장
-# ---------------------------------------------------------------------------
 def rule_snapshot() -> dict[str, Any]:
     s = get_settings()
     return {"version": RULE_VERSION, "weights": WEIGHTS, "candidate_k": s.navigator_match_candidate_k,
-            "verdict": "필수 미충족→부적격, 필수 모름→정보부족, 그 외 적합", "neutral": NEUTRAL}
+            "verdict": "mandatory UNMET=INELIGIBLE, UNKNOWN=NEEDS_INFO", "neutral": NEUTRAL}
 
 
 async def _save(conn: AsyncConnection, direction: str, ranked: list[Scored], *, ann_id: int | None,
@@ -365,7 +340,6 @@ async def _save(conn: AsyncConnection, direction: str, ranked: list[Scored], *, 
 
 async def match_announcement(conn: AsyncConnection, ann_id: int, *, requested_by: int | None,
                              via: str = "STAFF") -> int:
-    """공고 → 기업: 이 공고에 맞는 기업 순위."""
     if not await (await conn.execute("SELECT 1 FROM ax.announcement WHERE id = %s", (ann_id,))).fetchone():
         raise NotFound("공고", ann_id)
     await ensure_embeddings(conn)
@@ -384,7 +358,6 @@ async def match_announcement(conn: AsyncConnection, ann_id: int, *, requested_by
 
 async def match_company(conn: AsyncConnection, org_id: int, *, include_closed: bool = False,
                         requested_by: int | None = None, via: str = "COMPANY_LINK") -> int:
-    """기업 → 공고: 이 기업에 맞는 공고 순위. 기본은 접수중·접수전 공고, include_closed 면 마감 공고도 (예전엔 지원 가능)."""
     await ensure_embeddings(conn)
     k = get_settings().navigator_match_candidate_k
     states = ("OPEN", "UPCOMING", "CLOSED") if include_closed else ("OPEN", "UPCOMING")
@@ -404,7 +377,7 @@ async def match_company(conn: AsyncConnection, org_id: int, *, include_closed: b
 
 
 async def fresh_company_run(conn: AsyncConnection, org_id: int, include_closed: bool) -> int | None:
-    """같은 기업의 저장된 결과를 다시 쓸 수 있으면 그 실행 ID (오늘 만든 것이고, 그 뒤로 기업·공고·답이 안 바뀜)."""
+    """오늘 실행했고 이후 변경이 없으면 그 run id 재사용."""
     row = await (await conn.execute(
         """SELECT r.id FROM ax.company_match_run r
             WHERE r.direction = 'COMPANY_TO_ANNOUNCEMENT' AND r.organization_id = %(org)s
@@ -424,9 +397,6 @@ async def fresh_company_run(conn: AsyncConnection, org_id: int, include_closed: 
     return row["id"] if row else None
 
 
-# ---------------------------------------------------------------------------
-# 결과 읽기
-# ---------------------------------------------------------------------------
 async def run_results(conn: AsyncConnection, run_id: int, *, public: bool = False,
                       verdicts: tuple[str, ...] | None = None) -> dict:
     run = await (await conn.execute(
@@ -499,8 +469,7 @@ async def run_results(conn: AsyncConnection, run_id: int, *, public: bool = Fals
 
 
 def _redact_public(r: dict) -> None:
-    """사업자번호만으로 보는 결과: 신용등급·매출 요건은 결과를 가렸으므로 판정·연계이유도 그 요건 없이 다시 쓴다
-    (가린 요건 때문에 부적격이 된 사실이 판정으로 드러나지 않게)."""
+    # 가린 요건(신용·매출)이 판정으로 새지 않게 나머지 요건만으로 판정 재계산
     r.pop("business_reg_no", None)
     shown = [c for c in r["checks"] if c["result"] is not None]
     mand = [c for c in shown if c["is_mandatory"]]
@@ -516,10 +485,10 @@ def _redact_public(r: dict) -> None:
              mandatory_met=sum(c["result"] == "MET" for c in mand), mandatory_total=len(mand),
              preferred_met=sum(c["result"] == "MET" for c in pref), preferred_total=len(pref),
              hidden_requirements=hidden, questions=[])
-    text = (f"[{VERDICT_KO[verdict]}] 공개 정보 기준: 필수 요건 {r['mandatory_met']}/{r['mandatory_total']}개 충족. "
+    text = (f"공개 정보 기준 필수 요건 {r['mandatory_met']}/{r['mandatory_total']}개 충족. "
             f"기술 적합도 {r['scores'].get('TECH', {}).get('score', 0):.2f}.")
     if hidden:
-        text += f" 신용등급·매출 등 {hidden}개 요건은 관리 링크로 확인하세요."
+        text += f" 신용등급·매출 요건 {hidden}개는 관리 링크에서 확인."
     r["rationale"] = text
     r["evidence"] = [e for e in r["evidence"] if e["kind"] != "REQUIREMENT"
                      or any(c["requirement_id"] == e["requirement_id"] for c in shown)]

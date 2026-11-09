@@ -1,4 +1,3 @@
-/** Navigator 화면 공통 부품: 판정 배지, 매칭 결과 한 줄(펼치면 요건별 판정·점수·근거), 기업 화면 틀. */
 import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import {
@@ -33,10 +32,6 @@ const SOURCE_LABELS: Record<string, string> = {
   company_patent: '특허', company_rnd_history: 'R&D 이력', project: '기관 내부 과제', company_technology: '보유기술',
 }
 
-/**
- * 매칭 결과 한 건. who = 'company' 면 공고 이름을, 'announcement' 면 기업 이름을 제목으로 쓴다.
- * 펼치면 요건별 판정, 기준별 점수, 근거가 나온다.
- */
 export function MatchItem({ rec, title, onTitle, extra, defaultOpen = false }: {
   rec: MatchRec
   title: ReactNode
@@ -56,10 +51,10 @@ export function MatchItem({ rec, title, onTitle, extra, defaultOpen = false }: {
           <div className="small muted">
             필수 요건 {rec.mandatory_met}/{rec.mandatory_total} 충족
             {rec.preferred_total > 0 && ` · 우대 ${rec.preferred_met}/${rec.preferred_total}`}
-            {rec.hidden_requirements ? ` · ${rec.hidden_requirements}개 요건은 관리 링크로 확인` : ''}
+            {rec.hidden_requirements ? ` · 비공개 요건 ${rec.hidden_requirements}개` : ''}
           </div>
         </div>
-        <div className="match-score" title="총점 (기준별 점수 × 가중치)">
+        <div className="match-score" title="가중합">
           <strong>{rec.total_score.toFixed(2)}</strong>
           <span className="small muted">총점</span>
         </div>
@@ -113,7 +108,7 @@ export function MatchItem({ rec, title, onTitle, extra, defaultOpen = false }: {
             </div>
             <div>
               <h4>기술 근거</h4>
-              {tech.length === 0 ? <p className="muted small">비교할 요구기술이 없습니다.</p> : (
+              {tech.length === 0 ? <p className="muted small">요구기술 없음</p> : (
                 <ul className="evidence">
                   {tech.map((e, i) => (
                     <li key={i}>
@@ -137,14 +132,13 @@ export function MatchItem({ rec, title, onTitle, extra, defaultOpen = false }: {
   )
 }
 
-/** 로그인 없는 기업 화면 틀 (담당자 화면의 사이드 메뉴 없이) */
 export function CompanyShell({ children, right }: { children: ReactNode; right?: ReactNode }) {
   return (
     <div className="app-shell">
       <header className="topbar topbar-company">
         <Link to="/navigator" className="brand brand-link">
           <span className="brand-mark">AX</span>
-          <span>Navigator · 우리 회사에 맞는 공고 찾기</span>
+          <span>Navigator</span>
         </Link>
         <div className="topbar-right">
           {right}

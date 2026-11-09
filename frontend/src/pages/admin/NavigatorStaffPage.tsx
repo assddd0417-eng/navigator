@@ -1,4 +1,3 @@
-/** 기관 담당자: 공고별 적합 기업 목록 (로그인). 공고를 고르면 마지막 매칭 결과를 보여 주고, 다시 매칭할 수 있다. */
 import { useEffect, useRef, useState } from 'react'
 import {
   latestAnnouncementRun, listAnnouncements, runAnnouncementMatching, SIZE_LABELS, staffCompanyProfile,
@@ -36,7 +35,7 @@ export function NavigatorStaffPage() {
 
   return (
     <>
-      <PageHeader title="공고별 적합 기업" subtitle="공고의 자격요건과 요구기술로 등록 기업을 판정합니다 (Navigator)." />
+      <PageHeader title="공고별 적합 기업" subtitle="Navigator 매칭 결과" />
       <div className="grid-side">
         <Card title="공고">
           <div className="chips" style={{ marginTop: 0, marginBottom: 10 }}>
@@ -79,7 +78,7 @@ export function NavigatorStaffPage() {
 
           {result && (
             <Card title="판정 결과" actions={<VerdictSummary run={result} />}>
-              {!result.run ? <Empty>아직 매칭하지 않았습니다. 위의 "매칭 실행"을 누르세요.</Empty> : (
+              {!result.run ? <Empty>매칭 이력이 없습니다.</Empty> : (
                 <>
                   <div className="chips" style={{ marginTop: 0, marginBottom: 10 }}>
                     <button className={`chip ${!filter ? 'chip-on' : ''}`} onClick={() => setFilter(null)}>전체</button>
@@ -121,7 +120,6 @@ function AnnButton({ a, on, onClick }: { a: AnnouncementRow; on: boolean; onClic
   )
 }
 
-/** 담당자가 보는 기업 프로필 (신용등급 포함: 권한 있는 담당자만) */
 function CompanyCard({ p, onClose }: { p: FullProfile; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => { ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, [p.organization_id])
@@ -143,11 +141,11 @@ function CompanyCard({ p, onClose }: { p: FullProfile; onClose: () => void }) {
         <div>
           <h4>인증 {p.certifications.length}</h4>
           <ul className="plain-list small">
-            {p.certifications.map((c) => <li key={c.id}>{c.cert_type_name}{c.is_expired ? ' (만료)' : ''}{c.is_verified ? ' ✓' : ''}</li>)}
+            {p.certifications.map((c) => <li key={c.id}>{c.cert_type_name}{c.is_expired ? ' (만료)' : ''}{c.is_verified ? ' (확인)' : ''}</li>)}
           </ul>
-          <h4>신용등급 <span className="pill">권한 있는 담당자만</span></h4>
+          <h4>신용등급 <span className="pill">담당자 전용</span></h4>
           <ul className="plain-list small">
-            {p.credit_ratings.map((c) => <li key={c.id}>{c.agency} {c.grade} ({c.rated_on ?? '–'}){c.is_verified ? ' ✓' : ' · 자가입력'}</li>)}
+            {p.credit_ratings.map((c) => <li key={c.id}>{c.agency} {c.grade} ({c.rated_on ?? '–'}){c.is_verified ? ' (확인)' : ' (자가입력)'}</li>)}
           </ul>
         </div>
         <div>

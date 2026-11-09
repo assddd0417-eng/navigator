@@ -1,7 +1,4 @@
-/**
- * 관리 링크로 여는 기업 화면 (로그인 없음): 내 맞는 공고(전부) · 보완질문 답하기 · 내 정보 고치기.
- * 링크 형식: /navigator/manage#t=<비밀값>. 비밀값은 세션 저장소에만 두고 주소창에서는 지운다.
- */
+// /navigator/manage#t=<token>. 토큰은 sessionStorage 에 옮기고 주소창에서는 지운다.
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ApiError } from '../../api/client'
@@ -48,7 +45,7 @@ export function CompanyManagePage() {
     if (!token) return
     getMyProfile(token)
       .then((p) => { setProfile(p); void loadMatches(false); void loadQuestions() })
-      .catch((e) => setInvalid(e instanceof ApiError ? e.detail : '관리 링크를 확인하지 못했습니다.'))
+      .catch((e) => setInvalid(e instanceof ApiError ? e.detail : '관리 링크 확인 실패'))
   }, [token, loadMatches, loadQuestions])
 
   const logout = () => {
@@ -59,19 +56,19 @@ export function CompanyManagePage() {
   if (invalid) {
     return (
       <CompanyShell>
-        <Card title="관리 링크로 열 수 없습니다">
+        <Card title="유효하지 않은 관리 링크">
           <p>{invalid}</p>
-          <p className="muted">사업자등록번호로 찾은 뒤 "관리 링크 이메일로 받기"를 누르면 등록 이메일로 새 링크가 갑니다.</p>
+          <p className="muted">사업자번호 조회 화면에서 관리 링크를 다시 받으세요.</p>
           <Link className="btn btn-primary" to="/navigator">사업자번호로 찾기</Link>
         </Card>
       </CompanyShell>
     )
   }
-  if (!profile) return <CompanyShell><div className="page-loading">관리 링크를 확인하는 중…</div></CompanyShell>
+  if (!profile) return <CompanyShell><div className="page-loading">불러오는 중…</div></CompanyShell>
 
   const qCount = questions?.length ?? 0
   return (
-    <CompanyShell right={<button className="btn btn-ghost" onClick={logout}>이 기기에서 나가기</button>}>
+    <CompanyShell right={<button className="btn btn-ghost" onClick={logout}>로그아웃</button>}>
       <div className="page-header">
         <div>
           <h1>{profile.company_name}</h1>
@@ -82,7 +79,7 @@ export function CompanyManagePage() {
         </div>
       </div>
       <div className="seg tabs" role="tablist">
-        <button role="tab" className={tab === 'matches' ? 'on' : ''} onClick={() => setTab('matches')}>맞는 공고</button>
+        <button role="tab" className={tab === 'matches' ? 'on' : ''} onClick={() => setTab('matches')}>추천 공고</button>
         <button role="tab" className={tab === 'questions' ? 'on' : ''} onClick={() => setTab('questions')}>
           보완질문 {qCount > 0 && <span className="tab-count">{qCount}</span>}
         </button>
@@ -90,7 +87,7 @@ export function CompanyManagePage() {
       </div>
 
       {tab === 'matches' && (
-        <Card title="지원할 만한 공고" actions={
+        <Card title="추천 공고" actions={
           <>
             <label className="check small">
               <input type="checkbox" checked={includeClosed}
@@ -100,16 +97,16 @@ export function CompanyManagePage() {
             <button className="btn btn-sm" disabled={busy} onClick={() => void loadMatches(includeClosed, true)}>다시 판정</button>
           </>
         }>
-          {!matches ? <div className="page-loading">판정하는 중…</div> : (
+          {!matches ? <div className="page-loading">불러오는 중…</div> : (
             <>
               <VerdictSummary run={matches} />
               {qCount > 0 && (
                 <div className="notice">
-                  정보가 부족해 판정하지 못한 요건이 {qCount}개 있습니다.{' '}
-                  <button className="link-btn" onClick={() => setTab('questions')}>보완질문에 답하기 →</button>
+                  미확인 요건 {qCount}개{' '}
+                  <button className="link-btn" onClick={() => setTab('questions')}>보완질문 답하기</button>
                 </div>
               )}
-              {matches.recommendations.length === 0 ? <Empty>비교할 공고가 없습니다.</Empty> : (
+              {matches.recommendations.length === 0 ? <Empty>대상 공고가 없습니다.</Empty> : (
                 <ul className="match-list">
                   {matches.recommendations.map((r) => (
                     <MatchItem key={r.id} rec={r} title={
@@ -141,7 +138,6 @@ export function CompanyManagePage() {
   )
 }
 
-// ---------------------------------------------------------------------------
 function QuestionsPanel({ token, questions, onAnswered }: {
   token: string
   questions: Question[] | null
@@ -153,7 +149,7 @@ function QuestionsPanel({ token, questions, onAnswered }: {
 
   if (!questions) return <div className="page-loading">불러오는 중…</div>
   if (questions.length === 0) {
-    return <Card><Empty>남은 보완질문이 없습니다. 판정에 필요한 정보가 모두 있습니다.</Empty></Card>
+    return <Card><Empty>보완질문 없음</Empty></Card>
   }
 
   const submit = (e: FormEvent) => {
@@ -164,14 +160,14 @@ function QuestionsPanel({ token, questions, onAnswered }: {
         value: q.answer_type === 'integer' ? Number(values[q.requirement_id]) : values[q.requirement_id] === 'yes',
       }))
     if (answers.length === 0) {
-      toast.show({ kind: 'info', title: '답한 질문이 없습니다', message: '하나 이상 답한 뒤 저장하세요.' })
+      toast.show({ kind: 'info', title: '답한 질문이 없습니다', message: '' })
       return
     }
     void run(async () => {
       const res = await answerQuestions(token, answers)
       const counts = (['ELIGIBLE', 'NEEDS_INFO', 'INELIGIBLE'] as Verdict[])
         .map((v) => `${VERDICT_LABELS[v]} ${res.summary[v]}`).join(' · ')
-      toast.show({ kind: 'success', title: `답 ${answers.length}개를 저장하고 다시 판정했습니다`, message: counts })
+      toast.show({ kind: 'success', title: `답변 ${answers.length}건 저장, 재판정 완료`, message: counts })
       setValues({})
       onAnswered(res)
     })
@@ -179,7 +175,7 @@ function QuestionsPanel({ token, questions, onAnswered }: {
 
   return (
     <Card title="보완질문">
-      <p className="small muted">답은 "자가 신고"로 표시되며, 공고 접수 때 증빙을 요구받을 수 있습니다.</p>
+      <p className="small muted">답변은 자가 신고로 기록됩니다.</p>
       <form className="form" onSubmit={submit}>
         <ul className="question-list">
           {questions.map((q) => (
@@ -203,14 +199,13 @@ function QuestionsPanel({ token, questions, onAnswered }: {
           ))}
         </ul>
         <div className="form-foot">
-          <button className="btn btn-primary" disabled={busy}>{busy ? '다시 판정하는 중…' : '답 저장하고 다시 판정'}</button>
+          <button className="btn btn-primary" disabled={busy}>{busy ? '저장 중…' : '저장'}</button>
         </div>
       </form>
     </Card>
   )
 }
 
-// ---------------------------------------------------------------------------
 type CertRow = { cert_type_code: string; cert_no: string; issued_on: string; expires_on: string }
 type CreditRow = { agency: string; grade: string; rated_on: string; valid_until: string }
 type RndRow = { title: string; funding_agency: string; start_date: string; end_date: string; role: 'LEAD' | 'PARTICIPANT' }
@@ -257,7 +252,7 @@ function ProfilePanel({ token, profile, onSaved }: {
     }
     void run(async () => {
       const p = await updateMyProfile(token, body)
-      toast.show({ kind: 'success', title: '저장했습니다', message: '바뀐 정보로 맞는 공고를 다시 판정합니다.' })
+      toast.show({ kind: 'success', title: '저장됨', message: '' })
       onSaved(p)
     })
   }
@@ -265,7 +260,7 @@ function ProfilePanel({ token, profile, onSaved }: {
   const readonly = (origin: string) => origin !== 'SELF'
   return (
     <form className="stack" onSubmit={save}>
-      <Card title="기본 정보" actions={<span className="small muted">바꾼 값은 "자가입력·미확인"으로 기록됩니다</span>}>
+      <Card title="기본 정보" actions={<span className="small muted">수정값은 자가입력(미확인)으로 기록</span>}>
         <div className="form">
           <div className="form-row">
             <label className="grow">회사 이름<input required value={f.company_name} onChange={set('company_name')} /></label>
@@ -296,8 +291,8 @@ function ProfilePanel({ token, profile, onSaved }: {
           </div>
           {profile.field_sources.some((x) => x.differs) && (
             <div className="notice small">
-              외부에서 확인된 값과 다른 칸이 있습니다: {profile.field_sources.filter((x) => x.differs).map((x) => x.field_name).join(', ')}.
-              판정에는 외부에서 확인된 값을 먼저 씁니다.
+              외부 확인값과 다름: {profile.field_sources.filter((x) => x.differs).map((x) => x.field_name).join(', ')}.
+              (판정은 외부 확인값 기준)
             </div>
           )}
         </div>
@@ -321,7 +316,7 @@ function ProfilePanel({ token, profile, onSaved }: {
           )} />
       </Card>
 
-      <Card title="신용등급" actions={<span className="small muted">우리 회사와 권한 있는 기관 담당자만 봅니다 · AI 에 보내지 않습니다</span>}>
+      <Card title="신용등급" actions={<span className="small muted">본인·담당자만 조회</span>}>
         <ReadonlyRows rows={profile.credit_ratings.filter((c) => readonly(c.origin)).map((c) =>
           `${c.agency} ${c.grade} (${c.rated_on ?? '평가일 없음'}) · ${ORIGIN_LABELS[c.origin] ?? c.origin}`)} />
         <EditRows rows={credits} setRows={setCredits} empty={{ agency: 'SELF', grade: '', rated_on: '', valid_until: '' }}
@@ -367,11 +362,11 @@ function ProfilePanel({ token, profile, onSaved }: {
             ))}
           </ul>
         )}
-        <p className="small muted">특허는 특허청(KIPRIS) 자동 수집(6단계)과 함께 고칠 수 있게 합니다.</p>
+        <p className="small muted">특허 수정은 미지원 (KIPRIS 연동 예정)</p>
       </Card>
 
       <div className="form-foot sticky-foot">
-        <button className="btn btn-primary" disabled={busy}>{busy ? '저장하는 중…' : '저장하고 다시 판정'}</button>
+        <button className="btn btn-primary" disabled={busy}>{busy ? '저장 중…' : '저장'}</button>
       </div>
     </form>
   )
@@ -381,7 +376,7 @@ function ReadonlyRows({ rows }: { rows: string[] }) {
   if (rows.length === 0) return null
   return (
     <ul className="plain-list small">
-      {rows.map((r, i) => <li key={i}>🔒 {r}</li>)}
+      {rows.map((r, i) => <li key={i}>{r} <span className="muted">(수정 불가)</span></li>)}
     </ul>
   )
 }
@@ -398,8 +393,8 @@ function EditRows<T extends object>({ rows, setRows, empty, render, addLabel }: 
       {rows.map((r, i) => (
         <div key={i} className="form-row edit-row">
           {render(r, (patch) => setRows(rows.map((x, j) => (j === i ? { ...x, ...patch } : x))))}
-          <button type="button" className="btn btn-sm btn-ghost" aria-label="지우기"
-            onClick={() => setRows(rows.filter((_, j) => j !== i))}>✕</button>
+          <button type="button" className="btn btn-sm btn-ghost"
+            onClick={() => setRows(rows.filter((_, j) => j !== i))}>삭제</button>
         </div>
       ))}
       <div><button type="button" className="btn btn-sm" onClick={() => setRows([...rows, { ...empty }])}>+ {addLabel}</button></div>

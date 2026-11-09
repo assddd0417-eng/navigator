@@ -1,10 +1,4 @@
-/**
- * Navigator (기업 ↔ 공고) API.
- *
- * - 기업 화면은 로그인하지 않는다: 사업자번호로 공개 정보만 보고, 이메일로 받은 관리 링크(#t=비밀값)가 있어야
- *   내 프로필·신용정보·보완질문을 본다. 관리 링크 값은 X-Manage-Token 헤더로 보낸다.
- * - 담당자 화면은 기존 로그인(X-User-Id)을 그대로 쓴다.
- */
+// Navigator API. 기업 쪽은 X-User-Id 없이 호출하고, 관리 링크 토큰은 X-Manage-Token 으로 보냄
 import { api } from './client'
 
 export type Verdict = 'ELIGIBLE' | 'NEEDS_INFO' | 'INELIGIBLE'
@@ -26,7 +20,6 @@ export const CERT_TYPES: Record<string, string> = {
   DEFENSE_QMS: '국방품질경영체제 인증', SME_CONFIRM: '중소기업 확인', OTHER: '기타',
 }
 
-// ---- 매칭 결과 -----------------------------------------------------------------
 export interface ScoreItem {
   score: number
   weight: number
@@ -95,7 +88,6 @@ export interface MatchRun {
   recommendations: MatchRec[]
 }
 
-// ---- 기업 프로필 ---------------------------------------------------------------
 export interface Patent {
   id?: number
   application_no: string
@@ -239,7 +231,7 @@ export interface Question {
   answer_type: 'integer' | 'boolean'
 }
 
-// ---- 기업 (로그인 없음) -----------------------------------------------------------
+// 기업
 const anon = { anonymous: true } as const
 const manage = (token: string) => ({ anonymous: true, headers: { 'X-Manage-Token': token } })
 const bizno = (v: string) => encodeURIComponent(v.replace(/[^0-9]/g, ''))
@@ -264,7 +256,7 @@ export const getMyQuestions = (token: string) =>
 export const answerQuestions = (token: string, answers: { requirement_id: number; value: number | boolean }[]) =>
   api<MatchRun>('/navigator/manage/answers', { ...manage(token), method: 'POST', body: { answers } })
 
-// ---- 담당자 (로그인) ---------------------------------------------------------------
+// 담당자
 export interface AnnouncementRow {
   id: number
   announcement_no: string

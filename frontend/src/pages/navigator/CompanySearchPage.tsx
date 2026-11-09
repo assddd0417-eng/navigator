@@ -1,4 +1,3 @@
-/** 기업 첫 화면 (로그인 없음): 사업자번호 → 공개 정보 + 맞는 공고. 자세한 내 정보는 관리 링크로. */
 import { useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ApiError } from '../../api/client'
@@ -9,7 +8,7 @@ import {
 import { Card, Empty, useAction } from '../../components/ui'
 import { CompanyShell, fmtDay, MatchItem, VerdictSummary } from './components'
 
-/** seeds/navigator_companies.sql 의 가상 기업 (시연용) */
+// seeds/navigator_companies.sql
 const DEMO = [
   { brn: '999-81-00015', name: '(가상)한빛전자통신' },
   { brn: '999-82-00026', name: '(가상)누리복합소재' },
@@ -55,15 +54,15 @@ export function CompanySearchPage() {
   return (
     <CompanyShell>
       <section className="hero">
-        <h1>사업자등록번호만 넣으면, 지원할 수 있는 공고를 찾아 드립니다</h1>
-        <p className="muted">로그인은 필요 없습니다. 신용등급·매출 같은 민감한 정보는 등록 이메일로 받은 관리 링크로만 볼 수 있습니다.</p>
+        <h1>사업자등록번호로 지원 가능 공고 조회</h1>
+        <p className="muted">신용등급·매출은 등록 이메일로 받은 관리 링크에서만 조회됩니다.</p>
         <form className="search-row hero-search" onSubmit={submit}>
           <input value={brn} onChange={(e) => setBrn(e.target.value)} placeholder="사업자등록번호 (예: 123-45-67890)"
             inputMode="numeric" aria-label="사업자등록번호" />
-          <button className="btn btn-primary" disabled={busy}>{busy ? '찾는 중…' : '맞는 공고 찾기'}</button>
+          <button className="btn btn-primary" disabled={busy}>{busy ? '조회 중…' : '조회'}</button>
         </form>
         <div className="chips">
-          <span className="small muted">시연용 가상 기업:</span>
+          <span className="small muted">테스트 기업:</span>
           {DEMO.map((d) => (
             <button key={d.brn} type="button" className="chip" onClick={() => { setBrn(d.brn); void search(d.brn) }}>
               {d.name}
@@ -75,7 +74,7 @@ export function CompanySearchPage() {
       {notFound && (
         <Card>
           <p>{notFound}</p>
-          <p className="muted">아직 등록하지 않은 회사라면 1분이면 등록할 수 있습니다.</p>
+          <p className="muted">등록되지 않은 사업자번호입니다.</p>
           <Link className="btn btn-primary" to={`/navigator/register?brn=${encodeURIComponent(brn)}`}>회사 등록하기</Link>
         </Card>
       )}
@@ -102,16 +101,16 @@ export function CompanySearchPage() {
           )}
           <div className="manage-box">
             <div>
-              <strong>우리 회사 담당자이신가요?</strong>
-              <div className="small muted">관리 링크로 정보를 고치고, 보완질문에 답하면 판정이 바로 다시 나옵니다. {profile.note}</div>
+              <strong>관리 링크</strong>
+              <div className="small muted">등록 이메일로 발송됩니다. 정보 수정, 보완질문 답변, 신용등급 조회는 관리 링크에서 합니다.</div>
             </div>
-            <button className="btn" disabled={busy} onClick={() => void sendLink()}>관리 링크 이메일로 받기</button>
+            <button className="btn" disabled={busy} onClick={() => void sendLink()}>관리 링크 받기</button>
           </div>
           {sent && (
             <div className="notice notice-ok">
-              {sent.sent_to} 로 관리 링크를 보냈습니다 (유효기간 {fmtDay(sent.expires_at)}까지). 이전 링크는 더 이상 쓸 수 없습니다.
+              {sent.sent_to} 로 발송했습니다. 유효기간 {fmtDay(sent.expires_at)}, 이전 링크는 만료됩니다.
               {sent.dev_management_link && (
-                <div className="small">개발용: <a href={sent.dev_management_link.replace(/^https?:\/\/[^/]+/, '')}>관리 링크 바로 열기</a></div>
+                <div className="small">[DEV] <a href={sent.dev_management_link.replace(/^https?:\/\/[^/]+/, '')}>관리 링크 열기</a></div>
               )}
             </div>
           )}
@@ -119,11 +118,11 @@ export function CompanySearchPage() {
       )}
 
       {matches && (
-        <Card title="지원할 만한 공고" actions={<VerdictSummary run={matches} />}>
+        <Card title="추천 공고" actions={<VerdictSummary run={matches} />}>
           <p className="small muted">
-            공개 정보만으로 판정했습니다. 적합 → 정보부족 → 부적격, 그 안에서는 총점 순입니다.
+            공개 정보 기준 판정입니다. 판정, 총점 순으로 정렬.
           </p>
-          {matches.recommendations.length === 0 ? <Empty>지금 접수 중이거나 곧 열릴 공고 중 비교할 공고가 없습니다.</Empty> : (
+          {matches.recommendations.length === 0 ? <Empty>대상 공고가 없습니다.</Empty> : (
             <ul className="match-list">
               {matches.recommendations.map((r) => (
                 <MatchItem key={r.id} rec={r} title={

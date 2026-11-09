@@ -1,26 +1,12 @@
--- =============================================================================
--- Navigator 2단계 시드: 가상 공고 5건 (국방 R&D). 공고·기관·금액은 모두 가상이다.
---   가상 기업 3곳(seeds/navigator_companies.sql)과 섞어 3단계 판정이 세 가지로 갈리도록 짰다.
---
---   ID   공고                              접수(기준 2026-11-09)   의도한 판정 (3단계에서 확인)
---   101  전술통신 부품국산화 개발지원          접수중               101 한빛 적합 · 102 부적격(중견) · 103 부적격(연구소 없음)
---   102  경량 방탄 복합소재 핵심기술          접수중               102 누리 적합 · 101·103 부적격(품질인증 없음)
---   103  AI 영상 표적탐지 신속시범            접수중               103 새봄 정보부족(TRL 모름) · 101 부적격(업력) · 102 부적격(규모)
---   104  강원 접경지역 국방벤처 육성          접수전 (11-16 시작)   모두 부적격 (일부러 안 맞는 공고: 지역·규모)
---   105  2026 하반기 국방 R&D 과제 공모       마감 (10-31)          101·102 정보부족(보안측정 '기타' 요건) · 103 부적격(주관 이력 없음)
---
---   자격요건 원문 근거는 source_quote·source_page 로 둔다 (가상 공고라 원문 PDF 는 없음).
---   PDF 로 올린 공고는 근거 청크(evidence_id)까지 연결된다 (POST /navigator/announcements/upload).
---
--- 전제: 마이그레이션 0021. seeds/init_test_data.sql 이 있으면 사업트랙 P-LOC·P-CORE 와 연결된다.
--- 재실행 안전: 공고 5건의 자격요건·요구기술을 지우고 다시 넣는다.
---   psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f seeds/navigator_announcements.sql
--- =============================================================================
+-- Navigator 테스트 공고 5건 (가상). 기대 판정은 docs/navigator.md 참고.
+--   101 부품국산화(접수중) 102 방탄 복합소재(접수중) 103 AI 영상 신속시범(접수중)
+--   104 강원 국방벤처(접수전) 105 하반기 공모(마감)
+-- 재실행 가능: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f seeds/navigator_announcements.sql
 \set ON_ERROR_STOP on
 BEGIN;
 SET LOCAL search_path = ax, public;
 
--- 사업트랙 (없으면 추가: 국방벤처·신속시범)
+-- 사업트랙
 INSERT INTO program (program_code, name, program_type_code, purpose) VALUES
   ('P-VENTURE', '국방벤처 육성(가상)',   'DEFENSE_VENTURE', '창업·벤처 기업의 국방 진입 지원'),
   ('P-RAPID',   '신속시범사업(가상)',    'RAPID_PILOT',     '민간 신기술을 군에 빠르게 시범 적용')
@@ -63,7 +49,7 @@ ON CONFLICT (id) DO UPDATE SET
 DELETE FROM announcement_requirement WHERE announcement_id BETWEEN 101 AND 105;
 DELETE FROM announcement_tech_need   WHERE announcement_id BETWEEN 101 AND 105;
 
--- 자격요건 한 줄씩 (rule 형식: ax.code_requirement_type.rule_example, backend/app/schemas/announcements.py)
+-- 자격요건
 INSERT INTO announcement_requirement (announcement_id, req_type_code, rule, is_mandatory, description,
                                       source_quote, source_page, sort_order)
 SELECT v.ann, v.type, v.rule::jsonb, v.mand, v.descr, v.quote, v.page, v.ord
@@ -87,11 +73,11 @@ SELECT v.ann, v.type, v.rule::jsonb, v.mand, v.descr, v.quote, v.page, v.ord
     (103, 'TRL',              '{"min":6}',                               true,  '제안 기술의 TRL 6 이상', '제안 기술은 기술성숙도(TRL) 6 이상이어야 함', 2, 2),
     (103, 'MIN_CREDIT_GRADE', '{"min_grade":"B"}',                       true,  '기업신용등급 B 이상', '신용평가등급 B 이상', 2, 3),
     (103, 'PATENT',           '{"min_count":1,"ipc_prefixes":["G06"]}',  false, '영상 AI 분야(IPC G06) 특허 우대', '관련 특허(출원 포함) 보유 시 가점', 3, 4),
-    -- 104 강원 접경지역 (일부러 안 맞는 공고)
+    -- 104 강원 접경지역
     (104, 'REGION',           '{"allowed":["강원"]}',                     true,  '본사 소재지 강원', '공고일 현재 강원특별자치도에 본사를 둔 기업', 1, 0),
     (104, 'COMPANY_SIZE',     '{"allowed":["STARTUP","VENTURE"]}',       true,  '스타트업·벤처기업', '창업기업 또는 벤처기업', 1, 1),
     (104, 'EMPLOYEE_COUNT',   '{"max":10}',                              true,  '상시 근로자 10명 이하', '상시 근로자 10인 이하', 1, 2),
-    -- 105 하반기 과제 공모 (마감, '기타' 요건으로 정보부족)
+    -- 105 하반기 과제 공모
     (105, 'BUSINESS_STATUS',  '{"allowed":["ACTIVE"]}',                  true,  '휴·폐업 상태가 아닐 것', '휴업 또는 폐업 중인 기업은 신청 불가', 2, 0),
     (105, 'RND_EXPERIENCE',   '{"min_count":1,"role":"LEAD"}',           true,  'R&D 과제 주관 수행 경험 1건 이상', '국가 R&D 과제를 주관기관으로 수행한 실적', 2, 1),
     (105, 'OTHER',            '{}',                                      true,  '보안측정(방위사업청) 통과 기업', '방위사업청 보안측정을 통과한 기업에 한함', 3, 2)

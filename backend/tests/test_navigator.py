@@ -1,4 +1,4 @@
-"""Navigator 1단계: 로그인 없는 기업 자가입력 · 국세청 진위확인(목업) · 관리 링크 · 가상 기업 시드."""
+"""Navigator 기업 프로필·관리 링크 테스트."""
 import os
 import re
 import subprocess

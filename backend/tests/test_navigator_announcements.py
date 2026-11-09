@@ -1,4 +1,4 @@
-"""Navigator 2단계: 공고 직접 입력 · PDF 업로드 · 자격요건 한 줄씩 · 가상 공고 5건 시드."""
+"""Navigator 공고·자격요건 테스트."""
 import os
 import subprocess
 
@@ -177,7 +177,7 @@ async def test_seed_announcements(client):
     closed = (await client.get("/navigator/announcements", params={"receipt_state": "CLOSED"})).json()
     assert "NAV-2026-105" in {r["announcement_no"] for r in closed}
 
-    # 시드의 rule 은 API 와 같은 형식이어야 한다 (3단계 판정기가 같은 형식을 읽음)
+    # 시드 rule 도 API 와 같은 형식이어야 함
     with psycopg.connect(TEST_URL) as conn:
         for code, rule in conn.execute(
                 "SELECT req_type_code, rule FROM ax.announcement_requirement WHERE announcement_id BETWEEN 101 AND 105"):
