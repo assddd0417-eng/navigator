@@ -8,11 +8,12 @@
 #   ⑥ 검토 배정(PLANNER) → 전문가 의견(EXPERT) → 전문가 최종판정 시도 403
 #      → 담당부서 최종판정 ADOPT(DEPT_REVIEWER)
 #   ⑦ KPI 조회
+#   ⑧ Navigator 기업 프로필: 공개 조회, 관리 링크 없이 401, 형식 오류 422, 재등록 409
 #
 # 사용법:
 #   BASE_URL=http://localhost:8000 ./scripts/smoke_test.sh
 #
-# 전제: 마이그레이션 + seeds/init_test_data.sql 적용, 서버 실행 중 (기본 EMBEDDER=hash).
+# 전제: 마이그레이션 + seeds/init_test_data.sql + seeds/navigator_companies.sql 적용, 서버 실행 중 (기본 EMBEDDER=hash).
 # 필요 도구: curl, jq   (PDF 픽스처: scripts/fixtures/*.pdf, 커밋되어 있음)
 # 재실행 안전: card_no·demand_no·external_ref 에 실행 태그를 붙여 매번 새 데이터로 돈다.
 #   같은 DB 에서 수십 번 돌리면 같은 내용의 카드가 쌓여 이번 카드가 상위 K 밖으로 밀리고,
@@ -337,5 +338,18 @@ api "평가 KPI" 200 GET /kpi/eval "$PLANNER"
 check "배열 응답" 'type == "array"'
 api "업무시간 KPI" 200 GET /kpi/work-time "$PLANNER"
 check "배열 응답" 'type == "array"'
+
+# -----------------------------------------------------------------------------
+section "⑧ Navigator 기업 프로필 (로그인 없음, seeds/navigator_companies.sql 필요)"
+api "가상 기업 공개 조회 (사업자번호)" 200 GET /navigator/companies/999-81-00015 -
+check "확인됨 · 특허 공개 · 신용등급 숨김" \
+    '.biz_verify_label == "확인됨" and (.patents | length) >= 1 and (has("credit_ratings") | not)'
+api "미확인 가상 기업 공개 조회" 200 GET /navigator/companies/9998300038 -
+check "미확인 표시" '.biz_verify_label == "미확인"'
+api "관리 링크 없이 내 프로필" 401 GET /navigator/manage/profile -
+api "사업자번호 형식 오류" 422 POST /navigator/companies - \
+    '{"business_reg_no":"999-81-00016","company_name":"x","representative_name":"x","opened_on":"2020-01-01","email":"a@b.co"}'
+api "이미 등록된 사업자번호 재등록 거부" 409 POST /navigator/companies - \
+    '{"business_reg_no":"999-81-00015","company_name":"x","representative_name":"김한빛","opened_on":"2012-03-15","email":"a@b.co"}'
 
 summary

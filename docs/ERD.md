@@ -127,6 +127,8 @@ erDiagram
 | `0014_poc_evaluation` | PoC 검증 | `eval_case`, `eval_ground_truth`, `eval_run`, `eval_run_case`, `work_time_measurement`, `satisfaction_survey` |
 | `0015_functions_views` | 조회 함수·KPI 뷰 | `can_read_document()`, `search_chunks()`, `match_cards()`, `v_recommendation_overview`, `v_recommendation_evidence`, `v_review_queue`, `v_kpi_*`, `v_eval_topk_hits` |
 | `0016_embedding_model_per_embedder` | 임베더별 벡터 분리 | `embedding_model` 에 hash 모델 행 추가·기존 벡터 이관, `match_cards()` 활성 모델 조건 |
+| `0019_navigator_company_profile` | Navigator 기업 프로필 확장 (docs/navigator.md) | `company_profile` 칸 추가, `company_patent`, `company_certification`, `code_certification_type`, `company_credit_rating`, `company_rnd_history`, `company_access_link` |
+| `0020_navigator_field_sources` | Navigator 출처 기록 | `external_source`, `external_fetch_job`, `external_raw_record`, `company_field_source`, `v_company_field_compare` |
 
 합계: 테이블 90개, 뷰 7개.
 

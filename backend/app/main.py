@@ -9,7 +9,7 @@ from app.auth import CurrentUser, get_current_user
 from app.config import get_settings
 from app.db import close_pool, open_pool, transaction
 from app.errors import install_error_handlers
-from app.routers import cards, demands, documents, kpi, recommendations
+from app.routers import cards, demands, documents, kpi, navigator, recommendations
 from app.services.embedding import activate_model, embedding_status, get_embedder
 from app.services.rationale import get_llm_writer
 
@@ -70,5 +70,5 @@ async def me(user: CurrentUser = Depends(get_current_user)):
             "clearance_code": user.clearance_code, "roles": sorted(user.roles)}
 
 
-for r in (documents.router, cards.router, demands.router, recommendations.router, kpi.router):
+for r in (documents.router, cards.router, demands.router, recommendations.router, kpi.router, navigator.router):
     app.include_router(r)

@@ -1,0 +1,146 @@
+"""Navigator 기업 프로필 저장·조회 (기업 자가입력 + 칸별 출처 기록).
+
+공개 범위
+- 사업자번호만으로(공개): 상호, 확인됨/미확인, 휴·폐업 상태, 특허 (특허는 원래 공개 정보)
+- 관리 링크가 있어야(기업 본인): 위 + 신용등급, 매출·직원 수 등 자가입력 내용, 인증, R&D 이력, 칸별 출처
+"""
+from datetime import date, datetime
+from typing import Any
+
+from psycopg import AsyncConnection
+from psycopg.types.json import Jsonb
+
+from app.repositories.sql import insert
+from app.schemas.navigator import CertificationIn, CreditRatingIn, PatentIn, RndHistoryIn
+from app.services.bizno import format_bizno
+
+VERIFY_LABEL = {"VERIFIED": "확인됨", "UNVERIFIED": "미확인", "FAILED": "불일치"}
+BUSINESS_STATUS_LABEL = {"ACTIVE": "계속사업자", "SUSPENDED": "휴업", "CLOSED": "폐업", "UNKNOWN": "모름"}
+
+# company_profile 의 자가입력 칸 (company_field_source.field_name 과 같은 이름)
+PROFILE_FIELDS = ("main_business", "homepage", "company_size", "established_on", "employee_count",
+                  "annual_revenue_krw", "revenue_year", "region", "address")
+
+LIST_TABLES = {
+    "patents": "company_patent",
+    "certifications": "company_certification",
+    "credit_ratings": "company_credit_rating",
+    "rnd_history": "company_rnd_history",
+}
+
+
+def _json_value(v: Any) -> Any:
+    return v.isoformat() if isinstance(v, (date, datetime)) else v
+
+
+async def record_field(conn: AsyncConnection, org_id: int, field_name: str, value: Any, source_kind: str, *,
+                       source_code: str | None = None, raw_record_id: int | None = None,
+                       verified: bool = False) -> None:
+    """칸 하나의 출처별 현재값을 남긴다. 같은 기업·칸·출처면 덮어쓰고, 이전 값은 감사 로그에 남는다."""
+    await conn.execute(
+        """INSERT INTO ax.company_field_source
+                  (organization_id, field_name, value, source_kind, external_source_id, raw_record_id,
+                   is_verified, verified_at)
+           VALUES (%(org)s, %(f)s, %(v)s, %(k)s,
+                   (SELECT id FROM ax.external_source WHERE code = %(src)s), %(raw)s,
+                   %(ver)s, CASE WHEN %(ver)s THEN now() END)
+           ON CONFLICT (organization_id, field_name, source_kind, COALESCE(external_source_id, 0))
+           DO UPDATE SET value = EXCLUDED.value, raw_record_id = EXCLUDED.raw_record_id,
+                         is_verified = EXCLUDED.is_verified, verified_at = EXCLUDED.verified_at,
+                         verified_by = NULL, recorded_at = now()""",
+        {"org": org_id, "f": field_name, "v": Jsonb(_json_value(value)), "k": source_kind,
+         "src": source_code, "raw": raw_record_id, "ver": verified})
+
+
+async def insert_list_items(conn: AsyncConnection, org_id: int, key: str, items: list, origin: str = "SELF") -> None:
+    for item in items:
+        data = {**item.model_dump(), "organization_id": org_id, "origin": origin}
+        if isinstance(item, RndHistoryIn) and item.project_no:
+            # 내부 과제와 과제번호가 같으면 연결 (성과카드·과제 DB 와 이어짐)
+            row = await (await conn.execute(
+                "SELECT id FROM ax.project WHERE project_no = %s", (item.project_no,))).fetchone()
+            data["internal_project_id"] = row["id"] if row else None
+        await insert(conn, LIST_TABLES[key], data)
+
+
+async def replace_self_items(conn: AsyncConnection, org_id: int, key: str,
+                             items: list[PatentIn] | list[CertificationIn] | list[CreditRatingIn] | list[RndHistoryIn]
+                             ) -> None:
+    """자가입력(SELF) 행만 지우고 새로 넣는다. 외부·내부 출처 행은 건드리지 않는다."""
+    await conn.execute(
+        f"DELETE FROM ax.{LIST_TABLES[key]} WHERE organization_id = %s AND origin = 'SELF'", (org_id,))
+    await insert_list_items(conn, org_id, key, items)
+
+
+async def find_by_bizno(conn: AsyncConnection, bizno: str, *, lock: bool = False) -> dict | None:
+    return await (await conn.execute(
+        """SELECT o.id AS organization_id, o.name, o.org_type, cp.organization_id IS NOT NULL AS has_profile,
+                  cp.registered_email, cp.biz_verify_status, cp.business_status
+             FROM ax.organization o
+             LEFT JOIN ax.company_profile cp ON cp.organization_id = o.id
+            WHERE o.business_reg_no = %s""" + (" FOR UPDATE OF o" if lock else ""),
+        (bizno,))).fetchone()
+
+
+async def _patents(conn: AsyncConnection, org_id: int) -> list[dict]:
+    return await (await conn.execute(
+        """SELECT id, application_no, registration_no, title, abstract, ipc_codes, status, applied_on, registered_on,
+                  origin, verified_at IS NOT NULL AS is_verified
+             FROM ax.company_patent WHERE organization_id = %s
+            ORDER BY registered_on DESC NULLS LAST, applied_on DESC NULLS LAST, id""", (org_id,))).fetchall()
+
+
+async def public_view(conn: AsyncConnection, org_id: int) -> dict:
+    p = await (await conn.execute(
+        """SELECT o.business_reg_no, o.name AS company_name, cp.biz_verify_status, cp.business_status
+             FROM ax.organization o JOIN ax.company_profile cp ON cp.organization_id = o.id
+            WHERE o.id = %s""", (org_id,))).fetchone()
+    patents = await _patents(conn, org_id)
+    return {
+        "visibility": "PUBLIC",
+        "business_reg_no": format_bizno(p["business_reg_no"]),
+        "company_name": p["company_name"],
+        "biz_verify_status": p["biz_verify_status"],
+        "biz_verify_label": VERIFY_LABEL[p["biz_verify_status"]],
+        "business_status": p["business_status"],
+        "business_status_label": BUSINESS_STATUS_LABEL[p["business_status"]],
+        "patents": [{k: v for k, v in pt.items() if k not in ("id", "abstract", "origin")} for pt in patents],
+        "note": "신용등급·매출·자가입력 내용은 등록 이메일로 받은 관리 링크로만 볼 수 있습니다",
+    }
+
+
+async def full_view(conn: AsyncConnection, org_id: int) -> dict:
+    p = await (await conn.execute(
+        f"""SELECT o.id AS organization_id, o.business_reg_no, o.name AS company_name,
+                   cp.representative_name, cp.opened_on, cp.is_defense_company,
+                   {", ".join(f"cp.{f}" for f in PROFILE_FIELDS)},
+                   cp.business_status, cp.business_status_checked_at, cp.biz_verify_status, cp.biz_verified_at,
+                   cp.registered_email, cp.registration_channel, cp.created_at, cp.updated_at
+              FROM ax.organization o JOIN ax.company_profile cp ON cp.organization_id = o.id
+             WHERE o.id = %s""", (org_id,))).fetchone()
+    p["business_reg_no"] = format_bizno(p["business_reg_no"])
+    p["biz_verify_label"] = VERIFY_LABEL[p["biz_verify_status"]]
+    p["business_status_label"] = BUSINESS_STATUS_LABEL[p["business_status"]]
+    p["visibility"] = "OWNER"
+    p["patents"] = await _patents(conn, org_id)
+    p["certifications"] = await (await conn.execute(
+        """SELECT c.id, c.cert_type_code, t.name_ko AS cert_type_name, c.cert_no, c.issuer, c.issued_on, c.expires_on,
+                  c.expires_on IS NOT NULL AND c.expires_on < current_date AS is_expired,
+                  c.evidence_document_id, c.origin, c.verified_at IS NOT NULL AS is_verified
+             FROM ax.company_certification c JOIN ax.code_certification_type t ON t.code = c.cert_type_code
+            WHERE c.organization_id = %s ORDER BY t.sort_order, c.id""", (org_id,))).fetchall()
+    p["credit_ratings"] = await (await conn.execute(
+        """SELECT id, agency, grade, rated_on, valid_until, evidence_document_id, origin,
+                  verified_at IS NOT NULL AS is_verified
+             FROM ax.company_credit_rating WHERE organization_id = %s
+            ORDER BY rated_on DESC NULLS LAST, id""", (org_id,))).fetchall()
+    p["rnd_history"] = await (await conn.execute(
+        """SELECT h.id, h.project_no, h.title, h.funding_agency, h.start_date, h.end_date, h.amount_krw, h.role,
+                  h.summary, h.internal_project_id, pr.title AS internal_project_title, h.origin,
+                  h.verified_at IS NOT NULL AS is_verified
+             FROM ax.company_rnd_history h LEFT JOIN ax.project pr ON pr.id = h.internal_project_id
+            WHERE h.organization_id = %s ORDER BY h.start_date DESC NULLS LAST, h.id""", (org_id,))).fetchall()
+    p["field_sources"] = await (await conn.execute(
+        """SELECT field_name, preferred_value, any_verified, differs, sources
+             FROM ax.v_company_field_compare WHERE organization_id = %s ORDER BY field_name""", (org_id,))).fetchall()
+    return p
