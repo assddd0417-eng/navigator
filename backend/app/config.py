@@ -69,7 +69,7 @@ class Settings(BaseSettings):
     kipris_access_key: str | None = None    # KIPRIS Plus
     dart_api_key: str | None = None         # OpenDART
     bizinfo_api_key: str | None = None      # 기업마당
-    navigator_announcement_keywords: str = "국방,방산,방위,무기체계,군수"   # 외부 공고 거르기 (쉼표)
+    navigator_announcement_keywords: str = "국방,방산,방위산업,방위사업,무기체계,군수"   # 외부 공고 거르기 (쉼표)
 
     @property
     def resolved_llm_model(self) -> str:

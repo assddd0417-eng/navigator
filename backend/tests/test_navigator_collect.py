@@ -204,3 +204,12 @@ def test_live_parsers(monkeypatch):
          "bsnsSumryCn": "<p>요약</p>"}]})
     a = bizinfo.LiveBizinfoConnector("k").announcements()[0]
     assert (a.receipt_start.isoformat(), a.receipt_end.isoformat(), a.summary) == ("2026-12-01", "2027-01-15", "요약")
+
+
+def test_bizinfo_keyword_filter():
+    from app.services.external.bizinfo import _record, matches_keywords
+
+    kw = [k.strip() for k in get_settings().navigator_announcement_keywords.split(",")]
+    hit = _record({"pblancId": "A", "pblancNm": "2026년 방위산업 육성 기술협업 프로그램 참가기업 모집"})
+    miss = _record({"pblancId": "B", "pblancNm": "[경남] 밀양시 2026년 2차 주방위생환경개선 사업 모집 공고"})
+    assert matches_keywords(hit, kw) and not matches_keywords(miss, kw)

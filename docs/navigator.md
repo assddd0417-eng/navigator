@@ -235,7 +235,7 @@ R&D 이력의 과제번호가 `project.project_no` 와 같으면 내부 과제�
 | `KIPRIS_ACCESS_KEY` | - | KIPRIS Plus |
 | `DART_API_KEY` | - | OpenDART |
 | `BIZINFO_API_KEY` | - | 기업마당 |
-| `NAVIGATOR_ANNOUNCEMENT_KEYWORDS` | `국방,방산,방위,무기체계,군수` | 외부 공고 거르기 (쉼표) |
+| `NAVIGATOR_ANNOUNCEMENT_KEYWORDS` | `국방,방산,방위산업,방위사업,무기체계,군수` | 외부 공고 거르기 (쉼표). "방위"만 쓰면 "주방위생" 같은 공고가 걸림 |
 | `MAILER` | `mock` | mock 은 발송 없이 로그만 (본문은 DEBUG 로그) |
 | `NAVIGATOR_PUBLIC_BASE_URL` | `http://localhost:5173` | 관리 링크 주소 |
 | `NAVIGATOR_LINK_TTL_DAYS` | `30` | 관리 링크 유효기간 |
