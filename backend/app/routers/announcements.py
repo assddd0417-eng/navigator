@@ -26,6 +26,7 @@ from app.schemas.announcements import (AnnouncementCreate, AnnouncementCreated, 
                                        RequirementIn, RequirementUpdate, TechNeedIn, normalize_rule)
 from app.schemas.common import Created
 from app.schemas.documents import ChunkIn, DocumentCreate
+from app.services.navigator_embedding import sync_announcement_embeddings
 from app.services.ratelimit import public_rate_limit
 
 router = APIRouter(prefix="/navigator/announcements", tags=["Navigator 공고"])
@@ -91,6 +92,12 @@ async def _insert_tech_need(conn: AsyncConnection, ann_id: int, t: TechNeedIn, s
                                                          "sort_order": sort_order})
 
 
+async def _changed(conn: AsyncConnection, ann_id: int) -> None:
+    """공고·자격요건·요구기술이 바뀌면: 공고의 바뀐 시각을 남기고 (저장된 매칭 결과를 다시 쓰지 않게) 매칭용 벡터를 다시 만든다."""
+    await conn.execute("UPDATE ax.announcement SET updated_at = now() WHERE id = %s", (ann_id,))
+    await sync_announcement_embeddings(conn, ann_id)
+
+
 async def _next_sort(conn: AsyncConnection, table: str, ann_id: int) -> int:
     row = await (await conn.execute(
         f"SELECT COALESCE(max(sort_order) + 1, 0) AS n FROM ax.{table} WHERE announcement_id = %s",
@@ -112,6 +119,7 @@ async def _create(conn: AsyncConnection, body: AnnouncementCreate, user: Current
     req_ids = [await _insert_requirement(conn, ann_id, data.get("document_id"), r, i)
                for i, r in enumerate(body.requirements)]
     tech_ids = [await _insert_tech_need(conn, ann_id, t, i) for i, t in enumerate(body.tech_needs)]
+    await sync_announcement_embeddings(conn, ann_id)
     return AnnouncementCreated(id=ann_id, requirement_ids=req_ids, tech_need_ids=tech_ids,
                                document_id=data.get("document_id"))
 
@@ -244,6 +252,7 @@ async def update_announcement(ann_id: int, body: AnnouncementUpdate,
         if start and end and end < start:
             raise _unprocessable("접수 마감일이 접수 시작일보다 빠릅니다")
         await update(conn, "announcement", ann_id, data)
+        await _changed(conn, ann_id)
 
 
 @router.post("/{ann_id}/requirements", response_model=Created, status_code=201)
@@ -251,8 +260,10 @@ async def add_requirement(ann_id: int, body: RequirementIn, user: CurrentUser = 
                           rid: str = Depends(request_id)):
     async with transaction(user.id, rid) as conn:
         a = await _announcement(conn, ann_id, user)
-        return Created(id=await _insert_requirement(conn, ann_id, a["document_id"], body,
-                                                    await _next_sort(conn, "announcement_requirement", ann_id)))
+        req_id = await _insert_requirement(conn, ann_id, a["document_id"], body,
+                                           await _next_sort(conn, "announcement_requirement", ann_id))
+        await _changed(conn, ann_id)
+        return Created(id=req_id)
 
 
 @router.patch("/{ann_id}/requirements/{req_id}", status_code=204)
@@ -272,6 +283,7 @@ async def update_requirement(ann_id: int, req_id: int, body: RequirementUpdate,
                 raise _unprocessable(str(e)) from None
             await _check_codes(conn, cur["req_type_code"], data["rule"])
         await update(conn, "announcement_requirement", req_id, data)
+        await _changed(conn, ann_id)
 
 
 @router.delete("/{ann_id}/requirements/{req_id}", status_code=204)
@@ -282,6 +294,7 @@ async def delete_requirement(ann_id: int, req_id: int, user: CurrentUser = Depen
                                  (req_id, ann_id))
         if cur.rowcount == 0:
             raise NotFound("자격요건", req_id)
+        await _changed(conn, ann_id)
     return Response(status_code=204)
 
 
@@ -290,8 +303,9 @@ async def add_tech_need(ann_id: int, body: TechNeedIn, user: CurrentUser = Depen
                         rid: str = Depends(request_id)):
     async with transaction(user.id, rid) as conn:
         await _announcement(conn, ann_id, user)
-        return Created(id=await _insert_tech_need(conn, ann_id, body,
-                                                  await _next_sort(conn, "announcement_tech_need", ann_id)))
+        tech_id = await _insert_tech_need(conn, ann_id, body, await _next_sort(conn, "announcement_tech_need", ann_id))
+        await _changed(conn, ann_id)
+        return Created(id=tech_id)
 
 
 @router.delete("/{ann_id}/tech-needs/{tech_id}", status_code=204)
@@ -302,4 +316,5 @@ async def delete_tech_need(ann_id: int, tech_id: int, user: CurrentUser = Depend
                                  (tech_id, ann_id))
         if cur.rowcount == 0:
             raise NotFound("요구 기술", tech_id)
+        await _changed(conn, ann_id)
     return Response(status_code=204)

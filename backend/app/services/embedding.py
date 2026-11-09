@@ -343,6 +343,7 @@ async def purge_other_models(conn: AsyncConnection) -> int:
     (match_run.model_id 이력은 그대로 둔다)"""
     model_id = await active_model_id(conn)
     n = 0
-    for t in ("chunk_embedding", "card_embedding", "demand_embedding", "company_tech_embedding", "program_embedding"):
+    for t in ("chunk_embedding", "card_embedding", "demand_embedding", "company_tech_embedding", "program_embedding",
+              "company_embedding", "announcement_embedding"):
         n += (await conn.execute(f"DELETE FROM ax.{t} WHERE model_id <> %s", (model_id,))).rowcount
     return n
