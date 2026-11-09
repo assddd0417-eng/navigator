@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     navigator_link_ttl_days: int = 30          # 관리 링크 유효 기간
     navigator_rate_limit_per_minute: int = 60  # 로그인 없는 API: 같은 곳에서 1분에 이 횟수까지
     navigator_dev_expose_link: bool = False    # true = 응답에 관리 링크를 그대로 실어 줌 (로컬 확인용, 운영 금지)
+    navigator_match_candidate_k: int = 50     # 매칭 한 번에 벡터로 먼저 고르는 후보 수
     mailer: str = "mock"                       # mock = 보내지 않고 기록만 (실제 발송은 5단계)
     # 외부 출처 연결 부품: mock | live (출처 코드 = ax.external_source.code)
     source_nts_biz: str = "mock"

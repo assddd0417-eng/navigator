@@ -160,7 +160,7 @@ curl -s localhost:8000/navigator/manage/profile -H "X-Manage-Token: <비밀값>"
 | 102 | 경량 방탄 복합소재 핵심기술 | 접수중 | 누리 적합 · 한빛·새봄 부적격(품질인증 없음) |
 | 103 | AI 영상 표적탐지 신속시범 | 접수중 | 새봄 정보부족(TRL 모름) · 한빛 부적격(업력) · 누리 부적격(규모) |
 | 104 | 강원 접경지역 국방벤처 육성 | 접수전 | 모두 부적격 (일부러 안 맞는 공고) |
-| 105 | 2026 하반기 국방 R&D 과제 공모 | 마감 | 한빛·누리 정보부족(보안측정 '기타' 요건) · 새봄 부적격(주관 이력 없음) |
+| 105 | 2026 하반기 국방 R&D 과제 공모 | 마감 | 한빛·누리 정보부족(보안측정 '기타' 요건) · 새봄 정보부족(R&D 이력을 안 적어 주관 경험을 모름, 휴·폐업 미확인) |
 
 ### 로컬에서 확인
 
@@ -177,4 +177,93 @@ curl -s -X POST localhost:8000/navigator/announcements/upload -H 'X-User-Id: 1' 
 
 - 공고문에서 자격요건 자동 추출(AI) — `origin = AI_EXTRACTED` 칸만 마련, 지금은 담당자가 원문을 보고 한 줄씩 입력
 - 외부 공고 수집(기업마당·나라장터·방사청) — 6단계, `source_kind = EXTERNAL`
-- 공고 임베딩·매칭·판정 — 3단계
+- 공고 임베딩·매칭·판정 — 3단계 (아래)
+
+## 3단계: 매칭과 판정
+
+기업과 공고를 두 방향으로 잇는다. **공고 → 기업**(담당자: 이 공고에 맞는 기업), **기업 → 공고**(기업: 내가 지원할 만한 공고).
+결과마다 판정(적합/정보부족/부적격), 기준별 점수, 근거, 연계이유를 남긴다.
+
+### 만든 것
+
+| 구분 | 내용 |
+|------|------|
+| 마이그레이션 0022 | `company_embedding`·`announcement_embedding`(관점별 벡터), `company_match_run`(한 번 실행: 방향·규칙 스냅샷·모델), `company_recommendation`(쌍: 순위·총점·판정·연계이유), `company_recommendation_score`(기준별), `eligibility_check`(요건별 판정 + 보완질문), `company_recommendation_evidence`(근거), `eligibility_answer`(보완질문에 대한 기업 답, 감사 로그) |
+| 판정기 | `backend/app/services/eligibility.py` — 2단계 rule 형식을 그대로 읽는 순수 함수 (DB 없이 테스트) |
+| 매칭 | `backend/app/services/navigator_matching.py` — 기존 이어달리기 매칭(`services/matching.py`)과 같은 순서: 벡터 → HNSW 후보 → 정확한 유사도 → 판정·점수 → 저장 |
+| 벡터 | `backend/app/services/navigator_embedding.py` — 기존 `embedding._sync` 재사용 (원문이 같으면 다시 임베딩 안 함). 기업 등록·수정, 공고·요건·요구기술 수정 때 바로 갱신. SQL 시드처럼 벡터가 없는 것은 매칭할 때 만든다. `python -m app.reembed` 에도 포함 |
+| API | `backend/app/routers/navigator_matching.py` — 아래 표 |
+
+기존 코드 변경: 1·2단계 라우터에 벡터 갱신 호출 추가, `reembed`·`purge_other_models` 에 새 벡터 표 추가.
+
+### 판정 규칙
+
+- 요건마다 **충족(MET) / 미충족(UNMET) / 모름(UNKNOWN)**. 값이 프로필에 없으면 모름 + 보완질문.
+- 필수 요건 중 미충족이 하나라도 있으면 **부적격**, 미충족은 없고 모름이 있으면 **정보부족**, 모두 충족이면 **적합**. 우대 요건은 판정에 영향 없이 점수(PREFERENCE)에만.
+- 기준일은 공고 접수 마감일 (업력·인증 유효기간·신용등급 유효기간).
+- 기업규모: 창업·벤처는 중소기업에 포함. 벤처 인증이 있으면 벤처, 개업 7년 이하면 창업으로도 본다.
+- R&D 이력: 기업이 적은 이력 + 성과카드 참여기업(`card_company`, 확인됨, 개발·기술보유)으로 이어진 기관 내부 과제. 이력을 하나도 안 적었으면 '없음'이 아니라 '모름'.
+- 직원 수·매출은 외부에서 확인된 값이 있으면 그것을 쓴다 (`v_company_field_compare`).
+- TRL·'기타' 요건은 프로필에 없으므로 항상 보완질문. 기업이 답하면(`eligibility_answer`) 그 답으로 판정하고 **자가 신고**로 표시한다.
+- **신용등급 값은 판정 상세·연계이유 어디에도 남기지 않는다** (충족 여부와 확인 여부만). LLM 에도 보내지 않는다 — 연계이유는 규칙 템플릿 문장.
+
+### 점수 (총점 = 가중합, 순위는 판정 순 → 총점 순)
+
+| 기준 | 가중치 | 계산 |
+|------|--------|------|
+| TECH | 0.45 | 요구기술마다 기업 보유기술·특허·R&D·주요사업 벡터 중 가장 가까운 것의 코사인 유사도, 핵심 요구기술은 ×2 가중평균 |
+| IPC | 0.15 | 요구기술 IPC 와 기업 특허 IPC 의 소분류(4자리) 일치 비율 |
+| PURPOSE | 0.20 | 공고 요약·사업목적 ↔ 기업 요약·주요사업 코사인 (최댓값) |
+| PREFERENCE | 0.20 | 우대 요건 충족 비율 |
+
+비교할 것이 없으면 0.5(중립). 가중치·규칙 버전은 실행마다 `rule_snapshot` 에 남는다.
+
+### API
+
+| 메서드·경로 | 누가 | 하는 일 |
+|-------------|------|---------|
+| `POST /navigator/matching/announcements/{id}?verdict=` | 담당자 | 공고 → 기업 매칭 실행, 결과 전부 (`verdict=ELIGIBLE,NEEDS_INFO` 로 거르기) |
+| `POST /navigator/matching/companies/{org_id}?include_closed=` | 담당자 | 기업 → 공고 매칭 (기업 대신 실행) |
+| `GET /navigator/matching/runs/{run_id}` | 담당자 | 저장된 실행 다시 보기 |
+| `GET /navigator/companies/{사업자번호}/matches` | 누구나 | 공개 정보 기준 추천 공고. 신용등급·매출 요건은 결과를 가리고 판정·연계이유도 그 요건 없이 다시 씀 (가린 요건 때문에 부적격인 사실이 드러나지 않게). 보완질문 없음 |
+| `POST /navigator/manage/matches?include_closed=&refresh=` | 관리 링크 | 내 추천 공고 전부. 오늘 결과가 있고 그 뒤 기업·공고·답이 안 바뀌었으면 그 결과를 다시 씀 |
+| `GET /navigator/manage/questions` | 관리 링크 | 부적격이 아닌 공고의 보완질문 (같은 요건은 한 번). `answer_type` = `integer`(TRL) / `boolean` |
+| `POST /navigator/manage/answers` | 관리 링크 | `{"answers":[{"requirement_id":..,"value":7}]}` → 저장 후 다시 판정한 결과 |
+
+결과 한 줄: `rank`, `verdict`·`verdict_label`, `total_score`, `scores`(기준별 점수·가중치·방법·상세), `checks`(요건별 판정·이유·보완질문·공고 원문 인용·쪽), `questions`, `evidence`(요구기술 ↔ 기업 근거 문장·유사도, IPC 일치, 공고 조항), `rationale`.
+
+### 가상 데이터 판정 결과 (테스트로 고정)
+
+`tests/test_navigator_matching.py` 가 아래 표 그대로 나오는지 두 방향 모두 확인한다.
+
+| 공고 | 한빛전자통신 | 누리복합소재 | 새봄비전AI |
+|------|--------------|--------------|------------|
+| 101 부품국산화 | **적합** | 부적격 (중견기업) | 부적격 (연구소 없음) |
+| 102 방탄 복합소재 | 부적격 (품질인증) | **적합** | 부적격 (업력·품질인증·신용) |
+| 103 AI 영상 신속시범 | 부적격 (업력) | 부적격 (규모·업력) | **정보부족** (TRL) → TRL 7 답하면 적합 |
+| 104 강원 국방벤처 | 부적격 | 부적격 | 부적격 |
+| 105 하반기 공모 (마감) | 정보부족 (보안측정) | 정보부족 (보안측정) | 정보부족 (주관 이력·휴폐업·보안측정) |
+
+### 로컬에서 확인
+
+```bash
+# 담당자: 공고 101 에 맞는 기업
+curl -s -X POST localhost:8000/navigator/matching/announcements/101 -H 'X-User-Id: 1' \
+  | jq '.recommendations[] | {rank, company_name, verdict_label, total_score, rationale}'
+# 누구나: 사업자번호로 추천 공고 (신용등급 요건은 가려짐)
+curl -s localhost:8000/navigator/companies/999-83-00038/matches | jq '.recommendations[] | {announcement_title, verdict_label}'
+# 기업: 보완질문 → 답 (관리 링크 값은 1단계 '로컬에서 확인' 참고)
+curl -s localhost:8000/navigator/manage/questions -H "X-Manage-Token: $T" | jq '.questions'
+REQ=$(curl -s localhost:8000/navigator/manage/questions -H "X-Manage-Token: $T" \
+  | jq '[.questions[] | select(.answer_type == "integer")][0].requirement_id')
+curl -s -X POST localhost:8000/navigator/manage/answers -H "X-Manage-Token: $T" -H 'Content-Type: application/json' \
+  -d '{"answers":[{"requirement_id": '"$REQ"', "value": 7}]}' | jq '.recommendations[] | {announcement_title, verdict_label}'
+```
+
+### 다음 단계로 미룬 것
+
+- 매칭 화면 (담당자 목록·기업 화면) — 4단계
+- 새 공고가 올라오면 맞는 기업에 알림 — 5단계 (`requested_via = SYSTEM` 칸 마련)
+- 실제 임베딩 모델(bge-m3)에서 TECH 점수 분포 확인·가중치 조정 — 지금 테스트는 해시 임베더라 판정은 정확하지만 점수 크기는 참고용
+- LLM 연계이유 — 지금은 템플릿 문장 (신용등급 값을 보내지 않는 조건으로 나중에 선택 기능)
+

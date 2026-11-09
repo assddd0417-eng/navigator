@@ -10,6 +10,7 @@
 #   ⑦ KPI 조회
 #   ⑧ Navigator 기업 프로필: 공개 조회, 관리 링크 없이 401, 형식 오류 422, 재등록 409
 #   ⑨ Navigator 공고: 목록·상세(로그인 없음), 직접 입력(PLANNER), 잘못된 규칙 422
+#   ⑩ Navigator 매칭: 공고→기업(PLANNER) 판정 순위, 기업→공고, 공개 조회는 신용등급 가림, 관리 링크 없이 401
 #
 # 사용법:
 #   BASE_URL=http://localhost:8000 ./scripts/smoke_test.sh
@@ -370,5 +371,28 @@ api "공고 직접 입력 (PLANNER)" 201 POST /navigator/announcements "$PLANNER
 api "잘못된 규칙 거부" 422 POST /navigator/announcements "$PLANNER" \
     "$(jq -n --arg no "SMOKE-BAD-$RUN_TAG" '{announcement_no: $no, title: "x", agency_name: "x",
         requirements: [{req_type_code: "MIN_CREDIT_GRADE", rule: {min_grade: "Z"}, description: "x"}]}')"
+
+# -----------------------------------------------------------------------------
+section "⑩ Navigator 매칭과 판정 (가상 기업 3곳 × 공고 5건)"
+api "매칭은 담당자만 (VIEWER)" 403 POST /navigator/matching/announcements/101 "$VIEWER"
+api "공고 101 → 기업 (PLANNER)" 201 POST /navigator/matching/announcements/101 "$PLANNER"
+check "한빛 적합 1위 · 누리·새봄 부적격 · 기준별 점수 4개" \
+    '.recommendations[0].organization_id == 101 and .recommendations[0].verdict == "ELIGIBLE"
+     and (.recommendations[0].scores | length) == 4
+     and any(.recommendations[]; .organization_id == 102 and .verdict == "INELIGIBLE")
+     and any(.recommendations[]; .organization_id == 103 and .verdict == "INELIGIBLE")'
+api "공고 103 → 기업" 201 POST /navigator/matching/announcements/103 "$PLANNER"
+check "새봄 정보부족 + TRL 보완질문" \
+    'any(.recommendations[]; .organization_id == 103 and .verdict == "NEEDS_INFO"
+         and any(.questions[]; .question | test("TRL")))'
+api "새봄 → 공고 (마감 포함)" 201 POST "/navigator/matching/companies/103?include_closed=true" "$PLANNER"
+check "103 정보부족 · 101/102/104 부적격" \
+    '[.recommendations[] | select(.announcement_id <= 105 and .announcement_id >= 101) | {(.announcement_id|tostring): .verdict}]
+     | add | .["103"] == "NEEDS_INFO" and .["101"] == "INELIGIBLE" and .["102"] == "INELIGIBLE" and .["104"] == "INELIGIBLE"'
+api "사업자번호로 추천 공고 (로그인 없음)" 200 GET /navigator/companies/999-82-00026/matches -
+check "사업자번호 없음 · 신용등급 요건 결과 가림" \
+    'all(.recommendations[]; (has("business_reg_no") | not)
+         and all(.checks[]; (.req_type_code != "MIN_CREDIT_GRADE") or (.result == null)))'
+api "관리 링크 없이 내 매칭" 401 POST /navigator/manage/matches -
 
 summary

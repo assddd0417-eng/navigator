@@ -22,6 +22,7 @@ from app.services.company_profile import (
     insert_list_items, public_view, record_field, replace_self_items)
 from app.services.external import BizVerifyResult, ConnectorUnavailable, get_nts_connector, record_fetch
 from app.services.external.nts import SOURCE_CODE as NTS
+from app.services.navigator_embedding import sync_company_embeddings
 from app.services.ratelimit import public_rate_limit
 
 router = APIRouter(prefix="/navigator", tags=["Navigator 기업 프로필 (로그인 없음)"])
@@ -133,6 +134,7 @@ async def register_company(body: CompanyRegister, rid: str = Depends(request_id)
 
         for key in LIST_TABLES:
             await insert_list_items(conn, org_id, key, getattr(body, key))
+        await sync_company_embeddings(conn, org_id)   # 매칭(3단계)에 쓰는 관점별 벡터
         link = await access_link.issue(conn, org_id, body.email)
 
     sent = _send_link(body.email, body.company_name, link, first=True)
@@ -209,4 +211,7 @@ async def update_my_profile(body: CompanyUpdate, link: dict = Depends(manage_lin
             items = getattr(body, key)
             if items is not None:
                 await replace_self_items(conn, org_id, key, items)
+        # 저장된 매칭 결과를 다시 쓰지 않도록 바뀐 시각을 남기고, 매칭용 벡터를 다시 만든다 (원문이 같으면 건너뜀)
+        await conn.execute("UPDATE ax.company_profile SET updated_at = now() WHERE organization_id = %s", (org_id,))
+        await sync_company_embeddings(conn, org_id)
         return await full_view(conn, org_id)
