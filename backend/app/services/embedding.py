@@ -195,13 +195,17 @@ async def embedding_status(conn: AsyncConnection) -> dict[str, object]:
                       (SELECT 1 FROM ax.card_embedding e WHERE e.card_id = a.id AND e.model_id = m.id)) AS cards_missing,
                   (SELECT count(*) FROM ax.planning_demand d WHERE NOT EXISTS
                       (SELECT 1 FROM ax.demand_embedding e WHERE e.demand_id = d.id AND e.model_id = m.id)) AS demands_missing,
+                  (SELECT count(*) FROM ax.overseas_demand o WHERE NOT EXISTS
+                      (SELECT 1 FROM ax.overseas_demand_embedding e
+                        WHERE e.overseas_demand_id = o.id AND e.model_id = m.id)) AS overseas_demands_missing,
                   (SELECT count(*) FROM ax.chunk_embedding WHERE model_id <> m.id)
                 + (SELECT count(*) FROM ax.card_embedding WHERE model_id <> m.id)
                 + (SELECT count(*) FROM ax.demand_embedding WHERE model_id <> m.id) AS other_model_vectors
              FROM ax.embedding_model m WHERE m.id = %s""", (model_id,))).fetchone()
     s = get_settings()
     return {"embedder": s.embedder, **row,
-            "reindex_needed": bool(row["chunks_missing"] or row["cards_missing"] or row["demands_missing"])}
+            "reindex_needed": bool(row["chunks_missing"] or row["cards_missing"] or row["demands_missing"]
+                                     or row["overseas_demands_missing"])}
 
 
 def _join(*parts: str | None) -> str:
@@ -268,6 +272,26 @@ async def demand_facets(conn: AsyncConnection, demand_id: int) -> list[FacetText
     return facets
 
 
+async def overseas_demand_facets(conn: AsyncConnection, overseas_demand_id: int) -> list[FacetText]:
+    """해외 수요를 국내 기획수요와 같은 관점으로 나눈다 (카드 패싯과 같은 공간에서 비교)."""
+    d = await (await conn.execute(
+        "SELECT title, requirement, tech_area, target_system, region FROM ax.overseas_demand WHERE id = %s",
+        (overseas_demand_id,))).fetchone()
+    perfs = await (await conn.execute(
+        "SELECT metric_name, required_value, required_text, unit FROM ax.overseas_demand_performance "
+        "WHERE overseas_demand_id = %s ORDER BY sort_order, id", (overseas_demand_id,))).fetchall()
+    facets = [FacetText("SUMMARY", _join(d["title"], d["requirement"])),
+              FacetText("TECH_NEED", _join(d["tech_area"], d["title"], d["requirement"]))]
+    if perfs:
+        facets.append(FacetText("PERFORMANCE", "\n".join(
+            f"{p['metric_name']} {p['required_value'] if p['required_value'] is not None else (p['required_text'] or '')}"
+            f"{p['unit'] or ''}".strip() for p in perfs)))
+    env = _join(d["target_system"], d["region"])
+    if env:
+        facets.append(FacetText("APPLICATION_ENV", env))
+    return facets
+
+
 # ---------------------------------------------------------------------------
 # 동기화
 # ---------------------------------------------------------------------------
@@ -318,6 +342,11 @@ async def sync_demand_embeddings(conn: AsyncConnection, demand_id: int) -> int:
     return await _sync(conn, "demand_embedding", "demand_id", demand_id, await demand_facets(conn, demand_id), {})
 
 
+async def sync_overseas_demand_embeddings(conn: AsyncConnection, overseas_demand_id: int) -> int:
+    return await _sync(conn, "overseas_demand_embedding", "overseas_demand_id", overseas_demand_id,
+                       await overseas_demand_facets(conn, overseas_demand_id), {})
+
+
 async def sync_chunk_embeddings(conn: AsyncConnection, document_id: int) -> int:
     model_id = await active_model_id(conn)
     rows = await (await conn.execute(
@@ -344,6 +373,6 @@ async def purge_other_models(conn: AsyncConnection) -> int:
     model_id = await active_model_id(conn)
     n = 0
     for t in ("chunk_embedding", "card_embedding", "demand_embedding", "company_tech_embedding", "program_embedding",
-              "company_embedding", "announcement_embedding"):
+              "company_embedding", "announcement_embedding", "overseas_demand_embedding"):
         n += (await conn.execute(f"DELETE FROM ax.{t} WHERE model_id <> %s", (model_id,))).rowcount
     return n

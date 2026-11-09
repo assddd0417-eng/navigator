@@ -86,6 +86,9 @@ app/
 | POST | `/recommendations/{id}/confirmations`, PATCH `/confirmations/{id}` | 모두 | 추가 확인 필요사항 |
 | GET | `/reviews/queue` | 모두 | 본인·본인 부서 검토 대기열 |
 | GET | `/kpi/recommendations`, `/kpi/eval`, `/kpi/work-time` | 모두 | PoC 정량목표 |
+| POST | `/overseas/import` | PLANNER, CURATOR | **해외 수요 정리 엑셀** 올리기 (`dry_run=true` 면 검사만) |
+| POST/GET | `/overseas/sources`, `/overseas/demands`, `/overseas/demands/{id}` | PLANNER, CURATOR / 모두 | 해외 수요 출처·수요 (같은 번호면 갱신) |
+| GET | `/overseas/demands/{id}/similar-cards` | 모두 | 해외 수요와 가까운 국내 성과 카드 (갭 분석 1단계) |
 
 ## 문서 파일 업로드 (PDF)
 
@@ -113,6 +116,22 @@ curl -X POST localhost:8000/documents/upload -H 'X-User-Id: 4' \
 | `UPLOAD_MAX_MB`(30) 초과 / `PDF_MAX_PAGES`(1000) 초과 | 413 | `file_too_large` / `too_many_pages` |
 
 범위 밖: OCR, 표 구조 추출(표 글자는 본문으로 들어감), 조항(목차) 자동 인식, 원본 파일 보관.
+
+## 해외 수요 올리기
+
+`app/routers/overseas.py`, 스키마 0023. 해외 기술 로드맵·공모·수출 요구를 공식 기관 자료에서 뽑아 엑셀로 정리한 뒤 올린다.
+예시 파일: `seeds/overseas/전차파워팩_해외수요.xlsx` (출처 9건, 해외 수요 9건).
+
+```bash
+curl -X POST "localhost:8000/overseas/import?dry_run=true" -H 'X-User-Id: 1' -F file=@seeds/overseas/전차파워팩_해외수요.xlsx
+curl -X POST "localhost:8000/overseas/import" -H 'X-User-Id: 1' -F file=@seeds/overseas/전차파워팩_해외수요.xlsx
+```
+
+- 시트 `출처`: 출처 번호 · 발행 기관 · 문서 제목 · 발행일 · URL · 자료 종류 · 이용 조건 · 원문 저장 허용 · 확인한 날 · 비고
+- 시트 `해외수요`: 수요 번호 · 출처 번호(여러 개면 쉼표, 첫 번째가 주 출처) · 국가/기관 · 수요 제목 · 기술분류 · 무기체계/품목 · 요구 성능 · 목표 시기 · 수요 종류(기술로드맵/공모/수출요구) · 원문 인용 · 확신도(높음/보통/낮음) · 메모
+- 한 행이라도 틀리면 아무것도 저장하지 않고 `detail.errors` 에 행별 이유를 돌려준다 (422).
+- DB 규칙: 출처마다 URL·이용 조건·확인일 필수, 원문 저장 허용이 아니면 원문 문서 연결 불가, 해외 수요의 보안등급은 출처보다 낮을 수 없다.
+- 해외 수요도 국내 성과 카드와 같은 모델로 임베딩한다 (`overseas_demand_embedding`). 임베더를 바꾸면 `python -m app.reembed` 가 함께 다시 만든다.
 
 ## 매칭 로직 요약
 
