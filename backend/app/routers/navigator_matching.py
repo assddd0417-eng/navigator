@@ -19,8 +19,9 @@ from app.auth import CurrentUser, request_id, require_roles
 from app.db import transaction
 from app.errors import NotFound
 from app.routers.navigator import _bizno, manage_link
+from app.services import mailer
 from app.services.bizno import format_bizno
-from app.services.company_profile import find_by_bizno
+from app.services.company_profile import find_by_bizno, full_view
 from app.services.navigator_matching import (
     fresh_company_run,
     match_announcement,
@@ -66,6 +67,35 @@ async def run_company_matching(org_id: int, include_closed: bool = False, verdic
     async with transaction(user.id, rid) as conn:
         run_id = await match_company(conn, org_id, include_closed=include_closed, requested_by=user.id, via="STAFF")
         return await run_results(conn, run_id, verdicts=vs)
+
+
+@router.get("/matching/announcements/{ann_id}")
+async def latest_announcement_run(ann_id: int, verdict: str | None = None,
+                                  _: CurrentUser = Depends(require_roles(*STAFF))):
+    """이 공고의 마지막 매칭 결과 (아직 없으면 run = null). 화면이 열릴 때 다시 돌리지 않고 보여 준다."""
+    vs = _verdicts(verdict)
+    async with transaction() as conn:
+        row = await (await conn.execute(
+            """SELECT id FROM ax.company_match_run WHERE announcement_id = %s
+                  AND direction = 'ANNOUNCEMENT_TO_COMPANY' ORDER BY created_at DESC, id DESC LIMIT 1""",
+            (ann_id,))).fetchone()
+        if row is None:
+            return {"run": None, "summary": {v: 0 for v in VERDICTS}, "recommendations": []}
+        return await run_results(conn, row["id"], verdicts=vs)
+
+
+@router.get("/matching/companies/{org_id}/profile")
+async def staff_company_profile(org_id: int, _: CurrentUser = Depends(require_roles(*STAFF))):
+    """담당자가 보는 기업 프로필 전부 (권한 있는 담당자에게만 신용등급·매출이 보인다)."""
+    async with transaction() as conn:
+        if not await (await conn.execute(
+                "SELECT 1 FROM ax.company_profile WHERE organization_id = %s", (org_id,))).fetchone():
+            raise NotFound("기업 프로필", org_id)
+        view = await full_view(conn, org_id)
+    view["visibility"] = "STAFF"
+    if view.get("registered_email"):
+        view["registered_email"] = mailer.mask_email(view["registered_email"])   # 연락은 기업이 관리 링크로
+    return view
 
 
 @router.get("/matching/runs/{run_id}")

@@ -279,3 +279,20 @@ async def test_internal_project_counts_as_rnd(client):
     finally:
         with psycopg.connect(TEST_URL, autocommit=True) as conn:
             conn.execute("DELETE FROM ax.card_company WHERE card_id = %s AND organization_id = 103", (card[0],))
+
+
+async def test_staff_latest_run_and_profile(client):
+    _seed()
+    r = await client.get("/navigator/matching/announcements/104", headers=as_user(PLANNER))
+    assert r.status_code == 200
+    await client.post("/navigator/matching/announcements/104", headers=as_user(PLANNER))
+    latest = (await client.get("/navigator/matching/announcements/104", headers=as_user(PLANNER))).json()
+    assert latest["run"]["announcement_id"] == 104 and latest["recommendations"]
+    assert (await client.get("/navigator/matching/announcements/104")).status_code == 401
+
+    p = await client.get(f"/navigator/matching/companies/{HANBIT}/profile", headers=as_user(PLANNER))
+    assert p.status_code == 200
+    body = p.json()
+    assert body["visibility"] == "STAFF" and body["credit_ratings"] and "***" in body["registered_email"]
+    assert (await client.get(f"/navigator/matching/companies/{HANBIT}/profile",
+                             headers=as_user(VIEWER))).status_code == 403

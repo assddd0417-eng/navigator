@@ -7,7 +7,11 @@ import { ToastProvider } from './components/Toast'
 import { DashboardPage } from './pages/admin/DashboardPage'
 import { ProjectsPage } from './pages/admin/ProjectsPage'
 import { ReviewQueuePage } from './pages/admin/ReviewQueuePage'
+import { NavigatorStaffPage } from './pages/admin/NavigatorStaffPage'
 import { LoginPage } from './pages/LoginPage'
+import { CompanyManagePage } from './pages/navigator/CompanyManagePage'
+import { CompanyRegisterPage } from './pages/navigator/CompanyRegisterPage'
+import { CompanySearchPage } from './pages/navigator/CompanySearchPage'
 import { RecommendationPage } from './pages/shared/RecommendationPage'
 import { DocumentUploadPage } from './pages/worker/DocumentUploadPage'
 import { MyTasksPage } from './pages/worker/MyTasksPage'
@@ -25,11 +29,16 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            {/* Navigator 기업 화면: 로그인 없음 (사업자번호 · 관리 링크) */}
+            <Route path="/navigator" element={<CompanySearchPage />} />
+            <Route path="/navigator/register" element={<CompanyRegisterPage />} />
+            <Route path="/navigator/manage" element={<CompanyManagePage />} />
             <Route element={<RequireRole roles={ALL_ROLES}><Layout /></RequireRole>}>
               {/* 관리자: PLANNER · DEPT_REVIEWER */}
               <Route path="/dashboard" element={<RequireRole roles={ADMIN_ROLES}><DashboardPage /></RequireRole>} />
               <Route path="/projects" element={<RequireRole roles={ADMIN_ROLES}><ProjectsPage /></RequireRole>} />
               <Route path="/reviews" element={<RequireRole roles={ADMIN_ROLES}><ReviewQueuePage /></RequireRole>} />
+              <Route path="/staff/navigator" element={<RequireRole roles={ADMIN_ROLES}><NavigatorStaffPage /></RequireRole>} />
               {/* 작업자: CURATOR · EXPERT */}
               <Route path="/my-tasks" element={<RequireRole roles={WORKER_ROLES}><MyTasksPage /></RequireRole>} />
               <Route path="/documents/upload" element={<RequireRole roles={WORKER_ROLES}><DocumentUploadPage /></RequireRole>} />
