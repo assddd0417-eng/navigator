@@ -7,16 +7,16 @@
 
 | 구분 | 위치 |
 |------|------|
-| 마이그레이션 | 0019 기업 프로필(특허·인증·신용등급·R&D 이력·관리 링크), 0020 외부 출처·값 출처, 0021 공고·자격요건, 0022 임베딩·매칭 결과, 0024 알림 구독 |
+| 마이그레이션 | 0019 기업 프로필(특허·인증·신용등급·R&D 이력·관리 링크), 0020 외부 출처·값 출처, 0021 공고·자격요건, 0022 임베딩·매칭 결과, 0024 알림 구독, 0025 외부 수집(기업마당 출처, 출처별 기업 식별자) |
 | 기업 API | `backend/app/routers/navigator.py` |
 | 공고 API | `backend/app/routers/announcements.py`, 요건 형식 `backend/app/schemas/announcements.py` (`RULE_MODELS`) |
 | 매칭 API | `backend/app/routers/navigator_matching.py` |
 | 알림 | `backend/app/routers/navigator_alerts.py`, `backend/app/services/navigator_alerts.py` |
 | 판정 | `backend/app/services/eligibility.py` (DB 없이 테스트 가능한 순수 함수) |
 | 매칭 | `backend/app/services/navigator_matching.py`, 벡터 `navigator_embedding.py` |
-| 국세청 진위확인 | `backend/app/services/external/nts.py` (mock 은 `fixtures/nts_mock.json`) |
+| 외부 수집 | 연결 부품 `backend/app/services/external/{nts,kipris,dart,bizinfo}.py` (mock 데이터 `fixtures/*_mock.json`), 실행 `services/collector.py`, API `routers/navigator_sources.py`, 명령 `python -m app.collect` |
 | 관리 링크 / 메일 | `services/access_link.py` / `services/mailer.py` |
-| 화면 | `frontend/src/pages/navigator/`, `frontend/src/pages/admin/NavigatorStaffPage.tsx` |
+| 화면 | `frontend/src/pages/navigator/`, `frontend/src/pages/admin/NavigatorStaffPage.tsx`, `NavigatorSourcesPage.tsx` |
 | 테스트 데이터 | `seeds/navigator_companies.sql`, `seeds/navigator_announcements.sql` (재실행 가능) |
 
 기존 테이블은 컬럼 추가만 했다. 사업자번호는 `organization.business_reg_no` 를 숫자 10자리로 쓴다.
@@ -81,6 +81,33 @@
 | `POST /navigator/alerts/announcements/{id}` | 담당자 | 아직 안 보낸 구독 기업에 발송 |
 
 결과 행: `rank`, `verdict`, `total_score`, `scores`, `checks`(요건별 판정·사유·보완질문·원문), `questions`, `evidence`, `rationale`.
+
+### 외부 수집 (담당자)
+
+| 메서드·경로 | 설명 |
+|-------------|------|
+| `GET /navigator/sources` | 출처별 모드(mock/live), 주기, 마지막 수집 결과, 다음 주기 |
+| `GET /navigator/sources/jobs?source=` | 수집 기록 |
+| `POST /navigator/sources/{code}/run?organization_id=` | 지금 수집. 기업 지정은 NTS_BIZ·KIPRIS·DART 만 |
+| `GET /navigator/sources/companies/{org_id}/external-ids` | 기업의 DART 고유번호·KIPRIS 특허고객번호 |
+| `PUT /navigator/sources/companies/{org_id}/external-ids/{code}` | 동명 회사가 섞일 때 직접 지정 `{external_id}` |
+
+## 외부 수집
+
+| 코드 | 출처 | 주기 | 반영 |
+|------|------|------|------|
+| `NTS_BIZ` | 국세청 사업자 상태조회 | 30일 | `company_profile.business_status`, 값 출처(확인됨). 100건씩 묶어 조회 |
+| `KIPRIS` | KIPRIS Plus | 7일 | `company_patent` (origin EXTERNAL, 확인됨). 같은 출원번호의 자가입력 행은 외부값으로 바뀜 |
+| `DART` | OpenDART | 30일 | 매출·직원 수·기준연도를 값 출처(확인됨)로. 판정은 확인된 외부값 우선 |
+| `BIZINFO` | 기업마당 지원사업 | 1일 | `announcement` 작성중(DRAFT, source_kind EXTERNAL). 담당자가 요건 입력 후 공개하면 알림 |
+
+- 한 번 실행 = `external_fetch_job` 1행, 받은 원본은 `external_raw_record` 에 그대로. 실패하면 반영은 롤백하고 FAILED 와 오류를 남긴다.
+- 주기 실행: `python -m app.collect --due` 를 cron 으로 (예: 매시간). 출처별 마지막 주기 실행 뒤 `fetch_interval` 이 지난 것만 돈다.
+- KIPRIS 는 사업자번호 검색이 없어 출원인 이름이 정확히 같은 것만 가져오고, 처음 찾은 특허고객번호를 저장해 다음부터 그 번호로 찾는다.
+- DART 는 회사명으로 후보를 찾고 `company.json` 의 사업자번호가 같은 것을 고유번호로 저장한다. 상장·외부감사 대상만 있다.
+- 기업마당 공고는 `NAVIGATOR_ANNOUNCEMENT_KEYWORDS` 가 제목·요약·해시태그에 있는 것만. 공고번호는 `BIZINFO-<공고ID>`, 작성중일 때만 갱신.
+- live 연결 부품은 공개 문서의 응답 모양으로 해석을 테스트했지만 실제 키로는 아직 호출해 보지 않았다 (개발 환경에서 외부 API 차단). 키를 받으면 `SOURCE_<코드>=live` 로 한 출처씩 확인한다.
+- NICE·KED(유료 계약), NTIS(비용 확인), 인증서 PDF 는 연결 부품이 없다. 화면에 "미연결"로 표시.
 
 ## 등록 규칙
 
@@ -175,8 +202,9 @@ R&D 이력의 과제번호가 `project.project_no` 와 같으면 내부 과제�
 | `/navigator/manage#t=…` | 기업 (관리 링크) | 탭: 추천 공고 / 보완질문 / 알림 / 내 정보. 저장하면 재판정 |
 | `/navigator/subscriptions/confirm#t=…`, `/navigator/unsubscribe#t=…` | 메일 수신자 | 수신 확인, 수신 거부 |
 | `/staff/navigator` | 담당자 (메뉴 "공고별 적합 기업") | 공고 목록 → 마지막 매칭 결과 → 다시 매칭, 기업 프로필, 구독 기업 알림 현황 |
+| `/staff/sources` | 담당자 (메뉴 "외부 수집") | 출처별 모드·주기·마지막 결과, 지금 수집, 수집 기록 |
 
-외부 확인값·내부 과제 등 기업이 고칠 수 없는 항목은 "(수정 불가)"로 표시한다. 특허는 KIPRIS 연동 전까지 보기만 된다.
+외부 확인값·내부 과제 등 기업이 고칠 수 없는 항목은 "(수정 불가)"로 표시한다. 특허는 기업이 직접 고치지 않고 KIPRIS 수집으로 들어온다.
 
 ## 테스트 데이터
 
@@ -202,7 +230,12 @@ R&D 이력의 과제번호가 `project.project_no` 와 같으면 내부 과제�
 
 | 이름 | 기본값 | 설명 |
 |------|--------|------|
-| `SOURCE_NTS_BIZ` | `mock` | `live` 는 아직 미구현 (미확인 처리) |
+| `SOURCE_NTS_BIZ`, `SOURCE_KIPRIS`, `SOURCE_DART`, `SOURCE_BIZINFO` | `mock` | `live` 면 실제 API. 키가 없으면 수집은 FAILED, 등록 진위확인은 미확인 |
+| `NTS_SERVICE_KEY` | - | 공공데이터포털 국세청 사업자등록정보 (일반 인증키) |
+| `KIPRIS_ACCESS_KEY` | - | KIPRIS Plus |
+| `DART_API_KEY` | - | OpenDART |
+| `BIZINFO_API_KEY` | - | 기업마당 |
+| `NAVIGATOR_ANNOUNCEMENT_KEYWORDS` | `국방,방산,방위,무기체계,군수` | 외부 공고 거르기 (쉼표) |
 | `MAILER` | `mock` | mock 은 발송 없이 로그만 (본문은 DEBUG 로그) |
 | `NAVIGATOR_PUBLIC_BASE_URL` | `http://localhost:5173` | 관리 링크 주소 |
 | `NAVIGATOR_LINK_TTL_DAYS` | `30` | 관리 링크 유효기간 |
@@ -231,6 +264,13 @@ curl -s -X POST localhost:8000/navigator/matching/announcements/101 -H 'X-User-I
   | jq '.recommendations[] | {rank, company_name, verdict_label, total_score}'
 ```
 
+외부 수집 (mock):
+
+```bash
+(cd backend && python -m app.collect --source KIPRIS)   # 또는 --due
+curl -s localhost:8000/navigator/sources -H 'X-User-Id: 1' | jq '.[] | {code, mode, last_status, last_result}'
+```
+
 화면 확인:
 
 1. http://localhost:5173/navigator 에서 "(가상)새봄비전AI" 조회
@@ -238,6 +278,7 @@ curl -s -X POST localhost:8000/navigator/matching/announcements/101 -H 'X-User-I
 3. 알림 탭 → 추가 → 저장 (등록 이메일은 바로 '받는 중'). 다른 주소를 추가하면 "[DEV] 확인 링크 열기"
 4. 공고를 PUBLISHED 로 등록하면 (예: 아래) 알림 탭에 새 공고가 뜬다
 5. http://localhost:5173/login 에서 기획자로 로그인 → "공고별 적합 기업" → 공고 선택 → 매칭 실행, 아래 '구독 기업 알림'
+6. "외부 수집" → KIPRIS "지금 수집" → 한빛 특허 3건이 외부 확인으로 바뀜
 
 ```bash
 curl -s -X POST localhost:8000/navigator/announcements -H 'X-User-Id: 1' -H 'Content-Type: application/json' -d '{
@@ -250,7 +291,8 @@ curl -s -X POST localhost:8000/navigator/announcements -H 'X-User-Id: 1' -H 'Con
 ## 미구현
 
 - 공고문 자격요건 자동 추출 (`origin = AI_EXTRACTED` 컬럼만 있음)
-- 외부 공고 수집 (기업마당, 나라장터, 방사청), 국세청 실연동, KIPRIS 특허 수집
+- 실제 키로 live 연결 확인 (국세청 → KIPRIS → DART → 기업마당 순서)
+- 나라장터·방사청 공고, NICE·KED 신용등급, NTIS 과제 연결 부품
 - 실제 메일 발송 (SMTP 등, `mailer.send` 만 바꾸면 됨). 지금은 mock
 - 알림 발송을 큐로 분리 (지금은 공고 등록 요청 안에서 처리)
 - 증빙 PDF 업로드 연결 (`evidence_document_id` 컬럼만 있음)

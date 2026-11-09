@@ -49,6 +49,7 @@ src/
   api/navigator.ts      Navigator API (기업 쪽은 X-User-Id 없음, 관리 링크는 X-Manage-Token)
   pages/navigator/      기업 화면 (로그인 없음): CompanySearchPage(/navigator), CompanyRegisterPage, CompanyManagePage(관리 링크), AlertsPanel, SubscriptionLinkPage(메일 링크)
   pages/admin/NavigatorStaffPage  담당자: 공고별 적합 기업 (/staff/navigator)
+  pages/admin/NavigatorSourcesPage  담당자: 외부 수집 (/staff/sources)
 ```
 
 Navigator 화면 확인 순서는 `docs/navigator.md` 참고.

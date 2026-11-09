@@ -1,0 +1,24 @@
+{
+  "_comment": "KIPRIS Plus 목업. 사업자번호별 출원인 특허 (모두 가상). applicant_code 는 특허고객번호",
+  "patents": {
+    "9998100015": [
+      {"application_no": "10-2019-0101501", "registration_no": "10-2234501", "status": "REGISTERED",
+       "title": "광대역 재밍 환경에서의 주파수 도약 동기 유지 장치 및 방법", "ipc_codes": ["H04B 1/713", "H04K 3/00"],
+       "applicant": "주식회사 한빛전자통신", "applicant_code": "119990000151",
+       "applied_on": "2019-08-20", "registered_on": "2021-03-11"},
+      {"application_no": "10-2023-0055120", "status": "APPLIED",
+       "title": "소형 무인기 군집용 저지연 메시 네트워크 라우팅 방법", "ipc_codes": ["H04W 40/18", "H04W 84/18"],
+       "applicant": "주식회사 한빛전자통신", "applicant_code": "119990000151", "applied_on": "2023-05-02"},
+      {"application_no": "10-2024-0031877", "status": "APPLIED",
+       "title": "전술 데이터링크 단말의 적응형 변조 방식 선택 장치", "ipc_codes": ["H04L 1/00", "H04B 7/185"],
+       "applicant": "주식회사 한빛전자통신", "applicant_code": "119990000151", "applied_on": "2024-03-08",
+       "abstract": "채널 상태와 재밍 수준에 따라 변조 방식과 부호율을 바꿔 링크 유지율을 높인다"}
+    ],
+    "9998200026": [
+      {"application_no": "10-2016-0144210", "registration_no": "10-1872210", "status": "REGISTERED",
+       "title": "탄소섬유와 세라믹 타일을 적층한 경량 복합 방탄판", "ipc_codes": ["F41H 5/04", "B32B 18/00"],
+       "applicant": "누리복합소재 주식회사", "applicant_code": "119990000262",
+       "applied_on": "2016-10-14", "registered_on": "2018-09-03"}
+    ]
+  }
+}

@@ -7,6 +7,7 @@ import { ToastProvider } from './components/Toast'
 import { DashboardPage } from './pages/admin/DashboardPage'
 import { ProjectsPage } from './pages/admin/ProjectsPage'
 import { ReviewQueuePage } from './pages/admin/ReviewQueuePage'
+import { NavigatorSourcesPage } from './pages/admin/NavigatorSourcesPage'
 import { NavigatorStaffPage } from './pages/admin/NavigatorStaffPage'
 import { LoginPage } from './pages/LoginPage'
 import { CompanyManagePage } from './pages/navigator/CompanyManagePage'
@@ -42,6 +43,7 @@ export default function App() {
               <Route path="/projects" element={<RequireRole roles={ADMIN_ROLES}><ProjectsPage /></RequireRole>} />
               <Route path="/reviews" element={<RequireRole roles={ADMIN_ROLES}><ReviewQueuePage /></RequireRole>} />
               <Route path="/staff/navigator" element={<RequireRole roles={ADMIN_ROLES}><NavigatorStaffPage /></RequireRole>} />
+              <Route path="/staff/sources" element={<RequireRole roles={ADMIN_ROLES}><NavigatorSourcesPage /></RequireRole>} />
               {/* 작업자: CURATOR · EXPERT */}
               <Route path="/my-tasks" element={<RequireRole roles={WORKER_ROLES}><MyTasksPage /></RequireRole>} />
               <Route path="/documents/upload" element={<RequireRole roles={WORKER_ROLES}><DocumentUploadPage /></RequireRole>} />

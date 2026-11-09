@@ -35,3 +35,56 @@ async def record_fetch(conn: AsyncConnection, *, source_code: str, mode: str, or
         (job["id"], job["source_id"], organization_id, external_key,
          json.dumps(payload, ensure_ascii=False), content_hash(payload)))).fetchone()
     return raw["id"]
+
+
+HTTP_TIMEOUT_S = 20.0
+
+
+def _client():
+    import httpx
+    return httpx.Client(timeout=HTTP_TIMEOUT_S, headers={"User-Agent": "kd-ax-navigator/1.0"})
+
+
+def _call(method: str, url: str, **kw) -> Any:
+    import httpx
+    try:
+        with _client() as c:
+            r = c.request(method, url, **kw)
+            r.raise_for_status()
+            return r
+    except httpx.HTTPStatusError as e:
+        raise ConnectorUnavailable(f"{url.split('?')[0]} HTTP {e.response.status_code}") from None
+    except httpx.HTTPError as e:
+        raise ConnectorUnavailable(f"{url.split('?')[0]} 연결 실패: {type(e).__name__}") from None
+
+
+def http_get_json(url: str, params: dict | None = None) -> Any:
+    return _call("GET", url, params=params).json()
+
+
+def http_post_json(url: str, body: Any, params: dict | None = None) -> Any:
+    return _call("POST", url, json=body, params=params).json()
+
+
+def http_get_text(url: str, params: dict | None = None) -> str:
+    return _call("GET", url, params=params).text
+
+
+def http_get_bytes(url: str, params: dict | None = None) -> bytes:
+    return _call("GET", url, params=params).content
+
+
+_CORP_MARKS = ("주식회사", "(주)", "㈜", "유한회사", "(유)", "(가상)")
+
+
+def normalize_company_name(name: str) -> str:
+    """출원인·공시 회사명 비교용: 법인 표기와 공백 제거."""
+    n = name or ""
+    for m in _CORP_MARKS:
+        n = n.replace(m, "")
+    return "".join(n.split()).lower()
+
+
+def load_fixture(name: str) -> Any:
+    from pathlib import Path
+    return json.loads((Path(__file__).parent / "fixtures" / name).read_text(encoding="utf-8"))

@@ -37,12 +37,13 @@ def _send_link(email: str, company_name: str, link: access_link.IssuedLink, firs
 
 
 def _verify(body: CompanyRegister, bizno: str) -> tuple[BizVerifyResult, str, str | None]:
-    connector = get_nts_connector()
+    mode = get_settings().source_nts_biz.lower()
     try:
+        connector = get_nts_connector()
         return connector.verify(bizno, body.representative_name, body.opened_on), connector.mode, None
     except ConnectorUnavailable as e:
         return BizVerifyResult("UNVERIFIED", "UNKNOWN", f"국세청 진위확인을 할 수 없어 미확인으로 저장합니다 ({e})"), \
-            connector.mode, str(e)
+            mode, str(e)
 
 
 @router.post("/companies", response_model=RegisterResult, status_code=201,

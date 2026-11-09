@@ -357,3 +357,59 @@ export const getAnnouncementAlerts = (annId: number) =>
 export const dispatchAnnouncementAlerts = (annId: number) =>
   api<{ notifications: number; emails_sent: number; emails_failed: number }>(
     `/navigator/alerts/announcements/${annId}`, { method: 'POST' })
+
+// 외부 수집 (담당자)
+export interface SourceRow {
+  id: number
+  code: string
+  name: string
+  provider: string | null
+  data_kind: string
+  fetch_interval: string | null
+  requires_key: boolean
+  is_paid: boolean
+  is_active: boolean
+  notes: string | null
+  implemented: boolean
+  mode: 'mock' | 'live' | null
+  per_company: boolean
+  last_job_id: number | null
+  last_status: 'RUNNING' | 'SUCCEEDED' | 'FAILED' | null
+  last_started_at: string | null
+  last_finished_at: string | null
+  last_records: number | null
+  last_error: string | null
+  last_result: Record<string, number> | null
+  last_mode: string | null
+  next_due_at: string | null
+}
+
+export interface FetchJob {
+  id: number
+  source: string
+  organization_id: number | null
+  company_name: string | null
+  mode: string
+  trigger_kind: 'ON_DEMAND' | 'SCHEDULED' | 'REGISTRATION'
+  status: 'RUNNING' | 'SUCCEEDED' | 'FAILED'
+  records_count: number
+  error_message: string | null
+  result: Record<string, number> | null
+  started_at: string
+  finished_at: string | null
+}
+
+export interface RunResult {
+  job_id: number
+  source: string
+  mode: string
+  status: 'SUCCEEDED' | 'FAILED'
+  error: string | null
+  counts: Record<string, number>
+}
+
+export const listSources = () => api<SourceRow[]>('/navigator/sources')
+export const listFetchJobs = (source?: string) =>
+  api<FetchJob[]>('/navigator/sources/jobs', { query: { source, limit: 50 } })
+export const runSource = (code: string, organizationId?: number) =>
+  api<RunResult>(`/navigator/sources/${code}/run`, { method: 'POST', query: { organization_id: organizationId } })

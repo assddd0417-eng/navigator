@@ -1,0 +1,9 @@
+{
+  "_comment": "OpenDART 목업. 사업자번호별 고유번호와 사업보고서 값 (모두 가상). 외부감사 대상만 있다",
+  "companies": {
+    "9998200026": {"corp_code": "99900026", "corp_name": "누리복합소재", "year": 2025,
+                   "revenue_krw": 119800000000, "employee_count": 318},
+    "9998100015": {"corp_code": "99900015", "corp_name": "한빛전자통신", "year": 2025,
+                   "revenue_krw": 18200000000, "employee_count": 85}
+  }
+}
