@@ -1,0 +1,90 @@
+{
+ "version": 1,
+ "note": "K2전차 파워팩 국내 성과 (해외 수요 갭 분석 PoC용). 사업 경과·수치는 공식 기관 자료(sources)에서 가져왔고, 결과보고서 문장 구성과 기업명은 합성임.",
+ "programs": [],
+ "departments": [
+  {"code": "D-MOBF", "name": "기동화력기술팀", "description": "지상 기동·화력 무기체계 기술"}
+ ],
+ "weapon_systems": [
+  {"code": "WS-S-K2", "key": "K2", "name": "K2 전차"}
+ ],
+ "items": [
+  {"code": "ITM-S-K2-ENG", "key": "K2-ENG", "name": "전차용 1,500마력급 디젤엔진", "is_part": true, "is_imported": false},
+  {"code": "ITM-S-K2-TM", "key": "K2-TM", "name": "전차용 1,500마력급 자동변속기", "is_part": true, "is_imported": false}
+ ],
+ "organizations": [
+  {"key": "K2C1", "name": "(가상)한누리기관", "org_type": "COMPANY"},
+  {"key": "K2C2", "name": "(가상)동해변속기", "org_type": "COMPANY"}
+ ],
+ "program_keys": {"LOC": "P-LOC"},
+ "dept_keys": {"PLAN": "D-PLAN", "MOBF": "D-MOBF"},
+ "projects": [
+  {
+   "key": "K2T", "project_no": "SYN-K2-2014-01", "title": "K2전차 1,500마력급 국산 자동변속기 개발",
+   "program": "LOC", "dept": "MOBF", "lead_org": "K2C2", "start": "2014-01-01", "end": "2024-10-31",
+   "status": "COMPLETED", "ws": ["K2"], "items": ["K2-TM"], "companies": ["K2C2"],
+   "sources": ["https://dapa.go.kr/dapa/doc/selectDoc.do?bbsSeq=326&docSeq=20104&menuSeq=3069"],
+   "public_facts": "방위사업청 제164회 방위사업추진위원회 결과(2024-10-28): K2전차 4차 양산 1,500마력 변속기 적용(안) 의결, 국방규격 내구도 검사 기준 320시간 중 306시간 완료 후 결함 발생으로 검사 종료, 업체 추가 품질보증 대책·관련기관 의견 종합 검토 후 4차 양산에 국산 변속기 적용 결정, 파워팩(엔진+변속기) 완전 국산화",
+   "report": [
+    {"no": "1", "heading": "연구개요", "paragraphs": [
+     "본 과제는 K2전차 1,500마력급 파워팩에 들어가는 자동변속기를 국내 기술로 개발하여 양산 전차에 적용하는 것을 목표로 하였음.",
+     "4차 양산 이전 물량은 변속기를 국외에서 도입하여 파워팩이 완전 국산화되지 않은 상태였음."]},
+    {"no": "2", "heading": "연구내용 및 방법", "paragraphs": [
+     "엔진 최대출력 1,500마력을 받아 주행·조향·제동을 수행하는 전차용 자동변속기와 전자식 변속 제어장치를 개발하였음.",
+     "국산 엔진과 같은 파워팩 장착부·냉각계통에 맞도록 체결부와 배관 인터페이스를 설계하였음."]},
+    {"no": "3", "heading": "시험평가 결과", "paragraphs": [
+     "국방규격 내구도 검사에서 기준 320시간 중 306시간을 완료한 후 결함이 발생하여 검사를 종료하였음.",
+     "업체는 결함 부위 개선과 함께 양산 적용 시 추가 품질보증 대책을 제안하였음."]},
+    {"no": "4", "heading": "결론 및 활용계획", "paragraphs": [
+     "방위사업추진위원회(2024.10.28)는 내구도 검사 결과, 업체가 제안한 추가 품질보증 대책, 관련기관 의견을 종합 검토하여 K2전차 4차 양산에 국산 변속기 적용을 결정하였음.",
+     "국산 변속기 적용으로 K2전차 파워팩(엔진+변속기)은 완전 국산화되며 후속군수지원과 수출에 활용할 수 있음.",
+     "내구도 기준 미달분(14시간)에 대한 개선 효과는 양산 품질보증 기간 중 확인이 필요함."]}
+   ],
+   "card": {
+    "title": "K2전차 1,500마력급 국산 자동변속기", "trl": 8, "trl_basis": "4차 양산 적용 결정 (방추위 2024.10.28)",
+    "core_achievement": "K2전차용 1,500마력급 자동변속기 국산화, 4차 양산 적용으로 파워팩 완전 국산화",
+    "summary": "K2전차 파워팩의 마지막 수입 구성품이던 자동변속기를 국산화함. 국방규격 내구도 검사 320시간 중 306시간에서 결함이 발생했으나 추가 품질보증 대책을 조건으로 4차 양산 적용이 결정됨",
+    "test_conditions": "국방규격 내구도 검사 (기준 320시간)", "application_env": "궤도형 주력전차 파워팩",
+    "technologies": [{"tech_name": "전차용 고출력 자동변속기", "principle": "주행·조향·제동 통합 변속, 전자식 변속 제어", "is_primary": true}],
+    "performances": [{"metric_name": "내구도 검사 시간", "comparator": "GTE", "target_value": 320, "achieved_value": 306,
+                      "unit": "h", "is_achieved": false, "test_condition": "국방규격 내구도 검사", "chunk": [2, 0]}],
+    "open_issues": [{"issue_type": "UNMET_TARGET", "priority": "HIGH", "chunk": [3, 2],
+                     "description": "내구도 검사 기준 320시간 미달(306시간 후 결함), 개선 효과를 양산 품질보증 기간 중 확인해야 함"}]
+   }
+  },
+  {
+   "key": "K2E", "project_no": "SYN-K2-2014-02", "title": "K2전차 1,500마력급 국산 디젤엔진 개발",
+   "program": "LOC", "dept": "MOBF", "lead_org": "K2C1", "start": "2014-01-01", "end": "2019-12-31",
+   "status": "COMPLETED", "ws": ["K2"], "items": ["K2-ENG"], "companies": ["K2C1"],
+   "sources": ["https://dapa.go.kr/dapa/doc/selectDoc.do?bbsSeq=326&docSeq=20104&menuSeq=3069",
+               "https://www.gov.pl/web/obrona-narodowa/czolgi-k2",
+               "https://api.sejm.gov.pl/sejm/term10/interpellations/attachment/ATTDMRHRB/z02728-o1.pdf",
+               "https://dapa.go.kr/dapa/doc/selectDoc.do?docSeq=21346&menuSeq=3069&bbsSeq=326"],
+   "public_facts": "방위사업청(2024-10-28): 국산 변속기 적용으로 K2 파워팩(엔진+변속기) 완전 국산화 (엔진은 이미 국산). 폴란드 국방부 K2 제원: 디젤 1,500마력. 폴란드 국방부 하원 답변 2728(2025-10-08): K2GF 엔진 포함 94개 부체계 수리 문서 이전, 현지 정비 단계 수행. 방위사업청(2025-07-02): K2PL 폴란드 요구성능 맞춤 개발·현지 조립생산",
+   "report": [
+    {"no": "1", "heading": "연구개요", "paragraphs": [
+     "본 과제는 K2전차 파워팩의 1,500마력급 디젤엔진을 국내 기술로 개발하여 양산 전차에 적용하는 것을 목표로 하였음."]},
+    {"no": "2", "heading": "연구내용 및 방법", "paragraphs": [
+     "1,500마력급 전차용 디젤엔진과 전자식 연료분사 제어장치, 냉각계통을 개발하였음.",
+     "양산 전차의 파워팩 장착부와 호환되도록 엔진 체결부와 보조기기 배치를 설계하였음."]},
+    {"no": "3", "heading": "시험평가 결과", "paragraphs": [
+     "체계 장착 시험에서 최대출력 1,500마력을 확인하였고 개발 엔진은 양산 전차에 적용되었음."]},
+    {"no": "4", "heading": "결론 및 활용계획", "paragraphs": [
+     "국산 변속기 4차 양산 적용 결정(2024.10.28)으로 국산 엔진과 결합한 K2전차 파워팩이 완전 국산화됨.",
+     "폴란드 수출형(K2PL)은 현지 조립생산과 엔진을 포함한 부체계 수리 문서 이전, 현지 정비 단계 수행이 요구되므로 엔진 정비 문서·교육·정비 장비를 수출국 정비 체계에 맞춰 패키지로 준비해야 함."]}
+   ],
+   "card": {
+    "title": "K2전차 1,500마력급 국산 디젤엔진", "trl": 9, "trl_basis": "양산 전차 적용",
+    "core_achievement": "K2전차용 1,500마력급 디젤엔진과 제어장치 국산화, 양산 전차 적용",
+    "summary": "K2전차 파워팩의 디젤엔진을 국산화하여 양산 전차에 적용함. 국산 변속기와 결합해 파워팩 완전 국산화",
+    "test_conditions": "체계 장착 시험", "application_env": "궤도형 주력전차 파워팩",
+    "technologies": [{"tech_name": "전차용 고출력 디젤엔진", "principle": "전자식 연료분사 제어", "is_primary": true}],
+    "performances": [{"metric_name": "최대출력", "comparator": "GTE", "target_value": 1500, "achieved_value": 1500,
+                      "unit": "마력", "is_achieved": true, "test_condition": "체계 장착 시험", "chunk": [2, 0]}],
+    "open_issues": [{"issue_type": "FOLLOW_UP_NEED", "priority": "HIGH", "chunk": [3, 1],
+                     "description": "수출국 현지 조립생산·정비 요구에 맞춘 엔진 정비 문서·교육·정비 장비 패키지 필요"}]
+   }
+  }
+ ],
+ "demands": []
+}
