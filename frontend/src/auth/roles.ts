@@ -78,6 +78,7 @@ export const MENU: MenuItem[] = [
   { path: '/projects', label: '프로젝트 관리', icon: '🗂️', roles: ADMIN_ROLES },
   { path: '/reviews', label: '검토 큐', icon: '📥', roles: ADMIN_ROLES },
   { path: '/staff/navigator', label: '공고별 적합 기업', icon: '🧭', roles: ADMIN_ROLES },
+  { path: '/staff/sources', label: '외부 수집', icon: '🔄', roles: ADMIN_ROLES },
   { path: '/my-tasks', label: '내 작업', icon: '✅', roles: WORKER_ROLES },
   { path: '/documents/upload', label: '문서 업로드', icon: '📤', roles: WORKER_ROLES },
 ]

@@ -331,3 +331,7 @@ label.check input { width: auto; }
 .sub-row strong { word-break: break-all; }
 .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .sub-form { padding: 10px; background: var(--bg); border-radius: 8px; margin-bottom: 10px; }
+
+/* Navigator 외부 수집 */
+.table-wrap { overflow-x: auto; }
+.bad-text { color: var(--bad); }

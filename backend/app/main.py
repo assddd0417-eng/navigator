@@ -10,7 +10,7 @@ from app.config import get_settings
 from app.db import close_pool, open_pool, transaction
 from app.errors import install_error_handlers
 from app.routers import (announcements, cards, demands, documents, kpi, navigator, navigator_alerts,
-                         navigator_matching, overseas, recommendations)
+                         navigator_matching, navigator_sources, overseas, recommendations)
 from app.services.embedding import activate_model, embedding_status, get_embedder
 from app.services.rationale import get_llm_writer
 
@@ -72,5 +72,6 @@ async def me(user: CurrentUser = Depends(get_current_user)):
 
 
 for r in (documents.router, cards.router, demands.router, recommendations.router, kpi.router, navigator.router,
-          announcements.router, navigator_matching.router, overseas.router, navigator_alerts.router):
+          announcements.router, navigator_matching.router, overseas.router, navigator_alerts.router,
+          navigator_sources.router):
     app.include_router(r)

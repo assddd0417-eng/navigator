@@ -59,7 +59,17 @@ class Settings(BaseSettings):
     navigator_dev_expose_link: bool = False    # 응답에 관리 링크 포함 (로컬 전용)
     navigator_match_candidate_k: int = 50
     mailer: str = "mock"
+
+    # 외부 수집. SOURCE_<CODE>=mock|live, 키는 live 에서만 필요
     source_nts_biz: str = "mock"
+    source_kipris: str = "mock"
+    source_dart: str = "mock"
+    source_bizinfo: str = "mock"
+    nts_service_key: str | None = None      # 공공데이터포털 (국세청 사업자등록정보)
+    kipris_access_key: str | None = None    # KIPRIS Plus
+    dart_api_key: str | None = None         # OpenDART
+    bizinfo_api_key: str | None = None      # 기업마당
+    navigator_announcement_keywords: str = "국방,방산,방위,무기체계,군수"   # 외부 공고 거르기 (쉼표)
 
     @property
     def resolved_llm_model(self) -> str:

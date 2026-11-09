@@ -1,0 +1,17 @@
+{
+  "_comment": "기업마당 지원사업 공고 목업 (모두 가상). 국방 키워드가 없는 공고는 걸러진다",
+  "items": [
+    {"pblancId": "PBLN_MOCK_0001", "pblancNm": "(가상) 2027 국방 부품국산화 개발지원 사업 공고",
+     "jrsdInsttNm": "(가상)방위사업청", "excInsttNm": "(가상)국방기술진흥연구소",
+     "reqstBeginEndDe": "20261201 ~ 20270115", "pblancUrl": "https://www.bizinfo.go.kr/mock/PBLN_MOCK_0001",
+     "bsnsSumryCn": "<p>무기체계 수입 부품의 국산화 개발을 지원합니다. 중소·중견기업 대상</p>", "hashtags": "국방,부품국산화,R&D"},
+    {"pblancId": "PBLN_MOCK_0002", "pblancNm": "(가상) 방산 중소기업 수출 컨설팅 지원 모집",
+     "jrsdInsttNm": "(가상)산업통상자원부", "reqstBeginEndDe": "20261110 ~ 20261210",
+     "pblancUrl": "https://www.bizinfo.go.kr/mock/PBLN_MOCK_0002",
+     "bsnsSumryCn": "방산 중소기업의 해외 인증·수출 컨설팅 비용을 지원", "hashtags": "방산,수출"},
+    {"pblancId": "PBLN_MOCK_0003", "pblancNm": "(가상) 소상공인 온라인 판로 지원",
+     "jrsdInsttNm": "(가상)중소벤처기업부", "reqstBeginEndDe": "20261101 ~ 20261130",
+     "pblancUrl": "https://www.bizinfo.go.kr/mock/PBLN_MOCK_0003",
+     "bsnsSumryCn": "온라인 쇼핑몰 입점 지원", "hashtags": "판로,소상공인"}
+  ]
+}

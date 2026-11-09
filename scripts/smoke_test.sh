@@ -402,4 +402,15 @@ api "잘못된 확인 링크" 404 POST /navigator/subscriptions/confirm - '{"tok
 api "잘못된 해지 링크" 404 POST /navigator/subscriptions/unsubscribe - '{"token":"xxxxxxxxxxxxxxxx"}'
 api "공고 알림 현황은 담당자만 (VIEWER)" 403 GET /navigator/alerts/announcements/101 "$VIEWER"
 api "공고 101 알림 현황 (PLANNER)" 200 GET /navigator/alerts/announcements/101 "$PLANNER"
+
+section "⑫ Navigator 외부 수집 (mock)"
+api "출처 목록은 담당자만 (VIEWER)" 403 GET /navigator/sources "$VIEWER"
+api "출처 목록 (PLANNER)" 200 GET /navigator/sources "$PLANNER"
+api "국세청 휴·폐업 재확인" 200 POST /navigator/sources/NTS_BIZ/run "$PLANNER"
+api "KIPRIS 특허 (한빛)" 200 POST "/navigator/sources/KIPRIS/run?organization_id=101" "$PLANNER"
+api "DART 재무 (누리)" 200 POST "/navigator/sources/DART/run?organization_id=102" "$PLANNER"
+api "기업마당 공고" 200 POST /navigator/sources/BIZINFO/run "$PLANNER"
+api "공고는 기업별 수집 안 됨" 422 POST "/navigator/sources/BIZINFO/run?organization_id=101" "$PLANNER"
+api "연결 안 된 출처" 404 POST /navigator/sources/NICE/run "$PLANNER"
+api "수집 기록" 200 GET "/navigator/sources/jobs?limit=5" "$PLANNER"
 summary
