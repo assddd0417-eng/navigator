@@ -1,6 +1,7 @@
 from pathlib import PurePath
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from psycopg import AsyncConnection
 from starlette.concurrency import run_in_threadpool
 
 from app.auth import CurrentUser, get_current_user, request_id, require_roles
@@ -23,26 +24,31 @@ async def create_document(body: DocumentCreate, user: CurrentUser = Depends(requ
 
 async def _store_document(body: DocumentCreate, user: CurrentUser, rid: str) -> DocumentCreated:
     async with transaction(user.id, rid) as conn:
-        doc_id = await insert(conn, "source_document", {
-            **body.model_dump(exclude={"sections", "chunks"}), "parse_status": "CHUNKED"})
-        section_ids: dict[str, int] = {}
-        for i, s in enumerate(body.sections):
-            section_ids[s.key] = await insert(conn, "document_section", {
-                "document_id": doc_id, "parent_id": section_ids.get(s.parent_key) if s.parent_key else None,
-                "section_no": s.section_no, "heading": s.heading, "level": s.level,
-                "page_start": s.page_start, "page_end": s.page_end, "ordinal": i})
-        chunk_ids = []
-        for i, c in enumerate(body.chunks):
-            chunk_ids.append(await insert(conn, "document_chunk", {
-                "document_id": doc_id, "section_id": section_ids.get(c.section_key) if c.section_key else None,
-                "chunk_index": i, "content": c.content, "content_sha256": sha256(c.content),
-                "page_start": c.page_start, "page_end": c.page_end, "location": c.location,
-                "chunk_type": c.chunk_type}))
-        embedded = await sync_chunk_embeddings(conn, doc_id)
+        return await store_document(conn, body)
+
+
+async def store_document(conn: AsyncConnection, body: DocumentCreate) -> DocumentCreated:
+    """열린 트랜잭션 안에서 문서·조항·청크를 넣고 임베딩한다 (공고 PDF 등록도 같이 쓴다)."""
+    doc_id = await insert(conn, "source_document", {
+        **body.model_dump(exclude={"sections", "chunks"}), "parse_status": "CHUNKED"})
+    section_ids: dict[str, int] = {}
+    for i, s in enumerate(body.sections):
+        section_ids[s.key] = await insert(conn, "document_section", {
+            "document_id": doc_id, "parent_id": section_ids.get(s.parent_key) if s.parent_key else None,
+            "section_no": s.section_no, "heading": s.heading, "level": s.level,
+            "page_start": s.page_start, "page_end": s.page_end, "ordinal": i})
+    chunk_ids = []
+    for i, c in enumerate(body.chunks):
+        chunk_ids.append(await insert(conn, "document_chunk", {
+            "document_id": doc_id, "section_id": section_ids.get(c.section_key) if c.section_key else None,
+            "chunk_index": i, "content": c.content, "content_sha256": sha256(c.content),
+            "page_start": c.page_start, "page_end": c.page_end, "location": c.location,
+            "chunk_type": c.chunk_type}))
+    embedded = await sync_chunk_embeddings(conn, doc_id)
     return DocumentCreated(id=doc_id, chunk_ids=chunk_ids, embedded=embedded)
 
 
-async def _parse(file: UploadFile) -> ParsedDocument:
+async def parse_file(file: UploadFile) -> ParsedDocument:
     settings = get_settings()
     limit = settings.upload_max_mb * 1024 * 1024
     data = await file.read(limit + 1)
@@ -56,7 +62,7 @@ async def _parse(file: UploadFile) -> ParsedDocument:
 async def parse_document(file: UploadFile = File(..., description="PDF · TXT · MD"),
                          user: CurrentUser = Depends(require_roles("CURATOR", "PLANNER"))):
     """업로드 파일에서 텍스트를 추출·청킹해 미리보기로 돌려준다 (DB 저장 없음)."""
-    p = await _parse(file)
+    p = await parse_file(file)
     return ParsePreview(filename=p.filename, file_type=p.file_type, parser=p.parser, page_count=p.page_count,
                         pages_without_text=p.pages_without_text, char_count=p.char_count, warnings=p.warnings,
                         chunks=[c.__dict__ for c in p.chunks])
@@ -82,7 +88,7 @@ async def upload_document(
 
     원본 파일 자체는 저장하지 않는다 (storage_uri 없음, 파일 SHA-256 은 metadata 에 기록).
     """
-    p = await _parse(file)
+    p = await parse_file(file)
     body = DocumentCreate(
         doc_type_code=doc_type_code, title=(title or "").strip() or PurePath(p.filename).stem or "제목 없음",
         project_id=project_id, program_id=program_id, owner_dept_id=owner_dept_id, security_code=security_code,

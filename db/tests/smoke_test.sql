@@ -192,5 +192,21 @@ SELECT o.name, cp.biz_verify_status, cp.region, (SELECT count(*) FROM company_pa
   FROM organization o JOIN company_profile cp ON cp.organization_id = o.id WHERE o.business_reg_no = '9998400049';
 SELECT field_name, preferred_value, differs FROM v_company_field_compare WHERE organization_id = 900;
 
+\echo '--- Navigator: 공고·자격요건 (0021)'
+INSERT INTO announcement (id, announcement_no, title, agency_name, receipt_start, receipt_end)
+VALUES (900, 'SMOKE-001', '스모크 공고', '(가상)기관', current_date - 1, current_date + 30),
+       (901, 'SMOKE-002', '마감 공고', '(가상)기관', current_date - 60, current_date - 1);
+INSERT INTO announcement_requirement (announcement_id, req_type_code, rule, is_mandatory, description) VALUES
+  (900, 'MIN_CREDIT_GRADE', '{"min_grade":"BB-"}', true, 'BB- 이상'),
+  (900, 'PATENT', '{"min_count":1}', false, '특허 우대');
+INSERT INTO announcement_tech_need (announcement_id, tech_name) VALUES (900, '항재밍 모뎀');
+SELECT announcement_no, receipt_state, mandatory_count, requirement_count, tech_need_count
+  FROM v_announcement WHERE id IN (900, 901) ORDER BY id;
+-- 최저신용등급 비교: 기업 등급 서열 ≥ 요건 등급 서열
+SELECT cr.grade AS company_grade, r.rule->>'min_grade' AS min_grade, cg.rank >= rg.rank AS meets
+  FROM company_credit_rating cr JOIN code_credit_grade cg ON cg.grade = cr.grade
+  CROSS JOIN announcement_requirement r JOIN code_credit_grade rg ON rg.grade = r.rule->>'min_grade'
+ WHERE cr.organization_id = 900 AND r.announcement_id = 900;
+
 ROLLBACK;
 \echo '스모크 테스트 완료 (ROLLBACK)'
