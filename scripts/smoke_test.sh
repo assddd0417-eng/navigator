@@ -9,11 +9,12 @@
 #      → 담당부서 최종판정 ADOPT(DEPT_REVIEWER)
 #   ⑦ KPI 조회
 #   ⑧ Navigator 기업 프로필: 공개 조회, 관리 링크 없이 401, 형식 오류 422, 재등록 409
+#   ⑨ Navigator 공고: 목록·상세(로그인 없음), 직접 입력(PLANNER), 잘못된 규칙 422
 #
 # 사용법:
 #   BASE_URL=http://localhost:8000 ./scripts/smoke_test.sh
 #
-# 전제: 마이그레이션 + seeds/init_test_data.sql + seeds/navigator_companies.sql 적용, 서버 실행 중 (기본 EMBEDDER=hash).
+# 전제: 마이그레이션 + seeds/init_test_data.sql + seeds/navigator_companies.sql + seeds/navigator_announcements.sql 적용, 서버 실행 중 (기본 EMBEDDER=hash).
 # 필요 도구: curl, jq   (PDF 픽스처: scripts/fixtures/*.pdf, 커밋되어 있음)
 # 재실행 안전: card_no·demand_no·external_ref 에 실행 태그를 붙여 매번 새 데이터로 돈다.
 #   같은 DB 에서 수십 번 돌리면 같은 내용의 카드가 쌓여 이번 카드가 상위 K 밖으로 밀리고,
@@ -351,5 +352,23 @@ api "사업자번호 형식 오류" 422 POST /navigator/companies - \
     '{"business_reg_no":"999-81-00016","company_name":"x","representative_name":"x","opened_on":"2020-01-01","email":"a@b.co"}'
 api "이미 등록된 사업자번호 재등록 거부" 409 POST /navigator/companies - \
     '{"business_reg_no":"999-81-00015","company_name":"x","representative_name":"김한빛","opened_on":"2012-03-15","email":"a@b.co"}'
+
+# -----------------------------------------------------------------------------
+section "⑨ Navigator 공고 (seeds/navigator_announcements.sql 필요)"
+api "공고 목록 (로그인 없음)" 200 GET "/navigator/announcements?q=%EA%B0%80%EC%83%81" -
+check "가상 공고 5건, 105 는 마감" \
+    '([.[] | select(.announcement_no | startswith("NAV-2026-"))] | length) == 5
+     and any(.[]; .announcement_no == "NAV-2026-105" and .receipt_state == "CLOSED")'
+api "공고 상세 (자격요건·요구기술)" 200 GET /navigator/announcements/101 -
+check "자격요건 6줄 (필수 4·우대 2) · 요구기술 2" \
+    '(.requirements | length) == 6 and ([.requirements[] | select(.is_mandatory)] | length) == 4
+     and (.tech_needs | length) == 2'
+api "로그인 없이 공고 등록 거부" 401 POST /navigator/announcements - '{"announcement_no":"x","title":"x","agency_name":"x"}'
+api "공고 직접 입력 (PLANNER)" 201 POST /navigator/announcements "$PLANNER" \
+    "$(jq -n --arg no "SMOKE-$RUN_TAG" '{announcement_no: $no, title: "스모크 공고", agency_name: "(가상)기관",
+        requirements: [{req_type_code: "MIN_CREDIT_GRADE", rule: {min_grade: "BB-"}, description: "BB- 이상"}]}')"
+api "잘못된 규칙 거부" 422 POST /navigator/announcements "$PLANNER" \
+    "$(jq -n --arg no "SMOKE-BAD-$RUN_TAG" '{announcement_no: $no, title: "x", agency_name: "x",
+        requirements: [{req_type_code: "MIN_CREDIT_GRADE", rule: {min_grade: "Z"}, description: "x"}]}')"
 
 summary
