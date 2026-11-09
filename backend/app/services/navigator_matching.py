@@ -339,12 +339,17 @@ async def _save(conn: AsyncConnection, direction: str, ranked: list[Scored], *, 
 
 
 async def match_announcement(conn: AsyncConnection, ann_id: int, *, requested_by: int | None,
-                             via: str = "STAFF") -> int:
+                             via: str = "STAFF", org_ids: list[int] | None = None) -> int:
+    """org_ids 를 주면 후보 검색 없이 그 기업들만 판정 (알림 구독 기업)."""
     if not await (await conn.execute("SELECT 1 FROM ax.announcement WHERE id = %s", (ann_id,))).fetchone():
         raise NotFound("공고", ann_id)
     await ensure_embeddings(conn)
     k = get_settings().navigator_match_candidate_k
-    org_ids = sorted(await candidate_companies(conn, ann_id, k))
+    params: dict[str, Any] = {"candidate_k": k}
+    if org_ids is None:
+        org_ids = sorted(await candidate_companies(conn, ann_id, k))
+    else:
+        org_ids, params = sorted(set(org_ids)), {"organization_ids": sorted(set(org_ids))}
     anns = await load_announcements(conn, [ann_id])
     orgs = await load_companies(conn, org_ids)
     sims = await pair_similarities(conn, org_ids, [ann_id]) if org_ids else []
@@ -353,7 +358,7 @@ async def match_announcement(conn: AsyncConnection, ann_id: int, *, requested_by
         by_org.setdefault(s["organization_id"], []).append(s)
     ranked = rank([score_pair(orgs[o], anns[ann_id], by_org.get(o, [])) for o in org_ids if o in orgs])
     return await _save(conn, "ANNOUNCEMENT_TO_COMPANY", ranked, ann_id=ann_id, org_id=None,
-                       requested_by=requested_by, via=via, params={"candidate_k": k})
+                       requested_by=requested_by, via=via, params=params)
 
 
 async def match_company(conn: AsyncConnection, org_id: int, *, include_closed: bool = False,

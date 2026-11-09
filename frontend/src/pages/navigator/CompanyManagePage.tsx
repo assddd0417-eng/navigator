@@ -3,11 +3,12 @@ import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from
 import { Link } from 'react-router-dom'
 import { ApiError } from '../../api/client'
 import {
-  answerQuestions, CERT_TYPES, getMyMatches, getMyProfile, getMyQuestions, REGIONS, SIZE_LABELS, updateMyProfile,
+  answerQuestions, CERT_TYPES, getMyAlerts, getMyMatches, getMyProfile, getMyQuestions, REGIONS, SIZE_LABELS, updateMyProfile,
   VERDICT_LABELS, type FullProfile, type MatchRun, type ProfileUpdate, type Question, type Verdict,
 } from '../../api/navigator'
 import { useToast } from '../../components/Toast'
 import { Card, Empty, useAction } from '../../components/ui'
+import { AlertsPanel } from './AlertsPanel'
 import { CompanyShell, fmtDay, MatchItem, VerdictSummary } from './components'
 
 const TOKEN_KEY = 'navigator.manageToken'
@@ -23,7 +24,7 @@ function readToken(): string | null {
   try { return sessionStorage.getItem(TOKEN_KEY) } catch { return null }
 }
 
-type Tab = 'matches' | 'questions' | 'profile'
+type Tab = 'matches' | 'questions' | 'alerts' | 'profile'
 
 export function CompanyManagePage() {
   const [token] = useState(readToken)
@@ -33,6 +34,7 @@ export function CompanyManagePage() {
   const [matches, setMatches] = useState<MatchRun | null>(null)
   const [questions, setQuestions] = useState<Question[] | null>(null)
   const [includeClosed, setIncludeClosed] = useState(false)
+  const [unread, setUnread] = useState(0)
   const { busy, run } = useAction()
 
   const loadMatches = useCallback((closed: boolean, refresh = false) => run(async () => {
@@ -44,7 +46,10 @@ export function CompanyManagePage() {
   useEffect(() => {
     if (!token) return
     getMyProfile(token)
-      .then((p) => { setProfile(p); void loadMatches(false); void loadQuestions() })
+      .then((p) => {
+        setProfile(p); void loadMatches(false); void loadQuestions()
+        getMyAlerts(token).then((a) => setUnread(a.unread)).catch(() => undefined)
+      })
       .catch((e) => setInvalid(e instanceof ApiError ? e.detail : '관리 링크 확인 실패'))
   }, [token, loadMatches, loadQuestions])
 
@@ -82,6 +87,9 @@ export function CompanyManagePage() {
         <button role="tab" className={tab === 'matches' ? 'on' : ''} onClick={() => setTab('matches')}>추천 공고</button>
         <button role="tab" className={tab === 'questions' ? 'on' : ''} onClick={() => setTab('questions')}>
           보완질문 {qCount > 0 && <span className="tab-count">{qCount}</span>}
+        </button>
+        <button role="tab" className={tab === 'alerts' ? 'on' : ''} onClick={() => setTab('alerts')}>
+          알림 {unread > 0 && <span className="tab-count">{unread}</span>}
         </button>
         <button role="tab" className={tab === 'profile' ? 'on' : ''} onClick={() => setTab('profile')}>내 정보</button>
       </div>
@@ -126,6 +134,8 @@ export function CompanyManagePage() {
           void loadQuestions()
         }} />
       )}
+
+      {tab === 'alerts' && <AlertsPanel token={token!} onUnread={setUnread} />}
 
       {tab === 'profile' && (
         <ProfilePanel token={token!} profile={profile} onSaved={(p) => {

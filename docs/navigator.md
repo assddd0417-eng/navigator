@@ -7,10 +7,11 @@
 
 | 구분 | 위치 |
 |------|------|
-| 마이그레이션 | 0019 기업 프로필(특허·인증·신용등급·R&D 이력·관리 링크), 0020 외부 출처·값 출처, 0021 공고·자격요건, 0022 임베딩·매칭 결과 |
+| 마이그레이션 | 0019 기업 프로필(특허·인증·신용등급·R&D 이력·관리 링크), 0020 외부 출처·값 출처, 0021 공고·자격요건, 0022 임베딩·매칭 결과, 0024 알림 구독 |
 | 기업 API | `backend/app/routers/navigator.py` |
 | 공고 API | `backend/app/routers/announcements.py`, 요건 형식 `backend/app/schemas/announcements.py` (`RULE_MODELS`) |
 | 매칭 API | `backend/app/routers/navigator_matching.py` |
+| 알림 | `backend/app/routers/navigator_alerts.py`, `backend/app/services/navigator_alerts.py` |
 | 판정 | `backend/app/services/eligibility.py` (DB 없이 테스트 가능한 순수 함수) |
 | 매칭 | `backend/app/services/navigator_matching.py`, 벡터 `navigator_embedding.py` |
 | 국세청 진위확인 | `backend/app/services/external/nts.py` (mock 은 `fixtures/nts_mock.json`) |
@@ -63,6 +64,21 @@
 | `POST /navigator/matching/companies/{org_id}?include_closed=` | 기업 → 공고 매칭 |
 | `GET /navigator/matching/companies/{org_id}/profile` | 기업 프로필 (이메일 마스킹) |
 | `GET /navigator/matching/runs/{run_id}` | 저장된 실행 조회 |
+
+### 알림
+
+| 메서드·경로 | 인증 | 설명 |
+|-------------|------|------|
+| `GET /navigator/manage/subscriptions` | 관리 링크 | 수신자 목록 |
+| `POST /navigator/manage/subscriptions` | 관리 링크 | 수신자 추가 `{email, keywords, min_score, include_needs_info, channels}` |
+| `PATCH`·`DELETE /navigator/manage/subscriptions/{id}` | 관리 링크 | 설정 변경, 켜기·끄기(`is_active`), 삭제 |
+| `POST /navigator/manage/subscriptions/{id}/confirm-mail` | 관리 링크 | 확인 메일 재발송 (미확인·수신 거부 상태만) |
+| `GET /navigator/manage/alerts` | 관리 링크 | 화면 알림 (공고당 1건), `unread` |
+| `POST /navigator/manage/alerts/read` | 관리 링크 | 읽음 처리 `{announcement_ids}` (생략하면 전체) |
+| `POST /navigator/subscriptions/confirm` | 메일 링크 | `{token}` 수신 확인 |
+| `POST /navigator/subscriptions/unsubscribe` | 메일 링크 | `{token}` 수신 거부 |
+| `GET /navigator/alerts/announcements/{id}` | 담당자 | 공고별 발송 현황 |
+| `POST /navigator/alerts/announcements/{id}` | 담당자 | 아직 안 보낸 구독 기업에 발송 |
 
 결과 행: `rank`, `verdict`, `total_score`, `scores`, `checks`(요건별 판정·사유·보완질문·원문), `questions`, `evidence`, `rationale`.
 
@@ -135,6 +151,17 @@ R&D 이력의 과제번호가 `project.project_no` 와 같으면 내부 과제�
 비교 대상이 없으면 0.5. 가중치와 규칙은 실행마다 `rule_snapshot` 에 저장한다.
 테스트는 해시 임베더를 쓰므로 점수 크기는 참고용이다.
 
+### 알림 규칙
+
+- 공고가 PUBLISHED 로 등록되거나 PUBLISHED 로 바뀌면 발송한다. 접수전·접수중 공고만.
+- 구독 기업만 판정한다 (`requested_via = SYSTEM` 실행). 이 실행은 담당자 화면의 '마지막 매칭'에 쓰지 않는다.
+- 보내는 조건: 적합 (정보부족은 `include_needs_info` 일 때), 총점 ≥ `min_score`, 관심 분야가 비었거나 공고 제목·개요·요구기술에 하나라도 포함.
+- 수신자: 관리 링크를 받은 주소는 바로 시작. 다른 주소는 그 주소로 확인 메일(3일 유효)을 보내고, 열어야 시작. 기업당 5명.
+- 같은 수신자에게 같은 공고는 한 번만. 메일마다 수신 거부 링크(1회용 토큰, 해시만 저장)를 넣는다.
+- 수신 거부한 주소는 기업이 켤 수 없고, 확인 메일을 다시 받아 수신자가 열어야 살아난다.
+- 메일은 커밋 후 보낸다. 실패하면 FAILED 로 남기고 공고 등록은 그대로 성공. 화면 알림은 남는다.
+- 메일에는 판정·총점·연계이유만 넣고 신용등급 값은 넣지 않는다.
+
 ### 공개 조회
 
 `GET /navigator/companies/{brn}/matches` 는 신용등급·매출 요건의 결과를 `null` 로 가리고, 그 요건을 빼고 판정과 연계이유를 다시 계산한다 (가린 요건 때문에 부적격이라는 사실이 드러나지 않도록). 보완질문은 주지 않는다.
@@ -145,8 +172,9 @@ R&D 이력의 과제번호가 `project.project_no` 와 같으면 내부 과제�
 |------|------|------|
 | `/navigator` | 기업 | 사업자번호 조회 → 공개 정보, 추천 공고, 관리 링크 받기 |
 | `/navigator/register` | 기업 | 신규 등록 |
-| `/navigator/manage#t=…` | 기업 (관리 링크) | 탭: 추천 공고 / 보완질문 / 내 정보. 저장하면 재판정 |
-| `/staff/navigator` | 담당자 (메뉴 "공고별 적합 기업") | 공고 목록 → 마지막 매칭 결과 → 다시 매칭, 기업 프로필 |
+| `/navigator/manage#t=…` | 기업 (관리 링크) | 탭: 추천 공고 / 보완질문 / 알림 / 내 정보. 저장하면 재판정 |
+| `/navigator/subscriptions/confirm#t=…`, `/navigator/unsubscribe#t=…` | 메일 수신자 | 수신 확인, 수신 거부 |
+| `/staff/navigator` | 담당자 (메뉴 "공고별 적합 기업") | 공고 목록 → 마지막 매칭 결과 → 다시 매칭, 기업 프로필, 구독 기업 알림 현황 |
 
 외부 확인값·내부 과제 등 기업이 고칠 수 없는 항목은 "(수정 불가)"로 표시한다. 특허는 KIPRIS 연동 전까지 보기만 된다.
 
@@ -175,7 +203,7 @@ R&D 이력의 과제번호가 `project.project_no` 와 같으면 내부 과제�
 | 이름 | 기본값 | 설명 |
 |------|--------|------|
 | `SOURCE_NTS_BIZ` | `mock` | `live` 는 아직 미구현 (미확인 처리) |
-| `MAILER` | `mock` | mock 은 발송 없이 로그만 |
+| `MAILER` | `mock` | mock 은 발송 없이 로그만 (본문은 DEBUG 로그) |
 | `NAVIGATOR_PUBLIC_BASE_URL` | `http://localhost:5173` | 관리 링크 주소 |
 | `NAVIGATOR_LINK_TTL_DAYS` | `30` | 관리 링크 유효기간 |
 | `NAVIGATOR_RATE_LIMIT_PER_MINUTE` | `60` | 비로그인 API 제한 |
@@ -207,12 +235,23 @@ curl -s -X POST localhost:8000/navigator/matching/announcements/101 -H 'X-User-I
 
 1. http://localhost:5173/navigator 에서 "(가상)새봄비전AI" 조회
 2. "관리 링크 받기" → "[DEV] 관리 링크 열기" → 보완질문 탭에서 TRL 7 저장 → 103 공고가 적합으로 바뀜
-3. http://localhost:5173/login 에서 기획자로 로그인 → "공고별 적합 기업" → 공고 선택 → 매칭 실행
+3. 알림 탭 → 추가 → 저장 (등록 이메일은 바로 '받는 중'). 다른 주소를 추가하면 "[DEV] 확인 링크 열기"
+4. 공고를 PUBLISHED 로 등록하면 (예: 아래) 알림 탭에 새 공고가 뜬다
+5. http://localhost:5173/login 에서 기획자로 로그인 → "공고별 적합 기업" → 공고 선택 → 매칭 실행, 아래 '구독 기업 알림'
+
+```bash
+curl -s -X POST localhost:8000/navigator/announcements -H 'X-User-Id: 1' -H 'Content-Type: application/json' -d '{
+  "announcement_no":"LOCAL-001","title":"전술 데이터링크 모뎀 국산화","agency_name":"(가상)기관",
+  "receipt_start":"2026-11-01","receipt_end":"2026-12-31","summary":"전술 데이터링크 통신 모뎀 부품 국산화",
+  "requirements":[{"req_type_code":"COMPANY_SIZE","rule":{"allowed":["SME","STARTUP","VENTURE"]},"description":"중소기업"}],
+  "tech_needs":[{"tech_name":"전술 데이터링크 통신 모뎀","ipc_codes":["H04B"]}]}'
+```
 
 ## 미구현
 
 - 공고문 자격요건 자동 추출 (`origin = AI_EXTRACTED` 컬럼만 있음)
 - 외부 공고 수집 (기업마당, 나라장터, 방사청), 국세청 실연동, KIPRIS 특허 수집
-- 실제 메일 발송, 신규 공고 알림
+- 실제 메일 발송 (SMTP 등, `mailer.send` 만 바꾸면 됨). 지금은 mock
+- 알림 발송을 큐로 분리 (지금은 공고 등록 요청 안에서 처리)
 - 증빙 PDF 업로드 연결 (`evidence_document_id` 컬럼만 있음)
 - 운영 임베딩 모델(bge-m3) 기준 가중치 조정

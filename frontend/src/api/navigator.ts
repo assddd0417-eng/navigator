@@ -281,3 +281,79 @@ export const runAnnouncementMatching = (annId: number) =>
   api<MatchRun>(`/navigator/matching/announcements/${annId}`, { method: 'POST' })
 export const staffCompanyProfile = (orgId: number) =>
   api<FullProfile>(`/navigator/matching/companies/${orgId}/profile`)
+
+// 알림
+export type AlertChannel = 'SCREEN' | 'EMAIL'
+
+export interface Subscription {
+  id: number
+  email: string
+  keywords: string[]
+  min_score: number
+  include_needs_info: boolean
+  channels: AlertChannel[]
+  is_active: boolean
+  email_confirmed_at: string | null
+  unsubscribed_at: string | null
+  confirm_expires_at: string | null
+  created_at: string
+  confirm_sent?: boolean
+  dev_confirm_link?: string | null
+}
+
+export interface SubscriptionInput {
+  email?: string
+  keywords?: string[]
+  min_score?: number
+  include_needs_info?: boolean
+  channels?: AlertChannel[]
+  is_active?: boolean
+}
+
+export interface AlertItem {
+  announcement_id: number
+  announcement_title: string
+  agency_name: string
+  receipt_end: string | null
+  receipt_state: string
+  verdict: Verdict
+  verdict_label: string
+  total_score: number
+  rationale: string
+  created_at: string
+  is_read: boolean
+}
+
+export interface AnnouncementAlerts {
+  subscribed_companies: number
+  notifications: { id: number; company_name: string; verdict: Verdict; verdict_label: string; total_score: number;
+    status: 'PENDING' | 'SENT' | 'FAILED' | 'READ'; created_at: string; sent_at: string | null;
+    read_at: string | null; channels: AlertChannel[] }[]
+}
+
+export const getMySubscriptions = (token: string) =>
+  api<{ registered_email: string; max: number; subscriptions: Subscription[] }>(
+    '/navigator/manage/subscriptions', manage(token))
+export const addSubscription = (token: string, body: SubscriptionInput) =>
+  api<Subscription>('/navigator/manage/subscriptions', { ...manage(token), method: 'POST', body })
+export const updateSubscription = (token: string, id: number, body: SubscriptionInput) =>
+  api<Subscription>(`/navigator/manage/subscriptions/${id}`, { ...manage(token), method: 'PATCH', body })
+export const deleteSubscription = (token: string, id: number) =>
+  api<void>(`/navigator/manage/subscriptions/${id}`, { ...manage(token), method: 'DELETE' })
+export const resendConfirm = (token: string, id: number) =>
+  api<Subscription>(`/navigator/manage/subscriptions/${id}/confirm-mail`, { ...manage(token), method: 'POST' })
+export const getMyAlerts = (token: string) =>
+  api<{ unread: number; alerts: AlertItem[] }>('/navigator/manage/alerts', manage(token))
+export const markAlertsRead = (token: string, announcement_ids?: number[]) =>
+  api<void>('/navigator/manage/alerts/read', { ...manage(token), method: 'POST', body: { announcement_ids } })
+export const confirmSubscription = (token: string) =>
+  api<{ company_name: string; email: string }>('/navigator/subscriptions/confirm',
+    { ...anon, method: 'POST', body: { token }, silent: true })
+export const unsubscribeAlerts = (token: string) =>
+  api<{ company_name: string; email: string }>('/navigator/subscriptions/unsubscribe',
+    { ...anon, method: 'POST', body: { token }, silent: true })
+export const getAnnouncementAlerts = (annId: number) =>
+  api<AnnouncementAlerts>(`/navigator/alerts/announcements/${annId}`)
+export const dispatchAnnouncementAlerts = (annId: number) =>
+  api<{ notifications: number; emails_sent: number; emails_failed: number }>(
+    `/navigator/alerts/announcements/${annId}`, { method: 'POST' })

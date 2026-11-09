@@ -12,6 +12,7 @@ import { LoginPage } from './pages/LoginPage'
 import { CompanyManagePage } from './pages/navigator/CompanyManagePage'
 import { CompanyRegisterPage } from './pages/navigator/CompanyRegisterPage'
 import { CompanySearchPage } from './pages/navigator/CompanySearchPage'
+import { SubscriptionLinkPage } from './pages/navigator/SubscriptionLinkPage'
 import { RecommendationPage } from './pages/shared/RecommendationPage'
 import { DocumentUploadPage } from './pages/worker/DocumentUploadPage'
 import { MyTasksPage } from './pages/worker/MyTasksPage'
@@ -33,6 +34,8 @@ export default function App() {
             <Route path="/navigator" element={<CompanySearchPage />} />
             <Route path="/navigator/register" element={<CompanyRegisterPage />} />
             <Route path="/navigator/manage" element={<CompanyManagePage />} />
+            <Route path="/navigator/subscriptions/confirm" element={<SubscriptionLinkPage mode="confirm" />} />
+            <Route path="/navigator/unsubscribe" element={<SubscriptionLinkPage mode="unsubscribe" />} />
             <Route element={<RequireRole roles={ALL_ROLES}><Layout /></RequireRole>}>
               {/* 관리자: PLANNER · DEPT_REVIEWER */}
               <Route path="/dashboard" element={<RequireRole roles={ADMIN_ROLES}><DashboardPage /></RequireRole>} />

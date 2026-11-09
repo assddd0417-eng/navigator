@@ -13,6 +13,7 @@ from app.schemas.announcements import (AnnouncementCreate, AnnouncementCreated, 
                                        RequirementIn, RequirementUpdate, TechNeedIn, normalize_rule)
 from app.schemas.common import Created
 from app.schemas.documents import ChunkIn, DocumentCreate
+from app.services.navigator_alerts import safe_dispatch
 from app.services.navigator_embedding import sync_announcement_embeddings
 from app.services.ratelimit import public_rate_limit
 
@@ -114,7 +115,10 @@ async def _create(conn: AsyncConnection, body: AnnouncementCreate, user: Current
 async def create_announcement(body: AnnouncementCreate, user: CurrentUser = Depends(require_roles(*STAFF)),
                               rid: str = Depends(request_id)):
     async with transaction(user.id, rid) as conn:
-        return await _create(conn, body, user)
+        created = await _create(conn, body, user)
+    if body.status == "PUBLISHED":
+        await safe_dispatch(created.id, rid)
+    return created
 
 
 @router.post("/upload", response_model=AnnouncementCreated, status_code=201)
@@ -226,7 +230,7 @@ async def update_announcement(ann_id: int, body: AnnouncementUpdate,
     data = body.model_dump(exclude_unset=True)
     async with transaction(user.id, rid) as conn:
         cur = await (await conn.execute(
-            "SELECT receipt_start, receipt_end FROM ax.announcement WHERE id = %s", (ann_id,))).fetchone()
+            "SELECT receipt_start, receipt_end, status FROM ax.announcement WHERE id = %s", (ann_id,))).fetchone()
         if cur is None:
             raise NotFound("공고", ann_id)
         start, end = data.get("receipt_start", cur["receipt_start"]), data.get("receipt_end", cur["receipt_end"])
@@ -234,6 +238,9 @@ async def update_announcement(ann_id: int, body: AnnouncementUpdate,
             raise _unprocessable("접수 마감일이 접수 시작일보다 빠릅니다")
         await update(conn, "announcement", ann_id, data)
         await _changed(conn, ann_id)
+    # 공개로 바뀔 때 구독 기업에 알림
+    if data.get("status") == "PUBLISHED" and cur["status"] != "PUBLISHED":
+        await safe_dispatch(ann_id, rid)
 
 
 @router.post("/{ann_id}/requirements", response_model=Created, status_code=201)
