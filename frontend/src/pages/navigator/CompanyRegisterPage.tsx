@@ -27,16 +27,20 @@ export function CompanyRegisterPage() {
   if (done) {
     return (
       <CompanyShell>
-        <Card title="등록 완료">
+        <Card title="등록했습니다">
           <p>
-            <strong>{done.business_reg_no}</strong> · 국세청 진위확인 <strong>{done.biz_verify_label}</strong> ({done.message})
+            사업자번호 <strong>{done.business_reg_no}</strong> · 국세청 확인 <strong>{done.biz_verify_label}</strong>
+            <span className="small muted"> ({done.message})</span>
           </p>
-          <p>관리 링크 발송: {done.sent_to} (유효기간 {fmtDay(done.expires_at)})</p>
+          <p>
+            <strong>{done.sent_to}</strong> 로 링크를 보냈습니다 ({fmtDay(done.expires_at)}까지).
+            링크에서 인증·R&amp;D 이력을 넣으면 더 많은 공고를 정확하게 판정할 수 있습니다.
+          </p>
           <div className="form-foot" style={{ justifyContent: 'flex-start' }}>
             {done.dev_management_link && (
-              <a className="btn btn-primary" href={done.dev_management_link.replace(/^https?:\/\/[^/]+/, '')}>[DEV] 관리 링크 열기</a>
+              <a className="btn btn-primary" href={done.dev_management_link.replace(/^https?:\/\/[^/]+/, '')}>링크 바로 열기 (개발 환경)</a>
             )}
-            <Link className="btn" to={`/navigator?brn=${encodeURIComponent(done.business_reg_no)}`}>추천 공고 보기</Link>
+            <Link className="btn" to={`/navigator?brn=${encodeURIComponent(done.business_reg_no)}`}>지원 가능 공고 보기</Link>
           </div>
         </Card>
       </CompanyShell>
@@ -46,7 +50,7 @@ export function CompanyRegisterPage() {
   return (
     <CompanyShell>
       <Card title="회사 등록">
-        <p className="muted small">대표자명·개업일은 국세청 진위확인에 사용됩니다. 수정은 등록 이메일로 받은 관리 링크에서 합니다.</p>
+        <p className="muted small">대표자명·개업일은 국세청 사업자 확인에 씁니다. 이메일로 회사 정보 수정 링크를 보내 드립니다.</p>
         <form className="form" onSubmit={submit}>
           <div className="form-row">
             <label>사업자등록번호 *<input required value={form.business_reg_no} onChange={set('business_reg_no')} placeholder="123-45-67890" /></label>
@@ -73,7 +77,7 @@ export function CompanyRegisterPage() {
               </select>
             </label>
           </div>
-          <p className="small muted">인증·신용등급·R&amp;D 이력은 등록 후 관리 링크에서 입력합니다.</p>
+          <p className="small muted">인증·신용등급·R&amp;D 이력은 등록 후 이메일 링크에서 입력합니다.</p>
           <div className="form-foot">
             <Link to="/navigator" className="btn btn-ghost">취소</Link>
             <button className="btn btn-primary" disabled={busy}>{busy ? '처리 중…' : '등록'}</button>

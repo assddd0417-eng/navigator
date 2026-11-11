@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import {
   addSubscription, deleteSubscription, getMyAlerts, getMySubscriptions, markAlertsRead, resendConfirm,
-  updateSubscription, VERDICT_TONES, type AlertChannel, type AlertItem, type Subscription, type SubscriptionInput,
+  updateSubscription, type AlertChannel, type AlertItem, type Subscription, type SubscriptionInput,
 } from '../../api/navigator'
 import { useToast } from '../../components/Toast'
 import { Card, Empty, useAction } from '../../components/ui'
-import { fmtDay } from './components'
+import { Deadline, FitBadge, FIT_LEVELS, fmtDay, VerdictBadge } from './components'
 
 const CHANNEL_LABELS: Record<AlertChannel, string> = { SCREEN: '화면', EMAIL: '이메일' }
-const MIN_SCORES = [0, 0.3, 0.5, 0.7]
+// 관련도 조건. 값은 components 의 FIT_LEVELS 경계와 같다
+const MIN_FIT: [number, string][] = [[0, '전체'], [FIT_LEVELS[1].min, '보통 이상'], [FIT_LEVELS[0].min, '높음만']]
+const minFitLabel = (v: number) => [...MIN_FIT].reverse().find(([m]) => v >= m)?.[1] ?? '전체'
 
 function subState(s: Subscription): { label: string; tone: string } {
   if (s.unsubscribed_at) return { label: '수신 거부', tone: 'bad' }
@@ -84,11 +86,11 @@ export function AlertsPanel({ token, onUnread }: { token: string; onUnread: (n: 
           <ul className="alert-list">
             {alerts.map((a) => (
               <li key={a.announcement_id} className={a.is_read ? '' : 'unread'}>
-                <span className={`badge badge-${VERDICT_TONES[a.verdict]}`}>{a.verdict_label}</span>
+                <VerdictBadge verdict={a.verdict} audience="company" />
                 <div className="grow">
-                  <strong>{a.announcement_title}</strong>
+                  <strong>{a.announcement_title}</strong> <FitBadge score={a.total_score} />
                   <div className="small muted">
-                    {a.agency_name} · 마감 {fmtDay(a.receipt_end)} · 총점 {a.total_score.toFixed(2)} · 알림 {fmtDay(a.created_at)}
+                    {a.agency_name} · <Deadline end={a.receipt_end} state={a.receipt_state} /> · {fmtDay(a.created_at)} 알림
                   </div>
                   <div className="small">{a.rationale}</div>
                 </div>
@@ -103,16 +105,24 @@ export function AlertsPanel({ token, onUnread }: { token: string; onUnread: (n: 
         <button className="btn btn-sm" onClick={() => setEditing('new')}>추가</button>
       }>
         <p className="small muted">
-          관리 링크를 받은 주소({registered})는 바로 시작됩니다. 다른 주소는 그 주소로 보낸 확인 메일을 열어야 시작됩니다. 최대 {max}명.
+          등록 이메일({registered})은 바로 받기 시작합니다. 다른 주소는 그 주소로 간 확인 메일을 열어야 시작됩니다. 최대 {max}명.
         </p>
         {devLink && (
-          <div className="notice small">[DEV] <a href={devLink.replace(/^https?:\/\/[^/]+/, '')}>확인 링크 열기</a></div>
+          <div className="notice small">개발 환경: <a href={devLink.replace(/^https?:\/\/[^/]+/, '')}>확인 링크 바로 열기</a></div>
         )}
         {editing === 'new' && (
           <SubForm initial={{ email: hasRegistered ? '' : registered }} withEmail busy={busy}
             onCancel={() => setEditing(null)} onSave={(b) => void save('new', b)} />
         )}
-        {subs && subs.length === 0 && editing !== 'new' && <Empty>등록된 수신자가 없습니다.</Empty>}
+        {subs && subs.length === 0 && editing !== 'new' && (
+          <div className="empty">
+            <p>아직 알림을 받는 사람이 없습니다.</p>
+            <button className="btn btn-primary" disabled={busy}
+              onClick={() => void save('new', { email: registered, keywords: [], min_score: 0, include_needs_info: true, channels: ['SCREEN', 'EMAIL'] })}>
+              {registered}로 알림 받기
+            </button>
+          </div>
+        )}
         <ul className="sub-list">
           {subs?.map((s) => {
             const st = subState(s)
@@ -127,8 +137,8 @@ export function AlertsPanel({ token, onUnread }: { token: string; onUnread: (n: 
                       <div className="small muted">
                         {s.channels.map((c) => CHANNEL_LABELS[c]).join('·')}
                         {' · '}{s.keywords.length ? `관심 분야 ${s.keywords.join(', ')}` : '전체 분야'}
-                        {s.min_score > 0 && ` · 총점 ${s.min_score} 이상`}
-                        {!s.include_needs_info && ' · 적합만'}
+                        {s.min_score > 0 && ` · 관련도 ${minFitLabel(s.min_score)}`}
+                        {!s.include_needs_info && ' · 지원 가능 공고만'}
                       </div>
                     </div>
                     <div className="row-actions">
@@ -186,9 +196,9 @@ function SubForm({ initial, withEmail = false, busy, onSave, onCancel }: {
         <label className="grow">관심 분야 (쉼표로 구분, 비우면 전체)
           <input value={keywords} onChange={(e) => setKeywords(e.target.value)} placeholder="예: 데이터링크, 영상" />
         </label>
-        <label>최소 총점
-          <select value={minScore} onChange={(e) => setMinScore(Number(e.target.value))}>
-            {MIN_SCORES.map((v) => <option key={v} value={v}>{v === 0 ? '제한 없음' : `${v} 이상`}</option>)}
+        <label>관련도
+          <select value={MIN_FIT.find(([m]) => m === minScore) ? minScore : MIN_FIT[0][0]} onChange={(e) => setMinScore(Number(e.target.value))}>
+            {MIN_FIT.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </label>
       </div>
@@ -199,7 +209,7 @@ function SubForm({ initial, withEmail = false, busy, onSave, onCancel }: {
           </label>
         ))}
         <label className="check">
-          <input type="checkbox" checked={needsInfo} onChange={(e) => setNeedsInfo(e.target.checked)} /> 정보부족 공고도 받기
+          <input type="checkbox" checked={needsInfo} onChange={(e) => setNeedsInfo(e.target.checked)} /> 확인 필요 공고도 받기
         </label>
       </div>
       <div className="form-foot">
