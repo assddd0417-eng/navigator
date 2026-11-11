@@ -120,3 +120,39 @@ function emit(error: ApiError, silent?: boolean): ApiError {
   if (!silent) listeners.forEach((l) => l(error))
   return error
 }
+
+/**
+ * 파일 내려받기 (엑셀 등). api() 와 같은 X-User-Id·오류 처리를 거쳐, 받은 파일을 브라우저 저장으로 넘긴다.
+ * 파일 이름은 서버의 Content-Disposition(filename*=UTF-8'') 을 따르고, 없으면 fallbackName.
+ */
+export async function downloadFile(path: string, fallbackName: string, opts: Pick<RequestOptions, 'query'> = {}): Promise<void> {
+  const params = new URLSearchParams()
+  for (const [k, v] of Object.entries(opts.query ?? {})) {
+    if (v !== undefined && v !== null && v !== '') params.set(k, String(v))
+  }
+  const url = `${BASE_URL}${path}${params.size ? `?${params}` : ''}`
+  const headers: Record<string, string> = {}
+  if (currentUserId != null) headers['X-User-Id'] = String(currentUserId)
+  let res: Response
+  try {
+    res = await fetch(url, { headers })
+  } catch {
+    throw emit(new ApiError(0, '백엔드 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인하세요.', 'network', null, 'GET', path))
+  }
+  if (!res.ok) {
+    const body = (safeJson(await res.text()) ?? {}) as { detail?: unknown; kind?: string }
+    throw emit(new ApiError(res.status, formatDetail(body.detail) || res.statusText, body.kind,
+      res.headers.get('X-Request-Id'), 'GET', path))
+  }
+  const cd = res.headers.get('Content-Disposition') ?? ''
+  const m = /filename\*=UTF-8''([^;]+)/i.exec(cd)
+  const name = m ? decodeURIComponent(m[1]) : fallbackName
+  const blobUrl = URL.createObjectURL(await res.blob())
+  const a = document.createElement('a')
+  a.href = blobUrl
+  a.download = name
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
+}

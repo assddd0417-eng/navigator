@@ -1,6 +1,6 @@
 -- =============================================================================
 -- 최소 시드: API 스모크 테스트(scripts/smoke_test.sh)와 로컬 개발용 기준 데이터
---   부서 3 · 사용자 5(역할 포함) · 부서 열람권 1 · 기관 2 · 사업 2 · 무기체계 2 · 품목 1 · 과제 3
+--   부서 3 · 사용자 6(역할 포함) · 부서 열람권 1 · 기관 2 · 사업 2 · 무기체계 2 · 품목 1 · 과제 3
 --
 --   사용자 ID (X-User-Id 헤더 값)
 --     1 planner   PLANNER        과제기획팀
@@ -8,6 +8,7 @@
 --     3 expert    EXPERT         지휘정찰기술팀
 --     4 curator   CURATOR        과제기획팀
 --     5 viewer    VIEWER         지휘정찰기술팀      (권한 거부 확인용)
+--     6 agency    VIEWER         과제기획팀          (기관 포트폴리오 조회 전용 시연, 대외비까지 열람)
 --
 -- 전제: db/migrations 0001~0015 적용 (코드 테이블·역할 마스터는 마이그레이션이 넣는다).
 -- 재실행 안전: 모든 행을 고정 ID 로 UPSERT 하고, 시퀀스는 기존 최댓값 이상으로만 올린다.
@@ -33,14 +34,15 @@ INSERT INTO app_user (id, login_id, name, department_id, clearance_code) OVERRID
   (2, 'reviewer', '부서검토자', 3, 'RESTRICTED'),
   (3, 'expert',   '기술전문가', 2, 'RESTRICTED'),
   (4, 'curator',  '카드관리자', 1, 'RESTRICTED'),
-  (5, 'viewer',   '열람자',     2, 'PUBLIC')
+  (5, 'viewer',   '열람자',     2, 'PUBLIC'),
+  (6, 'agency',   '정책기획 열람자', 1, 'RESTRICTED')
 ON CONFLICT (id) DO UPDATE SET login_id = EXCLUDED.login_id, name = EXCLUDED.name,
                                department_id = EXCLUDED.department_id,
                                clearance_code = EXCLUDED.clearance_code, is_active = true;
 
 -- 역할 (role_code → app_role, 0003 에서 생성)
 INSERT INTO user_role (user_id, role_code) VALUES
-  (1, 'PLANNER'), (2, 'DEPT_REVIEWER'), (3, 'EXPERT'), (4, 'CURATOR'), (5, 'VIEWER')
+  (1, 'PLANNER'), (2, 'DEPT_REVIEWER'), (3, 'EXPERT'), (4, 'CURATOR'), (5, 'VIEWER'), (6, 'VIEWER')
 ON CONFLICT (user_id, role_code) DO NOTHING;
 
 -- 기획팀(1)은 통신팀(3) 소관 자료를 RESTRICTED 까지 열람 가능 → 큐레이터·기획자가 원문 근거를 볼 수 있다.
@@ -102,5 +104,5 @@ COMMIT;
 SELECT u.id AS user_id, u.login_id, string_agg(r.role_code, ',') AS roles, d.name AS department
   FROM ax.app_user u JOIN ax.department d ON d.id = u.department_id
   LEFT JOIN ax.user_role r ON r.user_id = u.id
- WHERE u.id BETWEEN 1 AND 5
+ WHERE u.id BETWEEN 1 AND 6
  GROUP BY u.id, u.login_id, d.name ORDER BY u.id;

@@ -4,7 +4,7 @@ import { useAuth } from '../auth/AuthContext'
 import { canAccessPath, homePath, ROLES, SEED_USERS, type RoleCode } from '../auth/roles'
 import { useToast } from '../components/Toast'
 
-/** 역할 선택형 로그인 (시연: 시드 사용자 1~4 중 하나를 고른다. 운영 시 기관 통합로그인으로 교체) */
+/** 역할 선택형 로그인 (시연: 시드 사용자 1~4·6 중 하나를 고른다. 운영 시 기관 통합로그인으로 교체) */
 export function LoginPage() {
   const { user, role, login } = useAuth()
   const navigate = useNavigate()
@@ -45,9 +45,9 @@ export function LoginPage() {
         {from && from !== '/login' && <p className="notice small">로그인하면 보려던 화면으로 바로 이동합니다.</p>}
       </div>
 
-      {(['ADMIN', 'WORKER'] as const).map((group) => (
+      {(['ADMIN', 'WORKER', 'VIEW'] as const).map((group) => (
         <div key={group} className="login-group">
-          <h2>{group === 'ADMIN' ? '기획·검수 담당' : '실무 담당'}</h2>
+          <h2>{group === 'ADMIN' ? '기획·검수 담당' : group === 'WORKER' ? '실무 담당' : '기관 열람 (조회 전용)'}</h2>
           <div className="login-grid">
             {SEED_USERS.filter((u) => ROLES[u.role].group === group).map((u) => {
               const meta = ROLES[u.role]

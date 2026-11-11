@@ -5,8 +5,8 @@
  * 그래서 일부 버튼은 일부러 권한 없는 역할에게도 보여 주고, 서버의 403 을 알림으로 보여 준다 (시연용).
  */
 
-export type RoleCode = 'PLANNER' | 'DEPT_REVIEWER' | 'EXPERT' | 'CURATOR'
-export type RoleGroup = 'ADMIN' | 'WORKER'
+export type RoleCode = 'PLANNER' | 'DEPT_REVIEWER' | 'EXPERT' | 'CURATOR' | 'VIEWER'
+export type RoleGroup = 'ADMIN' | 'WORKER' | 'VIEW'
 
 export interface RoleMeta {
   code: RoleCode
@@ -45,6 +45,13 @@ export const ROLES: Record<RoleCode, RoleMeta> = {
     description: '과제 결과보고서를 올리고, 그 내용으로 성과카드를 만들어 확인 후 발행합니다.',
     can: ['문서 올리기', '성과카드 작성', '성과카드 발행', '갭 분석 다시 돌리기'],
   },
+  VIEWER: {
+    code: 'VIEWER',
+    label: '기관 열람자',
+    group: 'VIEW',
+    description: '기관 전체의 R&D 성과와 해외 수요 갭을 한눈에 보고, 정책·예산 기획 자료를 내려받습니다. 고치거나 결정하지는 않습니다.',
+    can: ['기관 포트폴리오 보기', '엑셀로 받기', '해외 수요 갭 보기'],
+  },
 }
 
 export interface SeedUser {
@@ -54,17 +61,20 @@ export interface SeedUser {
   department: string
 }
 
-/** seeds/init_test_data.sql 의 사용자 1~4 (X-User-Id 값) */
+/** seeds/init_test_data.sql 의 사용자 1~4·6 (X-User-Id 값). 5번 열람자(공개 등급)는 권한 거부 확인용이라 화면에 안 넣는다 */
 export const SEED_USERS: SeedUser[] = [
   { id: 1, role: 'PLANNER', name: '기획담당', department: '과제기획팀' },
   { id: 2, role: 'DEPT_REVIEWER', name: '부서검토자', department: '무인미래통신기술팀' },
   { id: 3, role: 'EXPERT', name: '기술전문가', department: '지휘정찰기술팀' },
   { id: 4, role: 'CURATOR', name: '카드관리자', department: '과제기획팀' },
+  { id: 6, role: 'VIEWER', name: '정책기획 열람자', department: '과제기획팀' },
 ]
 
 export const ADMIN_ROLES: RoleCode[] = ['PLANNER', 'DEPT_REVIEWER']
 export const WORKER_ROLES: RoleCode[] = ['CURATOR', 'EXPERT']
-export const ALL_ROLES: RoleCode[] = [...ADMIN_ROLES, ...WORKER_ROLES]
+/** 기관 포트폴리오를 보는 역할: 관리자 + 기관 열람자 (넘기기는 기획자만, 서버가 판단) */
+export const PORTFOLIO_ROLES: RoleCode[] = [...ADMIN_ROLES, 'VIEWER']
+export const ALL_ROLES: RoleCode[] = [...ADMIN_ROLES, ...WORKER_ROLES, 'VIEWER']
 
 export interface MenuItem {
   path: string
@@ -75,6 +85,7 @@ export interface MenuItem {
 
 export const MENU: MenuItem[] = [
   { path: '/dashboard', label: '한눈에 보기', icon: '🏠', roles: ADMIN_ROLES },
+  { path: '/portfolio', label: '기관 포트폴리오', icon: '🗺️', roles: PORTFOLIO_ROLES },
   { path: '/reviews', label: '검토할 추천', icon: '📥', roles: ADMIN_ROLES },
   { path: '/projects', label: '연계 후보 찾기', icon: '🔎', roles: ADMIN_ROLES },
   { path: '/my-tasks', label: '내 할 일', icon: '✅', roles: WORKER_ROLES },
@@ -91,6 +102,7 @@ export const MENU: MenuItem[] = [
 const PATH_ROLES: [RegExp, RoleCode[]][] = [
   [/^\/(dashboard|projects|reviews|staff\/navigator|staff\/sources)(\/|$)/, ADMIN_ROLES],
   [/^\/(my-tasks|documents\/upload)(\/|$)/, WORKER_ROLES],
+  [/^\/portfolio(\/|$)/, PORTFOLIO_ROLES],
   [/^\/(recommendations|gaps)(\/|$)/, ALL_ROLES],
 ]
 
@@ -104,7 +116,8 @@ export function primaryRole(roles: string[]): RoleCode | null {
 }
 
 export function homePath(role: RoleCode): string {
-  return ROLES[role].group === 'ADMIN' ? '/dashboard' : '/my-tasks'
+  const group = ROLES[role].group
+  return group === 'ADMIN' ? '/dashboard' : group === 'VIEW' ? '/portfolio' : '/my-tasks'
 }
 
 export function canAccess(role: RoleCode | null, allowed: RoleCode[]): boolean {
