@@ -97,6 +97,20 @@ class PatentRule(_Rule):
     ipc_prefixes: list[str] = []
 
 
+class NoDisqualificationRule(_Rule):
+    checks: list[Literal["TAX_DELINQUENT", "INSOLVENT", "RND_RESTRICTED"]] = Field(
+        default=["TAX_DELINQUENT", "INSOLVENT", "RND_RESTRICTED"], min_length=1)
+
+
+class DefenseSupplyRule(_Rule):
+    defense_goods: bool | None = Field(default=None, description="true 면 방산물자 생산 기업만")
+    min_supply_krw: int | None = Field(default=None, ge=0, description="최근 3년 군 납품 실적 하한 (원)")
+
+
+class ExportRule(_Rule):
+    min_krw: int = Field(default=1, ge=0)
+
+
 class OtherRule(_Rule):
     model_config = ConfigDict(extra="allow")   # 규칙으로 못 쓰는 요건: 문장(description)이 본체
 
@@ -106,6 +120,7 @@ RULE_MODELS: dict[str, type[_Rule]] = {
     "MIN_CREDIT_GRADE": MinCreditGradeRule, "REGION": RegionRule, "TRL": TrlRule,
     "EMPLOYEE_COUNT": EmployeeCountRule, "REVENUE": RevenueRule, "BUSINESS_STATUS": BusinessStatusRule,
     "DEFENSE_COMPANY": DefenseCompanyRule, "RND_EXPERIENCE": RndExperienceRule, "PATENT": PatentRule,
+    "NO_DISQUALIFICATION": NoDisqualificationRule, "DEFENSE_SUPPLY": DefenseSupplyRule, "EXPORT": ExportRule,
     "OTHER": OtherRule,
 }
 
