@@ -184,9 +184,9 @@ def _mail(ann: dict, rec: dict, token: str) -> tuple[str, str]:
     deadline = ann["receipt_end"].isoformat() if ann["receipt_end"] else "미정"
     body = (f"{rec['name']}에 맞는 새 공고가 등록되었습니다.\n\n"
             f"공고: {ann['title']}\n기관: {ann['agency_name']}\n접수 마감: {deadline}\n"
-            f"판정: {verdict} (총점 {float(rec['total_score']):.2f})\n{rec['rationale']}\n\n"
+            f"판정: {verdict}\n{rec['rationale']}\n\n"
             f"자세히 보기: {_base()}/navigator?brn={format_bizno(rec['business_reg_no'])}\n"
-            "보완질문 답변과 신용등급 요건 확인은 관리 링크에서 할 수 있습니다.\n\n"
+            "확인 필요 항목 답변과 신용등급 조건 확인은 등록 이메일로 받은 링크에서 할 수 있습니다.\n\n"
             f"알림 그만 받기: {unsubscribe_url(token)}")
     return subject, body
 

@@ -271,12 +271,11 @@ def rationale_text(org: CompanyFacts, ann: AnnInfo, checks: list[tuple[Requireme
     head = f"필수 요건 {counts['mandatory_met']}/{counts['mandatory_total']}개 충족"
     if counts["preferred_total"]:
         head += f", 우대 {counts['preferred_met']}/{counts['preferred_total']}개"
-    head += f". 기술 적합도 {scores['TECH'][0]:.2f}"
+    head += "."
     if best:
         tn_id, hit = max(best.items(), key=lambda kv: kv[1]["sim"])
-        head += (f" (요구기술 '{ann.tech_needs[tn_id]['tech_name']}'와 가장 가까운 {SOURCE_KO.get(hit['source_table'], '기업 정보')}: "
-                 f"'{hit['source_text'].splitlines()[0][:60]}')")
-    head += "."
+        head += (f" 요구기술 '{ann.tech_needs[tn_id]['tech_name']}'와 가장 가까운 {SOURCE_KO.get(hit['source_table'], '기업 정보')}: "
+                 f"'{hit['source_text'].splitlines()[0][:60]}'.")
     if verdict == "INELIGIBLE":
         head += " 미충족 필수 요건: " + "; ".join(req.description for req, ch in checks
                                               if req.is_mandatory and ch.result == "UNMET") + "."
@@ -490,10 +489,9 @@ def _redact_public(r: dict) -> None:
              mandatory_met=sum(c["result"] == "MET" for c in mand), mandatory_total=len(mand),
              preferred_met=sum(c["result"] == "MET" for c in pref), preferred_total=len(pref),
              hidden_requirements=hidden, questions=[])
-    text = (f"공개 정보 기준 필수 요건 {r['mandatory_met']}/{r['mandatory_total']}개 충족. "
-            f"기술 적합도 {r['scores'].get('TECH', {}).get('score', 0):.2f}.")
+    text = f"공개 정보 기준 필수 요건 {r['mandatory_met']}/{r['mandatory_total']}개 충족."
     if hidden:
-        text += f" 신용등급·매출 요건 {hidden}개는 관리 링크에서 확인."
+        text += f" 신용등급·매출 요건 {hidden}개는 등록 이메일로 받은 링크에서 확인."
     r["rationale"] = text
     r["evidence"] = [e for e in r["evidence"] if e["kind"] != "REQUIREMENT"
                      or any(c["requirement_id"] == e["requirement_id"] for c in shown)]

@@ -33,7 +33,7 @@ export function SubscriptionLinkPage({ mode }: { mode: 'confirm' | 'unsubscribe'
         ) : (
           <p>{done.email} 로 가던 {done.company_name}의 공고 알림을 더 이상 보내지 않습니다.</p>
         )}
-        <Link className="btn" to="/navigator">Navigator 로 이동</Link>
+        <Link className="btn" to="/navigator">처음 화면으로</Link>
       </Card>
     </CompanyShell>
   )
