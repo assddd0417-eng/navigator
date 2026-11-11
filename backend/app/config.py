@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None  # 비우면 SDK 가 ANTHROPIC_API_KEY 환경변수 등에서 찾음
     openai_api_key: str | None = None     # 비우면 SDK 가 OPENAI_API_KEY 환경변수에서 찾음
 
+    # 갭 분석: 새 해외 수요 등록·새 국내 성과 검수 확정 뒤 자동 실행
+    gap_auto_run: bool = True
+
     # Navigator
     navigator_public_base_url: str = "http://localhost:5173"  # 관리 링크 base URL
     navigator_link_ttl_days: int = 30

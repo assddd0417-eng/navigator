@@ -10,6 +10,7 @@ from app.repositories.sql import CLEARANCE_OK, insert, update
 from app.schemas.common import Created, EmbedResult
 from app.schemas.overseas import ImportSummary, OverseasDemandIn, OverseasSourceIn, SimilarCard
 from app.services.embedding import active_model_id, sync_overseas_demand_embeddings
+from app.services.gap_analysis import auto_run
 from app.services.overseas_import import OverseasImportError, parse_workbook
 
 router = APIRouter(prefix="/overseas", tags=["해외 수요"])
@@ -85,6 +86,7 @@ async def create_demand(body: OverseasDemandIn, user: CurrentUser = Depends(requ
     async with transaction(user.id, rid) as conn:
         demand_id, _ = await _upsert_demand(conn, body, user.id)
         await sync_overseas_demand_embeddings(conn, demand_id)
+    await auto_run(user.id, "NEW_DEMAND", [demand_id], rid)  # 등록 즉시 국내 성과와 대조
     return Created(id=demand_id)
 
 
@@ -117,7 +119,8 @@ async def import_workbook(file: UploadFile = File(..., description="해외 수�
             raise Rollback()  # 검사만: DB 규칙까지 확인하고 아무것도 남기지 않는다
         for demand_id in demand_ids:
             counts["embedded"] += await sync_overseas_demand_embeddings(conn, demand_id)
-    return ImportSummary(dry_run=dry_run, **counts)
+    gap_run_id = await auto_run(user.id, "NEW_DEMAND", demand_ids, rid) if demand_ids else None
+    return ImportSummary(dry_run=dry_run, gap_run_id=gap_run_id, **counts)
 
 
 @router.get("/demands")

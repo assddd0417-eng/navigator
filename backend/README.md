@@ -89,6 +89,11 @@ app/
 | POST | `/overseas/import` | PLANNER, CURATOR | **해외 수요 정리 엑셀** 올리기 (`dry_run=true` 면 검사만) |
 | POST/GET | `/overseas/sources`, `/overseas/demands`, `/overseas/demands/{id}` | PLANNER, CURATOR / 모두 | 해외 수요 출처·수요 (같은 번호면 갱신) |
 | GET | `/overseas/demands/{id}/similar-cards` | 모두 | 해외 수요와 가까운 국내 성과 카드 (갭 분석 1단계) |
+| POST | `/gaps/runs` | PLANNER, CURATOR | 갭 분석 지금 실행 (`demand_ids` 비우면 전체, `rules` 로 기준값 시험) |
+| GET | `/gaps/runs`, `/gaps/runs/{id}` | 모두 | 실행 기록 (자동·수동)과 그 실행의 갭 |
+| GET | `/gaps/findings`, `/gaps/findings/{id}` | 모두 (보안등급별) | 갭 목록(점수 순)·근거 카드·제안 경로·해외 출처 |
+| POST | `/gaps/findings/{id}/decision` | DEPT_REVIEWER | 갭 확정·기각 (기각은 사유 필수) |
+| GET | `/gaps/summary` | 모두 | 해외 수요별 열린 갭 종류 한눈에 보기 |
 
 ## 문서 파일 업로드 (PDF)
 
@@ -144,6 +149,32 @@ curl -X POST "localhost:8000/overseas/import" -H 'X-User-Id: 1' -F file=@seeds/o
 
 ```bash
 python -m app.synthetic load --corpus ../seeds/overseas/국내성과_K2파워팩.json   # 카드 2개 적재 (재실행 안전)
+```
+
+## 갭 분석
+
+`app/services/gap_rules.py`(판정 규칙, DB 없음) · `app/services/gap_analysis.py`(실행·저장) · `app/routers/gaps.py`, 스키마 0026.
+해외 수요마다 가까운 국내 성과 카드(검수 확정분, 최대 10건)를 모아 갭 종류 4가지를 판정한다.
+
+| 갭 종류 | 판정 | 제안 경로 |
+|---|---|---|
+| 공백 `NO_COVERAGE` | 가장 가까운 카드의 유사도가 기준(0.55) 미만 | 신규 기획수요 (부분적으로 가까운 카드가 2건 이상이면 융합형도) |
+| 성능미달 `PERFORMANCE_SHORT` | 비슷한 카드가 해외 요구 수치에 못 미치거나, 자기 목표를 달성하지 못함 (단위가 다르면 비교 안 함) | 고도화형 |
+| 국산화·현지화 `LOCALIZATION` | 비슷한 카드 품목(BOM 하위 포함)에 수입품이 있음, 또는 수출 요구에 현지 생산·정비 낱말이 있음 | 전환형 / 사업화형 |
+| 성숙도부족 `MATURITY` | 비슷한 카드 중 최고 TRL 이 7 미만, 또는 이 수요와 관련된 미해결 과제가 남음 | 후속형 |
+
+- 점수 = 갭 크기 × 수요 확신도(높음 1.0 · 보통 0.8 · 낮음 0.6) × 시급성(목표 시기 2년 안 1.0 · 5년 안 0.85 · 그 뒤 0.7 · 모름 0.8).
+- 자동 실행: 해외 수요를 등록·엑셀로 올린 직후(`NEW_DEMAND`), 성과 카드를 검수 확정한 직후(`NEW_CARD`). `GAP_AUTO_RUN=false` 로 끈다.
+  자동 실행이 실패해도 올리기·검수 확정은 그대로 저장된다 (서버 로그에만 남음).
+- 갭은 모두 초안(DRAFT)이고 DEPT_REVIEWER/ADMIN 만 확정·기각한다 (DB 트리거). 이미 판정한 종류는 다시 초안으로 올리지 않고,
+  확정된 갭이 다음 실행에서 안 나오면 `maybe_resolved_at`("해소 후보")에 시각을 남긴다. 예전 초안은 `SUPERSEDED`.
+- 갭의 보안등급 = 해외 수요·근거 카드 중 가장 높은 등급 (DB 가 강제). 공개자료 수요라도 대내 카드가 근거면 대내.
+- 기준값은 실행마다 `gap_run.rule_snapshot` 에 남는다. `POST /gaps/runs` 의 `rules` 로 한 번만 바꿔 볼 수 있다.
+
+정답 사례(`전차파워팩_해외수요.xlsx` 의 `갭사례` 시트, G01~G04)로 재기:
+
+```bash
+EMBEDDER=bge_m3 python -m app.gap_eval all    # 해외 수요·K2 카드 적재 + 갭 분석 + 정답 비교 (재실행 안전)
 ```
 
 ## 매칭 로직 요약
