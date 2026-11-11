@@ -5,7 +5,8 @@ import {
 } from '../../api/endpoints'
 import { useAuth } from '../../auth/AuthContext'
 import { useToast } from '../../components/Toast'
-import { Card, Empty, fmtDate, PageHeader, RoleHint, StatusBadge, useAction, useAsync } from '../../components/ui'
+import { Link } from 'react-router-dom'
+import { Card, Empty, fmtDate, More, PageHeader, RoleHint, StatusBadge, Steps, useAction, useAsync } from '../../components/ui'
 
 const DOC_TYPES = [
   ['FINAL_REPORT', '결과보고서'], ['RND_PLAN', '연구개발계획서'], ['TEST_REPORT', '시험성적서'],
@@ -31,7 +32,7 @@ function PdfPreview({ preview, onClear }: { preview: ParsePreview; onClear: () =
       <div className="pdf-preview-head">
         <strong>📕 {preview.filename}</strong>
         <span className="muted small">
-          {preview.page_count}쪽 · 청크 {preview.chunks.length}개 · {preview.char_count.toLocaleString()}자
+          {preview.page_count}쪽 · 글자 {preview.char_count.toLocaleString()}자 · 검색 단위 {preview.chunks.length}개
         </span>
         <button type="button" className="btn btn-ghost" onClick={onClear}>파일 빼기</button>
       </div>
@@ -44,7 +45,7 @@ function PdfPreview({ preview, onClear }: { preview: ParsePreview; onClear: () =
           </li>
         ))}
       </ul>
-      {preview.chunks.length > 3 && <p className="muted small">외 {preview.chunks.length - 3}개 청크</p>}
+      {preview.chunks.length > 3 && <p className="muted small">앞부분만 보여 줍니다 (외 {preview.chunks.length - 3}개 문단)</p>}
     </div>
   )
 }
@@ -92,7 +93,7 @@ function UploadForm({ onUploaded }: { onUploaded: (doc: DocumentCreated, project
         doc_type_code: f.doc_type, title: f.title, project_id: project.id, owner_dept_id: project.dept,
       }))
       if (res) {
-        toast.success('PDF 문서를 등록했습니다', `${res.page_count}쪽 · 청크 ${res.chunk_ids.length}개 · 임베딩 ${res.embedded}개`)
+        toast.success('PDF 문서를 올렸습니다', `${res.page_count}쪽을 읽어 검색할 수 있게 했습니다. 이어서 성과카드를 만들어 보세요.`)
         onUploaded(res, project.id, f.title)
         setPdf(null)
         setF({ ...f, title: '', text: '' })
@@ -108,7 +109,7 @@ function UploadForm({ onUploaded }: { onUploaded: (doc: DocumentCreated, project
       chunks: chunks.map((content) => ({ content, section_key: hasSection ? 's1' : undefined, page_start: page, page_end: page })),
     }))
     if (res) {
-      toast.success('문서를 등록했습니다', `청크 ${res.chunk_ids.length}개 · 임베딩 ${res.embedded}개`)
+      toast.success('문서를 올렸습니다', `문단 ${res.chunk_ids.length}개를 검색할 수 있게 했습니다. 이어서 성과카드를 만들어 보세요.`)
       onUploaded(res, project.id, f.title)
       setF({ ...f, title: '', text: '' })
     }
@@ -119,9 +120,9 @@ function UploadForm({ onUploaded }: { onUploaded: (doc: DocumentCreated, project
       <label className="file-drop">
         <input type="file" accept=".pdf,application/pdf,.txt,.md,text/plain" onChange={(e) => void readFile(e)} />
         <span>{parsing
-          ? '⏳ PDF 에서 텍스트를 추출하는 중…'
-          : '📄 PDF 또는 텍스트 파일(.txt, .md)을 선택하거나 아래에 본문을 붙여넣으세요'}</span>
-        <span className="muted small">스캔 이미지 PDF·암호 걸린 PDF 는 텍스트를 추출할 수 없습니다 (OCR 미지원)</span>
+          ? '⏳ PDF에서 글자를 읽는 중…'
+          : '📄 여기를 눌러 PDF나 텍스트 파일을 고르세요 (또는 아래에 본문 붙여넣기)'}</span>
+        <span className="muted small">스캔한 그림 PDF, 암호 걸린 PDF는 글자를 읽을 수 없습니다</span>
       </label>
       <div className="form-row">
         <label className="grow">문서 제목<input value={f.title} onChange={set('title')} required /></label>
@@ -129,32 +130,34 @@ function UploadForm({ onUploaded }: { onUploaded: (doc: DocumentCreated, project
           {DOC_TYPES.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
         </select></label>
       </div>
-      <label>과제<select value={f.project} onChange={set('project')}>
+      <label>어느 과제의 문서인가요? (과제 담당 부서가 이 문서를 볼 수 있게 됩니다)<select value={f.project} onChange={set('project')}>
         {PROJECTS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
       </select></label>
       {pdf ? <PdfPreview preview={pdf.preview} onClear={() => setPdf(null)} /> : (
         <>
-          <div className="form-row">
-            <label>조항 번호<input value={f.section_no} onChange={set('section_no')} placeholder="4.3" /></label>
-            <label className="grow">조항 제목<input value={f.heading} onChange={set('heading')} placeholder="미해결 기술 및 후속 연구 필요사항" /></label>
-            <label>쪽<input type="number" min={1} value={f.page} onChange={set('page')} placeholder="88" /></label>
-          </div>
-          <label>본문 (빈 줄로 문단 구분 → 문단마다 검색용 청크 1개)
+          <label>본문 (문단 사이에 빈 줄을 넣으면 문단마다 따로 검색됩니다)
             <textarea rows={8} value={f.text} onChange={set('text')} required /></label>
+          <More label="어느 장·쪽의 내용인지 적기 (선택 · 근거로 보여 줄 때 쓰임)">
+            <div className="form-row">
+              <label>장 번호<input value={f.section_no} onChange={set('section_no')} placeholder="4.3" /></label>
+              <label className="grow">장 제목<input value={f.heading} onChange={set('heading')} placeholder="미해결 기술 및 후속 연구 필요사항" /></label>
+              <label>쪽<input type="number" min={1} value={f.page} onChange={set('page')} placeholder="88" /></label>
+            </div>
+          </More>
         </>
       )}
       <div className="form-foot">
-        <span className="muted small">청크 {chunkCount}개 예정{pdf ? ' (쪽 번호 자동 기록)' : ''}</span>
+        <span className="muted small">{chunkCount ? `문단 ${chunkCount}개${pdf ? ' (쪽 번호 자동 기록)' : ''}` : '내용을 넣으면 올릴 수 있습니다'}</span>
         <RoleHint roles={['CURATOR', 'PLANNER']} />
         <button className="btn btn-primary" disabled={busy || parsing || chunkCount === 0}>
-          {busy ? '등록 중…' : pdf ? 'PDF 문서 등록' : '문서 등록'}</button>
+          {busy ? '올리는 중…' : '문서 올리기'}</button>
       </div>
     </form>
   )
 }
 
 function CardDraftForm({ doc, projectId, docTitle, onDone }:
-  { doc: DocumentCreated; projectId: number; docTitle: string; onDone: () => void }) {
+  { doc: DocumentCreated; projectId: number; docTitle: string; onDone: (saved: boolean) => void }) {
   const toast = useToast()
   const { busy, run } = useAction()
   const [f, setF] = useState({
@@ -172,68 +175,77 @@ function CardDraftForm({ doc, projectId, docTitle, onDone }:
       evidence,
     }))
     if (res) {
-      toast.success('성과카드 초안을 만들었습니다', '내 작업에서 검수 후 발행하세요')
-      onDone()
+      toast.success('성과카드 초안을 만들었습니다', '‘내 할 일’에서 확인 후 발행하세요')
+      onDone(true)
     }
   }
 
   return (
     <form className="form" onSubmit={submit}>
-      <p className="muted small">방금 등록한 문서의 청크 {doc.chunk_ids.length}개가 원문 근거로 자동 연결됩니다.</p>
+      <p className="muted small">방금 올린 문서가 이 카드의 근거로 자동 연결됩니다.</p>
       <div className="form-row">
-        <label>카드번호<input value={f.card_no} onChange={set('card_no')} required /></label>
-        <label className="grow">제목<input value={f.title} onChange={set('title')} required /></label>
-        <label>TRL<input type="number" min={1} max={9} value={f.trl} onChange={set('trl')} /></label>
+        <label className="grow">성과 이름<input value={f.title} onChange={set('title')} required /></label>
+        <label>기술 성숙도(TRL)<input type="number" min={1} max={9} value={f.trl} onChange={set('trl')} />
+          <span className="hint">1 아이디어 ~ 9 실전 배치</span></label>
       </div>
-      <label>핵심 성과<textarea rows={2} value={f.core} onChange={set('core')} required /></label>
+      <label>무엇을 이뤘나요? (핵심 성과)<textarea rows={2} value={f.core} onChange={set('core')} required
+        placeholder="예: 재밍 환경에서 데이터링크 동기 유지 시간 3배 향상" /></label>
       <label>핵심 기술<input value={f.tech} onChange={set('tech')} placeholder="주파수 도약 항재밍 데이터링크" /></label>
+      <More label="관리 번호 (자동으로 만들어짐)">
+        <label>카드 번호<input value={f.card_no} onChange={set('card_no')} required /></label>
+      </More>
       <div className="form-foot">
         <RoleHint roles={['CURATOR', 'PLANNER']} />
-        <button type="button" className="btn btn-ghost" onClick={onDone}>건너뛰기</button>
+        <button type="button" className="btn btn-ghost" onClick={() => onDone(false)}>나중에 만들기</button>
         <button className="btn btn-primary" disabled={busy}>{busy ? '저장 중…' : '성과카드 초안 저장'}</button>
       </div>
     </form>
   )
 }
 
-/** 작업자: 원문 문서 업로드 → 성과카드 초안 작성 */
+/** 작업자: 결과보고서 올리기 → 성과카드 초안 만들기 */
 export function DocumentUploadPage() {
   const { role } = useAuth()
   const docs = useAsync(() => listDocuments())
   const [uploaded, setUploaded] = useState<{ doc: DocumentCreated; projectId: number; title: string } | null>(null)
+  const [saved, setSaved] = useState(false)
 
   return (
     <>
-      <PageHeader title="문서 업로드" subtitle="과제 결과보고서 등 원문(PDF·텍스트)을 올리면 AI 검색용으로 나뉘어 저장되고, 성과카드의 근거가 됩니다." />
+      <PageHeader title="문서 올리기" subtitle="과제 결과보고서 같은 원문을 올리면 AI가 내용을 검색할 수 있게 정리하고, 성과카드의 근거로 씁니다." />
       {role === 'EXPERT' && (
-        <div className="notice">전문가 역할은 문서 등록 권한이 없습니다. 등록을 시도하면 서버가 거부(403)하는 것을 확인할 수 있습니다.</div>
+        <div className="notice">🔒 전문가는 문서를 올릴 수 없습니다. 눌러 보면 서버가 막는 것을 확인할 수 있습니다.</div>
+      )}
+      <Steps items={['① 문서를 올립니다.', '② 그 문서로 성과카드 초안을 만듭니다.', <>③ <Link to="/my-tasks">내 할 일</Link>에서 확인 후 발행하면 AI 추천에 쓰입니다.</>]} />
+      {saved && (
+        <div className="notice notice-ok">✅ 성과카드 초안을 만들었습니다. <Link to="/my-tasks">내 할 일에서 발행하기 →</Link></div>
       )}
       <div className="grid-2">
-        <Card title="① 원문 문서 등록">
-          <UploadForm onUploaded={(doc, projectId, title) => { setUploaded({ doc, projectId, title }); void docs.reload() }} />
+        <Card title="① 문서 올리기">
+          <UploadForm onUploaded={(doc, projectId, title) => { setUploaded({ doc, projectId, title }); setSaved(false); void docs.reload() }} />
         </Card>
-        <Card title="② 성과카드 초안 작성">
+        <Card title="② 성과카드 초안 만들기">
           {uploaded
             ? <CardDraftForm key={uploaded.doc.id} doc={uploaded.doc} projectId={uploaded.projectId} docTitle={uploaded.title}
-                onDone={() => setUploaded(null)} />
-            : <Empty>문서를 등록하면 그 내용을 근거로 성과카드 초안을 만들 수 있습니다.</Empty>}
+                onDone={(ok) => { setUploaded(null); setSaved(ok) }} />
+            : <Empty>왼쪽에서 문서를 올리면 그 내용을 근거로 성과카드 초안을 만들 수 있습니다.</Empty>}
         </Card>
       </div>
-      <Card title="문서 처리 현황">
-        {docs.data?.length === 0 ? <Empty>열람할 수 있는 문서가 없습니다.</Empty> : (
+      <Card title="올린 문서">
+        {docs.loading && !docs.data ? <div className="page-loading">불러오는 중…</div> : docs.data?.length === 0 ? <Empty>볼 수 있는 문서가 없습니다.</Empty> : (
           <table className="table">
-            <thead><tr><th>ID</th><th>제목</th><th>유형</th><th>청크</th><th>처리 상태</th><th>등록일</th></tr></thead>
+            <thead><tr><th>제목</th><th>종류</th><th>문단 수</th><th>처리 상태</th><th>올린 날</th></tr></thead>
             <tbody>
               {docs.data?.map((d) => (
                 <tr key={d.id}>
-                  <td>{d.id}</td><td>{d.title}</td><td>{d.doc_type_name}</td><td>{d.chunk_count}</td>
+                  <td>{d.title}</td><td>{d.doc_type_name}</td><td>{d.chunk_count}</td>
                   <td><StatusBadge status={d.parse_status} /></td><td>{fmtDate(d.created_at)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
-        <p className="muted small">보안등급·소관부서 열람권한에 따라 볼 수 있는 문서만 표시됩니다.</p>
+        <p className="muted small">내 부서·보안등급으로 볼 수 있는 문서만 보입니다. ‘검색 가능’이 되면 AI 추천의 근거로 쓰입니다.</p>
       </Card>
     </>
   )

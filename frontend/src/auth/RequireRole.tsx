@@ -9,18 +9,19 @@ export function RequireRole({ roles, children }: { roles: RoleCode[]; children: 
   const location = useLocation()
 
   if (restoring) return <div className="page-loading">로그인 정보를 확인하는 중…</div>
-  if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  // 로그인 뒤 원래 화면(주소 뒤 ?조건 포함)으로 돌아올 수 있게 기억해 둔다
+  if (!user) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />
   if (!canAccess(role, roles)) {
     return (
       <div className="forbidden">
         <div className="forbidden-icon">🔒</div>
-        <h2>이 화면에 접근할 권한이 없습니다</h2>
+        <h2>이 화면은 {roles.map((r) => ROLES[r].label).join('·')}만 볼 수 있습니다</h2>
         <p>
-          현재 역할: <strong>{role ? ROLES[role].label : '역할 없음'}</strong>
+          지금 역할은 <strong>{role ? ROLES[role].label : '역할 없음'}</strong>입니다.
           <br />
-          필요 역할: {roles.map((r) => ROLES[r].label).join(', ')}
+          다른 역할로 보려면 위쪽의 ‘사용자 바꾸기’에서 바꿔 주세요.
         </p>
-        {role && <Link className="btn" to={homePath(role)}>내 화면으로 이동</Link>}
+        {role && <Link className="btn btn-primary" to={homePath(role)}>내 첫 화면으로</Link>}
       </div>
     )
   }

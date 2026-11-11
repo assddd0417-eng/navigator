@@ -14,6 +14,8 @@ import { CompanyManagePage } from './pages/navigator/CompanyManagePage'
 import { CompanyRegisterPage } from './pages/navigator/CompanyRegisterPage'
 import { CompanySearchPage } from './pages/navigator/CompanySearchPage'
 import { SubscriptionLinkPage } from './pages/navigator/SubscriptionLinkPage'
+import { GapDetailPage } from './pages/gaps/GapDetailPage'
+import { GapListPage } from './pages/gaps/GapListPage'
 import { RecommendationPage } from './pages/shared/RecommendationPage'
 import { DocumentUploadPage } from './pages/worker/DocumentUploadPage'
 import { MyTasksPage } from './pages/worker/MyTasksPage'
@@ -49,6 +51,9 @@ export default function App() {
               <Route path="/documents/upload" element={<RequireRole roles={WORKER_ROLES}><DocumentUploadPage /></RequireRole>} />
               {/* 공통: 추천 상세·검수/의견 */}
               <Route path="/recommendations/:id" element={<RecommendationPage />} />
+              {/* 공통: 해외 수요 갭 분석 (재실행 PLANNER·CURATOR, 확정·기각 DEPT_REVIEWER — 서버가 판단) */}
+              <Route path="/gaps" element={<GapListPage />} />
+              <Route path="/gaps/:id" element={<GapDetailPage />} />
             </Route>
             <Route path="*" element={<Home />} />
           </Routes>

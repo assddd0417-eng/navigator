@@ -21,29 +21,29 @@ export const ROLES: Record<RoleCode, RoleMeta> = {
     code: 'PLANNER',
     label: '기획자',
     group: 'ADMIN',
-    description: '신규 기획수요를 등록하고 AI 매칭을 실행해 검토를 배정합니다.',
-    can: ['기획수요 등록', '매칭 실행', '검토 배정', '추천 철회'],
+    description: '새로 필요한 기술(기획수요)을 등록하고, AI가 찾아 준 기존 성과 중 쓸 만한 것을 골라 검토를 맡깁니다.',
+    can: ['기획수요 등록', 'AI로 연계 후보 찾기', '검토 요청', '갭 분석 다시 돌리기'],
   },
   DEPT_REVIEWER: {
     code: 'DEPT_REVIEWER',
     label: '조직 관리자·검수자',
     group: 'ADMIN',
-    description: '소관 부서의 추천을 검토하고 최종 판정(채택·보류·제외)을 내립니다.',
-    can: ['검토 의견', '최종 판정'],
+    description: '우리 부서로 온 추천과 갭 분석 결과를 검토하고 최종 결정(채택·보류·제외, 확정·기각)을 내립니다.',
+    can: ['검토 의견', '추천 최종 판정', '갭 확정·기각'],
   },
   EXPERT: {
     code: 'EXPERT',
     label: '전문가',
     group: 'WORKER',
-    description: '배정된 추천을 기술적으로 검토하고 의견을 남깁니다. 최종 판정은 할 수 없습니다.',
+    description: '나에게 온 추천을 기술 눈으로 검토하고 의견을 남깁니다. 최종 결정은 부서 검수자가 합니다.',
     can: ['검토 의견', '연계유형 수정 제안'],
   },
   CURATOR: {
     code: 'CURATOR',
     label: '큐레이터·작업자',
     group: 'WORKER',
-    description: '원문 문서를 올리고 성과 활용카드를 만들어 검수 후 발행합니다.',
-    can: ['문서 업로드', '성과카드 작성', '성과카드 발행'],
+    description: '과제 결과보고서를 올리고, 그 내용으로 성과카드를 만들어 확인 후 발행합니다.',
+    can: ['문서 올리기', '성과카드 작성', '성과카드 발행', '갭 분석 다시 돌리기'],
   },
 }
 
@@ -74,14 +74,30 @@ export interface MenuItem {
 }
 
 export const MENU: MenuItem[] = [
-  { path: '/dashboard', label: '진행 현황', icon: '📊', roles: ADMIN_ROLES },
-  { path: '/projects', label: '프로젝트 관리', icon: '🗂️', roles: ADMIN_ROLES },
-  { path: '/reviews', label: '검토 큐', icon: '📥', roles: ADMIN_ROLES },
+  { path: '/dashboard', label: '한눈에 보기', icon: '🏠', roles: ADMIN_ROLES },
+  { path: '/reviews', label: '검토할 추천', icon: '📥', roles: ADMIN_ROLES },
+  { path: '/projects', label: '연계 후보 찾기', icon: '🔎', roles: ADMIN_ROLES },
+  { path: '/my-tasks', label: '내 할 일', icon: '✅', roles: WORKER_ROLES },
+  { path: '/documents/upload', label: '문서 올리기', icon: '📤', roles: WORKER_ROLES },
+  { path: '/gaps', label: '해외 수요 갭 분석', icon: '🌍', roles: ALL_ROLES },
   { path: '/staff/navigator', label: '공고별 적합 기업', icon: '🧭', roles: ADMIN_ROLES },
   { path: '/staff/sources', label: '외부 수집', icon: '🔄', roles: ADMIN_ROLES },
-  { path: '/my-tasks', label: '내 작업', icon: '✅', roles: WORKER_ROLES },
-  { path: '/documents/upload', label: '문서 업로드', icon: '📤', roles: WORKER_ROLES },
 ]
+
+/**
+ * 경로별 허용 역할 (App.tsx 라우트와 같은 규칙).
+ * 로그인 직후 원래 가려던 화면으로 돌려보낼지, 역할을 바꾼 뒤 지금 화면에 머물지 정할 때 쓴다.
+ */
+const PATH_ROLES: [RegExp, RoleCode[]][] = [
+  [/^\/(dashboard|projects|reviews|staff\/navigator|staff\/sources)(\/|$)/, ADMIN_ROLES],
+  [/^\/(my-tasks|documents\/upload)(\/|$)/, WORKER_ROLES],
+  [/^\/(recommendations|gaps)(\/|$)/, ALL_ROLES],
+]
+
+export function canAccessPath(role: RoleCode | null, pathname: string): boolean {
+  const hit = PATH_ROLES.find(([re]) => re.test(pathname))
+  return hit != null && canAccess(role, hit[1])
+}
 
 export function primaryRole(roles: string[]): RoleCode | null {
   return ALL_ROLES.find((r) => roles.includes(r)) ?? null
