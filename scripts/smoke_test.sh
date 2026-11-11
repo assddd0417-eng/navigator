@@ -32,7 +32,7 @@ VERBOSE="${VERBOSE:-0}"          # 1 이면 실패하지 않은 응답 본문도
 SMOKE_LLM="${SMOKE_LLM:-0}"      # 1 이면 서버의 실제 LLM 연계이유 재생성까지 확인 (서버에 LLM 제공자 API 키 필요)
 
 # 시드 사용자 (seeds/init_test_data.sql)
-PLANNER=1 REVIEWER=2 EXPERT=3 CURATOR=4 VIEWER=5
+PLANNER=1 REVIEWER=2 EXPERT=3 CURATOR=4 VIEWER=5 AGENCY=6
 OWNER_DEPT=3                     # 과제 1 소관부서 = 무인미래통신기술팀
 
 for bin in curl jq; do
@@ -413,4 +413,13 @@ api "기업마당 공고" 200 POST /navigator/sources/BIZINFO/run "$PLANNER"
 api "공고는 기업별 수집 안 됨" 422 POST "/navigator/sources/BIZINFO/run?organization_id=101" "$PLANNER"
 api "연결 안 된 출처" 404 POST /navigator/sources/NICE/run "$PLANNER"
 api "수집 기록" 200 GET "/navigator/sources/jobs?limit=5" "$PLANNER"
+
+section "⑬ 기관 포트폴리오"
+api "포트폴리오 숫자 (기관 열람자)" 200 GET /portfolio/overview "$AGENCY"
+check "숫자 5개" 'has("cards_published") and has("overseas_demands") and has("gaps_confirmed") and has("gaps_draft") and has("handed_off")'
+api "분야별 대조 (기획자)" 200 GET "/portfolio/areas?include_draft=true" "$PLANNER"
+api "국내 성과 분포 (검수자)" 200 GET /portfolio/domestic "$REVIEWER"
+api "기획 후보 (기관 열람자)" 200 GET /portfolio/actions "$AGENCY"
+api "포트폴리오는 관리자·열람자만 (EXPERT)" 403 GET /portfolio/overview "$EXPERT"
+api "기획수요로 넘기기는 기획자만 (기관 열람자)" 403 POST /portfolio/actions/1/to-demand "$AGENCY"
 summary

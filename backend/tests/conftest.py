@@ -27,9 +27,9 @@ INSERT INTO department (id, dept_code, name) OVERRIDING SYSTEM VALUE VALUES
 INSERT INTO app_user (id, login_id, name, department_id, clearance_code) VALUES
   (1,'planner','기획담당',1,'RESTRICTED'), (2,'reviewer','부서검토자',3,'RESTRICTED'),
   (3,'expert','기술전문가',2,'RESTRICTED'), (4,'curator','카드관리자',1,'RESTRICTED'),
-  (5,'viewer','열람자',2,'PUBLIC');
+  (5,'viewer','열람자',2,'PUBLIC'), (6,'agency','정책기획 열람자',1,'RESTRICTED');
 INSERT INTO user_role (user_id, role_code) VALUES
-  (1,'PLANNER'), (2,'DEPT_REVIEWER'), (3,'EXPERT'), (4,'CURATOR'), (5,'VIEWER');
+  (1,'PLANNER'), (2,'DEPT_REVIEWER'), (3,'EXPERT'), (4,'CURATOR'), (5,'VIEWER'), (6,'VIEWER');
 -- 기획팀은 통신팀 소관 자료 열람 가능
 INSERT INTO department_access_grant (grantee_dept_id, target_dept_id, max_security_code) VALUES (1,3,'RESTRICTED');
 INSERT INTO organization (id, name, org_type) VALUES (1,'(주)테스트방산','COMPANY'), (2,'국방기술연구원','RESEARCH_INSTITUTE');

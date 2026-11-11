@@ -94,6 +94,9 @@ app/
 | GET | `/gaps/findings`, `/gaps/findings/{id}` | 모두 (보안등급별) | 갭 목록(점수 순)·근거 카드·제안 경로·해외 출처 |
 | POST | `/gaps/findings/{id}/decision` | DEPT_REVIEWER | 갭 확정·기각 (기각은 사유 필수) |
 | GET | `/gaps/summary` | 모두 | 해외 수요별 열린 갭 종류 한눈에 보기 |
+| GET | `/portfolio/overview`·`/areas`·`/domestic`·`/actions` | PLANNER, DEPT_REVIEWER, VIEWER (보안등급별) | 기관 포트폴리오: 숫자·분야별 대조표·무기체계별 국내 성과·정책 기획 후보 (`include_draft`, `area`) |
+| GET | `/portfolio/export.xlsx` | PLANNER, DEPT_REVIEWER, VIEWER | 위 내용을 엑셀로 (분야별 대조·국내 성과 분포·기획 후보·작성기준) |
+| POST | `/portfolio/actions/{갭id}/to-demand` | PLANNER | 확정된 갭 → 신규 기획수요(OPEN). 이미 넘긴 갭이면 200 + 기존 기획수요 (0027) |
 
 ## 문서 파일 업로드 (PDF)
 

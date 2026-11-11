@@ -184,7 +184,7 @@ export function RecommendationPage() {
   const hist = useAsync(() => getRecommendationHistory(id), [id])
   const reload = () => { void rec.reload(); void hist.reload() }
   const home = role ? homePath(role) : '/'
-  const backTo = role && ROLES[role].group === 'ADMIN' ? '/reviews' : '/my-tasks'
+  const backTo = !role ? '/my-tasks' : ROLES[role].group === 'ADMIN' ? '/reviews' : homePath(role)
   // 앱 안에서 들어왔으면 이전 화면으로, 주소로 바로 들어왔으면(새 탭·공유 링크) 검토 목록으로
   const goBack = () => (location.key !== 'default' ? navigate(-1) : navigate(backTo))
 
