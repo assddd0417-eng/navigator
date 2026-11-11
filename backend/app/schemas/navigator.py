@@ -64,6 +64,15 @@ class ProfileFields(BaseModel):
     revenue_year: int | None = Field(default=None, ge=1900, le=2100)
     region: Region | None = None
     address: str | None = None
+    # 결격사유 (true = 해당). 비우면 '확인 필요'
+    tax_delinquent: bool | None = None
+    insolvent: bool | None = None
+    rnd_restricted: bool | None = None
+    # 방산·수출 실적
+    defense_goods: bool | None = None
+    military_supply_krw: int | None = Field(default=None, ge=0, description="최근 3년 군 납품(조달) 실적 합계 (원)")
+    export_krw: int | None = Field(default=None, ge=0, description="최근 연도 수출액 (원)")
+    export_year: int | None = Field(default=None, ge=1900, le=2100)
 
 
 class CompanyLists(BaseModel):

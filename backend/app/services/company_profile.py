@@ -13,7 +13,9 @@ VERIFY_LABEL = {"VERIFIED": "확인됨", "UNVERIFIED": "미확인", "FAILED": "�
 BUSINESS_STATUS_LABEL = {"ACTIVE": "계속사업자", "SUSPENDED": "휴업", "CLOSED": "폐업", "UNKNOWN": "모름"}
 
 PROFILE_FIELDS = ("main_business", "homepage", "company_size", "established_on", "employee_count",
-                  "annual_revenue_krw", "revenue_year", "region", "address")
+                  "annual_revenue_krw", "revenue_year", "region", "address",
+                  "tax_delinquent", "insolvent", "rnd_restricted", "defense_goods", "military_supply_krw",
+                  "export_krw", "export_year")
 
 LIST_TABLES = {
     "patents": "company_patent",

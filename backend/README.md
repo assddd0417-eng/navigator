@@ -94,6 +94,9 @@ app/
 | GET | `/gaps/findings`, `/gaps/findings/{id}` | 모두 (보안등급별) | 갭 목록(점수 순)·근거 카드·제안 경로·해외 출처 |
 | POST | `/gaps/findings/{id}/decision` | DEPT_REVIEWER | 갭 확정·기각 (기각은 사유 필수) |
 | GET | `/gaps/summary` | 모두 | 해외 수요별 열린 갭 종류 한눈에 보기 |
+| GET | `/portfolio/overview`·`/areas`·`/domestic`·`/actions` | PLANNER, DEPT_REVIEWER, VIEWER (보안등급별) | 기관 포트폴리오: 숫자·분야별 대조표·무기체계별 국내 성과·정책 기획 후보 (`include_draft`, `area`) |
+| GET | `/portfolio/export.xlsx` | PLANNER, DEPT_REVIEWER, VIEWER | 위 내용을 엑셀로 (분야별 대조·국내 성과 분포·기획 후보·작성기준) |
+| POST | `/portfolio/actions/{갭id}/to-demand` | PLANNER | 확정된 갭 → 신규 기획수요(OPEN). 이미 넘긴 갭이면 200 + 기존 기획수요 (0027) |
 
 ## 문서 파일 업로드 (PDF)
 
@@ -160,7 +163,7 @@ python -m app.synthetic load --corpus ../seeds/overseas/국내성과_K2파워팩
 |---|---|---|
 | 공백 `NO_COVERAGE` | 가장 가까운 카드의 유사도가 기준(0.55) 미만 | 신규 기획수요 (부분적으로 가까운 카드가 2건 이상이면 융합형도) |
 | 성능미달 `PERFORMANCE_SHORT` | 비슷한 카드가 해외 요구 수치에 못 미치거나, 자기 목표를 달성하지 못함 (단위가 다르면 비교 안 함) | 고도화형 |
-| 국산화·현지화 `LOCALIZATION` | 비슷한 카드 품목(BOM 하위 포함)에 수입품이 있음, 또는 수출 요구에 현지 생산·정비 낱말이 있음 | 전환형 / 사업화형 |
+| 국산화·현지화 `LOCALIZATION` | 비슷한 카드 품목(BOM 하위 포함)에 수입품이 있음, 또는 수출 요구에 현지 생산·정비 낱말이 있음. 카드 전체가 기준 미만이어도 미해결 현지화 과제가 요구와 맞으면(유사도 0.45 이상) 공백 대신 이 종류 | 전환형 / 사업화형 |
 | 성숙도부족 `MATURITY` | 비슷한 카드 중 최고 TRL 이 7 미만, 또는 이 수요와 관련된 미해결 과제가 남음 | 후속형 |
 
 - 점수 = 갭 크기 × 수요 확신도(높음 1.0 · 보통 0.8 · 낮음 0.6) × 시급성(목표 시기 2년 안 1.0 · 5년 안 0.85 · 그 뒤 0.7 · 모름 0.8).

@@ -93,12 +93,15 @@ async def load_announcements(conn: AsyncConnection, ann_ids: list[int]) -> dict[
 async def load_companies(conn: AsyncConnection, org_ids: list[int]) -> dict[int, CompanyFacts]:
     rows = await (await conn.execute(
         """SELECT o.id, o.name, cp.company_size, COALESCE(cp.opened_on, cp.established_on) AS opened_on, cp.region,
-                  cp.employee_count, cp.annual_revenue_krw, cp.business_status, cp.is_defense_company
+                  cp.employee_count, cp.annual_revenue_krw, cp.business_status, cp.is_defense_company,
+                  cp.tax_delinquent, cp.insolvent, cp.rnd_restricted, cp.defense_goods, cp.military_supply_krw,
+                  cp.export_krw
              FROM ax.organization o JOIN ax.company_profile cp ON cp.organization_id = o.id
             WHERE o.id = ANY(%s)""", (org_ids,))).fetchall()
     facts = {r["id"]: CompanyFacts(r["id"], r["name"], r["company_size"], r["opened_on"], r["region"],
                                    r["employee_count"], r["annual_revenue_krw"], r["business_status"],
-                                   r["is_defense_company"]) for r in rows}
+                                   r["is_defense_company"], r["tax_delinquent"], r["insolvent"], r["rnd_restricted"],
+                                   r["defense_goods"], r["military_supply_krw"], r["export_krw"]) for r in rows}
     # 외부 확인값 우선
     for r in await (await conn.execute(
             """SELECT organization_id, field_name, preferred_value FROM ax.v_company_field_compare

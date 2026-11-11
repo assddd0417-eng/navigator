@@ -14,6 +14,7 @@ VERDICT_KO = {"ELIGIBLE": "적합", "NEEDS_INFO": "정보부족", "INELIGIBLE": 
 RESULT_KO = {"MET": "충족", "UNMET": "미충족", "UNKNOWN": "모름"}
 SIZE_KO = {"LARGE": "대기업", "MIDSIZE": "중견기업", "SME": "중소기업", "STARTUP": "창업기업", "VENTURE": "벤처기업"}
 STATUS_KO = {"ACTIVE": "계속사업자", "SUSPENDED": "휴업", "CLOSED": "폐업"}
+DISQUALIFY_KO = {"TAX_DELINQUENT": "국세·지방세 체납", "INSOLVENT": "부도·자본잠식", "RND_RESTRICTED": "국가 R&D 참여제한"}
 STARTUP_MAX_YEARS = 7   # 창업기업: 개업 7년 이내 (중소기업창업 지원법)
 
 
@@ -58,6 +59,12 @@ class CompanyFacts:
     revenue_krw: int | None = None
     business_status: str = "UNKNOWN"
     is_defense_company: bool = False
+    tax_delinquent: bool | None = None
+    insolvent: bool | None = None
+    rnd_restricted: bool | None = None
+    defense_goods: bool | None = None
+    military_supply_krw: int | None = None
+    export_krw: int | None = None
     certs: list[Cert] = field(default_factory=list)
     credits: list[Credit] = field(default_factory=list)
     rnd: list[Rnd] = field(default_factory=list)
@@ -234,6 +241,44 @@ def judge(req: Requirement, c: CompanyFacts, as_of: date) -> Check:
         cond = f"{'/'.join(prefixes)} 분야 " if prefixes else ""
         return Check("MET" if ok else "UNMET", f"{cond}특허 {len(hits)}건 (요건 {n_min}건 이상)",
                      detail={"count": len(hits), "titles": [p.title for p in hits][:3]})
+
+    if t == "NO_DISQUALIFICATION":
+        checks = r.get("checks") or list(DISQUALIFY_KO)
+        vals = {k: getattr(c, k.lower()) for k in checks}
+        hit = [DISQUALIFY_KO[k] for k, v in vals.items() if v]
+        if hit:
+            return Check("UNMET", f"결격사유 해당: {', '.join(hit)}", detail={"hit": hit})
+        if any(v is None for v in vals.values()):
+            return _answer(req, c, f"다음에 모두 해당하지 않나요? {', '.join(DISQUALIFY_KO[k] for k in checks)} (예/아니오)")
+        return Check("MET", "결격사유 없음", detail={"checked": checks}, self_declared=True)
+
+    if t == "DEFENSE_SUPPLY":
+        need_goods, lo = r.get("defense_goods"), r.get("min_supply_krw")
+        parts, unknown, ok = [], False, True
+        if need_goods:
+            if c.defense_goods is None:
+                unknown = True
+            else:
+                ok &= c.defense_goods
+                parts.append("방산물자 생산 " + ("함" if c.defense_goods else "안 함"))
+        if lo is not None:
+            if c.military_supply_krw is None:
+                unknown = True
+            else:
+                ok &= c.military_supply_krw >= lo
+                parts.append(f"군 납품 실적 {'충족' if c.military_supply_krw >= lo else '미달'}")
+        if not ok:
+            return Check("UNMET", ", ".join(parts), detail={"meets": False})
+        if unknown:
+            return _answer(req, c, f"다음을 충족하나요? {req.description} (예/아니오)")
+        return Check("MET", ", ".join(parts) or "요건 없음", detail={"meets": True})
+
+    if t == "EXPORT":
+        lo = r.get("min_krw", 1)
+        if c.export_krw is None:
+            return _answer(req, c, "최근 연도 수출 실적(금액)을 알려 주세요")
+        ok = c.export_krw >= lo
+        return Check("MET" if ok else "UNMET", f"수출 실적 요건 {'충족' if ok else '미달'}", detail={"meets": ok})
 
     # OTHER
     return _answer(req, c, f"다음 요건을 충족하나요? {req.description} (예/아니오)")

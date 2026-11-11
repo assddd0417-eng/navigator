@@ -1,7 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { RequireRole } from './auth/RequireRole'
-import { ADMIN_ROLES, ALL_ROLES, homePath, WORKER_ROLES } from './auth/roles'
+import { ADMIN_ROLES, ALL_ROLES, homePath, PORTFOLIO_ROLES, WORKER_ROLES } from './auth/roles'
 import { Layout } from './components/Layout'
 import { ToastProvider } from './components/Toast'
 import { DashboardPage } from './pages/admin/DashboardPage'
@@ -14,6 +14,9 @@ import { CompanyManagePage } from './pages/navigator/CompanyManagePage'
 import { CompanyRegisterPage } from './pages/navigator/CompanyRegisterPage'
 import { CompanySearchPage } from './pages/navigator/CompanySearchPage'
 import { SubscriptionLinkPage } from './pages/navigator/SubscriptionLinkPage'
+import { GapDetailPage } from './pages/gaps/GapDetailPage'
+import { GapListPage } from './pages/gaps/GapListPage'
+import { PortfolioPage } from './pages/portfolio/PortfolioPage'
 import { RecommendationPage } from './pages/shared/RecommendationPage'
 import { DocumentUploadPage } from './pages/worker/DocumentUploadPage'
 import { MyTasksPage } from './pages/worker/MyTasksPage'
@@ -44,11 +47,16 @@ export default function App() {
               <Route path="/reviews" element={<RequireRole roles={ADMIN_ROLES}><ReviewQueuePage /></RequireRole>} />
               <Route path="/staff/navigator" element={<RequireRole roles={ADMIN_ROLES}><NavigatorStaffPage /></RequireRole>} />
               <Route path="/staff/sources" element={<RequireRole roles={ADMIN_ROLES}><NavigatorSourcesPage /></RequireRole>} />
+              {/* 기관 포트폴리오: 관리자 + 기관 열람자(VIEWER). 넘기기는 PLANNER 만 — 서버가 판단 */}
+              <Route path="/portfolio" element={<RequireRole roles={PORTFOLIO_ROLES}><PortfolioPage /></RequireRole>} />
               {/* 작업자: CURATOR · EXPERT */}
               <Route path="/my-tasks" element={<RequireRole roles={WORKER_ROLES}><MyTasksPage /></RequireRole>} />
               <Route path="/documents/upload" element={<RequireRole roles={WORKER_ROLES}><DocumentUploadPage /></RequireRole>} />
               {/* 공통: 추천 상세·검수/의견 */}
               <Route path="/recommendations/:id" element={<RecommendationPage />} />
+              {/* 공통: 해외 수요 갭 분석 (재실행 PLANNER·CURATOR, 확정·기각 DEPT_REVIEWER — 서버가 판단) */}
+              <Route path="/gaps" element={<GapListPage />} />
+              <Route path="/gaps/:id" element={<GapDetailPage />} />
             </Route>
             <Route path="*" element={<Home />} />
           </Routes>
