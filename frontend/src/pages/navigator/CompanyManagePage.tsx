@@ -3,13 +3,13 @@ import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from
 import { Link } from 'react-router-dom'
 import { ApiError } from '../../api/client'
 import {
-  answerQuestions, CERT_TYPES, getMyAlerts, getMyMatches, getMyProfile, getMyQuestions, REGIONS, SIZE_LABELS, updateMyProfile,
+  answerQuestions, autofillProfile, CERT_TYPES, getMyAlerts, getMyMatches, getMyProfile, getMyQuestions, REGIONS, SIZE_LABELS, updateMyProfile,
   type FullProfile, type MatchRun, type ProfileUpdate, type Question,
 } from '../../api/navigator'
 import { useToast } from '../../components/Toast'
 import { Card, Empty, useAction } from '../../components/ui'
 import { AlertsPanel } from './AlertsPanel'
-import { AGENCY_LABELS, bizStatus, CompanyShell, Deadline, fmtDay, fmtKrw, GroupedMatches, MatchCard } from './components'
+import { AGENCY_LABELS, bizStatus, CompanyShell, Deadline, fmtKrw, GroupedMatches, MatchCard } from './components'
 
 const TOKEN_KEY = 'navigator.manageToken'
 
@@ -30,11 +30,12 @@ export function CompanyManagePage() {
   const [token] = useState(readToken)
   const [tab, setTab] = useState<Tab>('matches')
   const [profile, setProfile] = useState<FullProfile | null>(null)
-  const [invalid, setInvalid] = useState<string | null>(token ? null : '링크 정보가 없습니다.')
+  const [invalid, setInvalid] = useState<string | null>(token ? null : '회사가 선택되지 않았습니다.')
   const [matches, setMatches] = useState<MatchRun | null>(null)
   const [questions, setQuestions] = useState<Question[] | null>(null)
   const [includeClosed, setIncludeClosed] = useState(false)
   const [unread, setUnread] = useState(0)
+  const [profileKey, setProfileKey] = useState(0)
   const { run } = useAction()
   const toast = useToast()
 
@@ -51,7 +52,7 @@ export function CompanyManagePage() {
         setProfile(p); void loadMatches(false); void loadQuestions()
         getMyAlerts(token).then((a) => setUnread(a.unread)).catch(() => undefined)
       })
-      .catch((e) => setInvalid(e instanceof ApiError ? e.detail : '링크를 확인하지 못했습니다.'))
+      .catch((e) => setInvalid(e instanceof ApiError ? e.detail : '회사 정보를 불러오지 못했습니다.'))
   }, [token, loadMatches, loadQuestions])
 
   const answer = async (answers: { requirement_id: number; value: number | boolean }[]) => {
@@ -73,9 +74,9 @@ export function CompanyManagePage() {
   if (invalid) {
     return (
       <CompanyShell>
-        <Card title="링크를 열 수 없습니다">
+        <Card title="회사 정보를 열 수 없습니다">
           <p>{invalid}</p>
-          <p className="muted">기간이 지났거나 새 링크를 받은 경우입니다. 사업자번호로 조회한 뒤 링크를 다시 받으세요.</p>
+          <p className="muted">시간이 지났거나 다른 창에서 다시 열었을 수 있습니다. 사업자번호로 다시 조회해 주세요.</p>
           <Link className="btn btn-primary" to="/navigator">사업자번호로 조회</Link>
         </Card>
       </CompanyShell>
@@ -94,9 +95,6 @@ export function CompanyManagePage() {
             사업자번호 {profile.business_reg_no} · 국세청 {profile.biz_verify_label} · {bizStatus(profile.business_status_label)}
           </p>
         </div>
-        {profile.access_link && (
-          <span className="small muted">이 링크는 {fmtDay(profile.access_link.expires_at)}까지 쓸 수 있습니다</span>
-        )}
       </div>
       <div className="seg tabs" role="tablist">
         <button role="tab" className={tab === 'matches' ? 'on' : ''} onClick={() => setTab('matches')}>
@@ -141,8 +139,9 @@ export function CompanyManagePage() {
       {tab === 'alerts' && <AlertsPanel token={token!} onUnread={setUnread} />}
 
       {tab === 'profile' && (
-        <ProfilePanel token={token!} profile={profile} missing={missing} onSaved={(p) => {
+        <ProfilePanel key={profileKey} token={token!} profile={profile} missing={missing} onSaved={(p) => {
           setProfile(p)
+          setProfileKey((k) => k + 1)
           void loadMatches(includeClosed)
           void loadQuestions()
         }} />
@@ -219,9 +218,25 @@ function ProfilePanel({ token, profile, missing, onSaved }: {
     })
   }
 
+  const autofill = () => void run(async () => {
+    const res = await autofillProfile(token)
+    const ok = res.results.filter((r) => r.ok).map((r) => r.label)
+    const failed = res.results.filter((r) => !r.ok).map((r) => r.label)
+    toast.show({ kind: failed.length ? 'error' : 'success', title: '공공데이터로 채웠습니다',
+      message: [ok.length && `가져옴: ${ok.join(', ')}`, failed.length && `연결 안 됨: ${failed.join(', ')}`].filter(Boolean).join(' · ') })
+    onSaved(res.profile)
+  })
+
   const readonly = (origin: string) => origin !== 'SELF'
   return (
     <form className="stack" onSubmit={save}>
+      <div className="manage-box">
+        <div>
+          <strong>공공데이터로 자동 채우기</strong>
+          <div className="small muted">국세청(휴·폐업), 특허청(특허), DART(매출·근로자 수)에서 가져와 ‘공공데이터 확인’으로 표시합니다. 인증·R&amp;D 이력은 아래에 직접 입력해 주세요.</div>
+        </div>
+        <button type="button" className="btn btn-primary" disabled={busy} onClick={autofill}>{busy ? '가져오는 중…' : '자동 채우기'}</button>
+      </div>
       {missing.length > 0 && (
         <div className="notice small">비어 있는 항목: {missing.join(', ')}. 채울수록 판정이 정확해집니다.</div>
       )}

@@ -1,12 +1,12 @@
 import { useState, type FormEvent } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiError } from '../../api/client'
 import {
-  getPublicCompany, getPublicMatches, requestAccessLink,
-  type LinkSent, type MatchRun, type PublicProfile,
+  getPublicCompany, getPublicMatches, openCompany,
+  type MatchRun, type PublicProfile,
 } from '../../api/navigator'
 import { Card, useAction } from '../../components/ui'
-import { bizStatus, CompanyShell, Deadline, fmtDay, GroupedMatches, MatchCard } from './components'
+import { bizStatus, CompanyShell, Deadline, GroupedMatches, MatchCard } from './components'
 
 // 시연용 가상 기업 (seeds/navigator_companies.sql)
 const DEMO = [
@@ -17,7 +17,7 @@ const DEMO = [
 
 const STEPS = [
   ['사업자번호로 조회', '공개 정보로 지원 가능한 공고를 먼저 보여 드립니다.'],
-  ['회사 정보 보완', '이메일로 받은 링크에서 인증·R&D 이력을 넣으면 판정이 정확해집니다.'],
+  ['회사 정보 보완', '공공데이터로 자동으로 채우고, 인증·R&D 이력은 바로 입력하면 판정이 정확해집니다.'],
   ['새 공고 알림', '조건에 맞는 공고가 올라오면 이메일로 알려 드립니다.'],
 ]
 
@@ -27,7 +27,6 @@ export function CompanySearchPage() {
   const [profile, setProfile] = useState<PublicProfile | null>(null)
   const [matches, setMatches] = useState<MatchRun | null>(null)
   const [notFound, setNotFound] = useState<string | null>(null)
-  const [sent, setSent] = useState<LinkSent | null>(null)
   const { busy, run } = useAction()
 
   const search = async (value: string) => {
@@ -36,7 +35,7 @@ export function CompanySearchPage() {
       setNotFound('사업자등록번호 10자리를 입력하세요. (예: 123-45-67890)')
       return
     }
-    setProfile(null); setMatches(null); setNotFound(null); setSent(null)
+    setProfile(null); setMatches(null); setNotFound(null)
     setParams({ brn: value })
     await run(async () => {
       try {
@@ -55,7 +54,11 @@ export function CompanySearchPage() {
     void search(brn)
   }
 
-  const sendLink = () => run(async () => setSent(await requestAccessLink(profile!.business_reg_no)))
+  const navigate = useNavigate()
+  const openManage = () => run(async () => {
+    const { token } = await openCompany(profile!.business_reg_no)
+    navigate(`/navigator/manage#t=${encodeURIComponent(token)}`)
+  })
   const found = profile || notFound
 
   return (
@@ -111,19 +114,11 @@ export function CompanySearchPage() {
             <div>
               <strong>이 회사 담당자이신가요?</strong>
               <div className="small muted">
-                등록 이메일로 링크를 보내 드립니다. 링크에서 회사 정보 수정, 확인 필요 항목 답변, 알림 설정을 할 수 있습니다.
+                회사 정보를 공공데이터로 자동으로 채우거나 직접 입력하고, 확인 필요 항목에 답하고, 알림을 설정할 수 있습니다.
               </div>
             </div>
-            <button className="btn btn-primary" disabled={busy} onClick={() => void sendLink()}>이메일로 링크 받기</button>
+            <button className="btn btn-primary" disabled={busy} onClick={() => void openManage()}>회사 정보 입력·수정</button>
           </div>
-          {sent && (
-            <div className="notice notice-ok">
-              {sent.sent_to} 로 보냈습니다. {fmtDay(sent.expires_at)}까지 쓸 수 있고, 전에 받은 링크는 더 이상 열리지 않습니다.
-              {sent.dev_management_link && (
-                <div className="small">개발 환경: <a href={sent.dev_management_link.replace(/^https?:\/\/[^/]+/, '')}>링크 바로 열기</a></div>
-              )}
-            </div>
-          )}
         </Card>
       )}
 
@@ -131,7 +126,7 @@ export function CompanySearchPage() {
         <Card title="지원 가능 공고">
           {matches.recommendations.length === 0 ? <div className="empty">지금 접수 중인 공고가 없습니다.</div> : (
             <GroupedMatches run={matches} audience="company"
-              hints={{ NEEDS_INFO: '이메일 링크에서 몇 가지만 답하면 판정됩니다' }}
+              hints={{ NEEDS_INFO: '‘회사 정보 입력·수정’에서 몇 가지만 답하면 판정됩니다' }}
               renderCard={(r) => (
                 <MatchCard rec={r} audience="company" title={<strong>{r.announcement_title}</strong>}
                   meta={<>{r.agency_name} · <Deadline end={r.receipt_end} state={r.receipt_state} /></>} />

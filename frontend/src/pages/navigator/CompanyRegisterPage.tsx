@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
-import { REGIONS, registerCompany, SIZE_LABELS, type RegisterResult } from '../../api/navigator'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { openCompany, REGIONS, registerCompany, SIZE_LABELS, type RegisterResult } from '../../api/navigator'
 import { Card, useAction } from '../../components/ui'
 import { CompanyShell, fmtDay } from './components'
 
@@ -12,16 +12,23 @@ export function CompanyRegisterPage() {
   })
   const [done, setDone] = useState<RegisterResult | null>(null)
   const { busy, run } = useAction()
+  const navigate = useNavigate()
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) => setForm({ ...form, [k]: e.target.value })
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    void run(async () => setDone(await registerCompany({
+    void run(async () => {
+      const res = await registerCompany({
       business_reg_no: form.business_reg_no, company_name: form.company_name,
       representative_name: form.representative_name, opened_on: form.opened_on, email: form.email,
       main_business: form.main_business || null, company_size: form.company_size || null,
       employee_count: form.employee_count ? Number(form.employee_count) : null, region: form.region || null,
-    })))
+      })
+      setDone(res)
+      // 등록 직후 바로 회사 정보 화면으로 (이메일 링크 없이)
+      const { token } = await openCompany(res.business_reg_no)
+      navigate(`/navigator/manage#t=${encodeURIComponent(token)}`)
+    })
   }
 
   if (done) {

@@ -242,6 +242,11 @@ export const getPublicMatches = (brn: string) =>
   api<MatchRun>(`/navigator/companies/${bizno(brn)}/matches`, anon)
 export const requestAccessLink = (brn: string) =>
   api<LinkSent>(`/navigator/companies/${bizno(brn)}/access-link`, { ...anon, method: 'POST' })
+export const openCompany = (brn: string) =>
+  api<{ token: string; expires_at: string }>(`/navigator/companies/${bizno(brn)}/open`, { ...anon, method: 'POST' })
+export interface AutofillResult { source: string; label: string; ok: boolean; error: string | null; counts: Record<string, number> }
+export const autofillProfile = (token: string) =>
+  api<{ results: AutofillResult[]; profile: FullProfile }>('/navigator/manage/autofill', { ...manage(token), method: 'POST' })
 export const registerCompany = (body: CompanyRegister) =>
   api<RegisterResult>('/navigator/companies', { ...anon, method: 'POST', body })
 
