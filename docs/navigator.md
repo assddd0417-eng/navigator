@@ -18,6 +18,7 @@
 | 관리 링크 / 메일 | `services/access_link.py` / `services/mailer.py` |
 | 화면 | `frontend/src/pages/navigator/`, `frontend/src/pages/admin/NavigatorStaffPage.tsx`, `NavigatorSourcesPage.tsx` |
 | 테스트 데이터 | `seeds/navigator_companies.sql`, `seeds/navigator_announcements.sql` (재실행 가능) |
+| 검증 | 가상 기업 20곳 × 공고 5건 정답 `seeds/navigator_eval/corpus.json`, 측정 `python -m app.navigator_eval`, 결과 [navigator_eval.md](navigator_eval.md) |
 
 기존 테이블은 컬럼 추가만 했다. 사업자번호는 `organization.business_reg_no` 를 숫자 10자리로 쓴다.
 기존 코드 변경은 `routers/documents.py` 의 문서 저장 부분을 `store_document`, `parse_file` 로 분리한 것과 `reembed` 에 새 벡터 테이블을 추가한 것뿐이다.
@@ -296,4 +297,6 @@ curl -s -X POST localhost:8000/navigator/announcements -H 'X-User-Id: 1' -H 'Con
 - 실제 메일 발송 (SMTP 등, `mailer.send` 만 바꾸면 됨). 지금은 mock
 - 알림 발송을 큐로 분리 (지금은 공고 등록 요청 안에서 처리)
 - 증빙 PDF 업로드 연결 (`evidence_document_id` 컬럼만 있음)
-- 운영 임베딩 모델(bge-m3) 기준 가중치 조정
+- 운영 임베딩 모델(bge-m3) 기준 순위 재측정·가중치 조정
+- 담당자 화면 정렬: 분야가 맞는 정보부족 기업이 분야가 다른 적합 기업 뒤로 밀림 ([navigator_eval.md](navigator_eval.md))
+- 담당자용 공고 요건 입력·공개 화면 (기업마당 수집 공고는 작성중으로 들어오고, 지금은 API 로만 요건을 넣을 수 있음)
