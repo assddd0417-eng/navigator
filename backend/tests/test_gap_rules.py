@@ -88,6 +88,19 @@ def test_export_localization_uses_related_open_issue():
     assert "MATURITY" not in _types(out)  # 같은 미해결 과제를 두 번 세지 않음
 
 
+def test_export_localization_even_when_card_is_not_close_overall():
+    """성과 전체 유사도는 기준 미만이어도, 미해결 현지화 과제가 수출 요구와 맞으면 공백이 아니라 국산화·현지화 (G02 실측)."""
+    d = DemandInput(9, "현지 정비(MRO)와 부체계 수리 문서 이전", "EXPORT_REQ", "K2GF 정비 1~4단계 현지 수행", "HIGH", None)
+    out = assess(d, [_k2_engine(sim=0.48, issue_sim=0.6), _k2_transmission(sim=0.40)], RULES, TODAY)
+    assert _types(out) == ["LOCALIZATION"]
+    assert [c.card_id for c in out[0].cards] == [11] and out[0].detail["via_open_issue"] is True
+    # 과제가 요구와 덜 비슷하면 그대로 공백
+    assert _types(assess(d, [_k2_engine(sim=0.48, issue_sim=0.3)], RULES, TODAY)) == ["NO_COVERAGE"]
+    # 현지화 요구가 아닌 수출 요구는 그대로 공백
+    d2 = DemandInput(8, "기준 제원", "EXPORT_REQ", "디젤 1,500마력", "HIGH", None)
+    assert _types(assess(d2, [_k2_engine(sim=0.48, issue_sim=0.6)], RULES, TODAY)) == ["NO_COVERAGE"]
+
+
 def test_imported_parts_are_localization():
     card = NearCard(12, "포탑 구동장치", 0.7, trl=8, imported_items=["정밀 베어링"])
     out = assess(DemandInput(1, "포탑", "ROADMAP", "포탑 구동", "MEDIUM", None), [card], RULES, TODAY)

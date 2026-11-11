@@ -16,7 +16,7 @@ from datetime import date
 
 from app.services.scoring import Performance, _norm, clamp01, performance_fit
 
-RULES_VERSION = "gap-2026-11-11"
+RULES_VERSION = "gap-2026-11-11b"
 DEFAULT_RULES: dict = {
     "version": RULES_VERSION,
     "coverage_threshold": 0.55,   # 가장 가까운 카드가 이보다 낮으면 공백
@@ -192,7 +192,29 @@ def assess(demand: DemandInput, near: list[NearCard], rules: dict, today: date |
         out.append(FindingDraft(gap_type, sev, round(clamp01(sev * weight), 4), summary,
                                 round(best, 4) if best is not None else None, detail, cards, pathways))
 
+    loc_hits = _has_keyword(f"{demand.title}\n{demand.requirement}", keywords)
+
     # 1) 공백: 비슷한 국내 성과가 없음 → 다른 판정은 하지 않는다
+    #    예외: 수출국이 현지 생산·정비를 요구하고, 가까운 국내 성과의 미해결 과제가 바로 그 현지화 숙제이면
+    #    (과제가 이 수요와 유사도 기준 이상 + 현지화 낱말 포함) 공백이 아니라 국산화·현지화 갭이다.
+    #    성과 전체는 덜 비슷해도(엔진 개발 ↔ 현지 정비 요구) 남은 숙제가 요구와 맞는 경우다. (2026-11-11 정답 G02)
+    if not covering and demand.kind == "EXPORT_REQ" and loc_hits:
+        tied = [(c, [i for i in c.open_issues
+                     if i.issue_type in MATURITY_ISSUE_TYPES and i.similarity is not None
+                     and i.similarity >= issue_thr and _has_keyword(i.description, keywords)])
+                for c in near]
+        tied = [(c, issues) for c, issues in tied if issues]
+        if tied:
+            notes = [f"수출국 요구에 현지화 조건이 있음 ({', '.join(loc_hits)})"]
+            notes += [f"{c.title} — 미해결: " + "; ".join(i.description for i in issues) for c, issues in tied]
+            add("LOCALIZATION", 0.75, "국산화·현지화 대응이 필요합니다: " + " / ".join(notes),
+                {"keywords": loc_hits, "items": notes, "via_open_issue": True, "threshold": thr},
+                [FindingCard(c.card_id, round(c.similarity, 4), "EVIDENCE",
+                             "미해결: " + "; ".join(i.description for i in issues)) for c, issues in tied],
+                [Pathway("COMMERCIALIZATION", "수출국 현지 생산·정비 요구에 맞춘 기술 패키지로 사업화 연계",
+                         [c.card_id for c, _ in tied])])
+            return sorted(out, key=lambda f: f.score, reverse=True)
+
     if not covering:
         ref = near[: int(rules["evidence_cards"])]
         sev = 1.0 if best is None else 1.0 - 0.5 * clamp01(max(best, 0.0) / thr if thr > 0 else 1.0)
@@ -231,7 +253,6 @@ def assess(demand: DemandInput, near: list[NearCard], rules: dict, today: date |
                                  [fc.card_id for fc in perf_cards])])
 
     # 3) 국산화·현지화
-    loc_hits = _has_keyword(f"{demand.title}\n{demand.requirement}", keywords)
     loc_issue_ids: set[int] = set()
     loc_cards: list[FindingCard] = []
     loc_notes: list[str] = []
