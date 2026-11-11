@@ -32,8 +32,9 @@ const SOURCE_LABELS: Record<string, string> = {
   company_patent: '특허', company_rnd_history: 'R&D 이력', project: '기관 내부 과제', company_technology: '보유기술',
 }
 
-export function MatchItem({ rec, title, onTitle, extra, defaultOpen = false }: {
+export function MatchItem({ rec, title, onTitle, extra, defaultOpen = false, rank }: {
   rec: MatchRec
+  rank?: number
   title: ReactNode
   onTitle?: () => void
   extra?: ReactNode
@@ -44,7 +45,7 @@ export function MatchItem({ rec, title, onTitle, extra, defaultOpen = false }: {
   return (
     <li className={`match-item match-${VERDICT_TONES[rec.verdict]}`}>
       <div className="match-head">
-        <span className="match-rank">{rec.rank}</span>
+        <span className="match-rank">{rank ?? rec.rank}</span>
         <VerdictBadge verdict={rec.verdict} />
         <div className="match-title">
           {onTitle ? <button className="link-btn" onClick={onTitle}>{title}</button> : title}
