@@ -80,11 +80,11 @@ async def load(c: dict) -> int:
                 """INSERT INTO ax.company_profile (organization_id, is_defense_company, company_size, main_business,
                        representative_name, opened_on, established_on, employee_count, annual_revenue_krw, revenue_year,
                        region, business_status, business_status_checked_at, biz_verify_status, biz_verified_at,
-                       registered_email, registration_channel)
+                       registered_email, registration_channel, tax_delinquent, insolvent, rnd_restricted)
                    VALUES (%(id)s, %(defense)s, %(size)s, %(business)s, '(가상)대표', %(opened)s, %(opened)s,
                        %(employees)s, %(revenue)s, 2025, %(region)s, %(status)s, CASE WHEN %(v)s THEN now() END,
                        CASE WHEN %(v)s THEN 'VERIFIED' ELSE 'UNVERIFIED' END, CASE WHEN %(v)s THEN now() END,
-                       %(email)s, 'SELF')
+                       %(email)s, 'SELF', false, false, false)
                    ON CONFLICT (organization_id) DO UPDATE SET
                        is_defense_company = EXCLUDED.is_defense_company, company_size = EXCLUDED.company_size,
                        main_business = EXCLUDED.main_business, opened_on = EXCLUDED.opened_on,
@@ -92,7 +92,8 @@ async def load(c: dict) -> int:
                        annual_revenue_krw = EXCLUDED.annual_revenue_krw, region = EXCLUDED.region,
                        business_status = EXCLUDED.business_status,
                        business_status_checked_at = EXCLUDED.business_status_checked_at,
-                       biz_verify_status = EXCLUDED.biz_verify_status, biz_verified_at = EXCLUDED.biz_verified_at""",
+                       biz_verify_status = EXCLUDED.biz_verify_status, biz_verified_at = EXCLUDED.biz_verified_at,
+                       tax_delinquent = false, insolvent = false, rnd_restricted = false""",
                 {**x, "opened": _d(x["opened"]), "v": verified, "email": f"eval{x['id']}@example.com"})
 
         for t in ("company_patent", "company_certification", "company_credit_rating", "company_rnd_history",

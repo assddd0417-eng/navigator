@@ -171,8 +171,10 @@ const FIELD_LABELS: Record<string, string> = {
   annual_revenue_krw: '매출', employee_count: '근로자 수', company_size: '기업 규모', region: '소재지', established_on: '설립일',
   company_name: '회사 이름', main_business: '주요 사업', address: '주소',
 }
-const s = (v: string | number | null | undefined) => (v == null ? '' : String(v))
+const s = (v: string | number | boolean | null | undefined) => (v == null ? '' : String(v))
 const orNull = (v: string) => (v.trim() === '' ? null : v.trim())
+const tri = (v: string) => (v === '' ? null : v === 'true')
+const num = (v: string) => (v === '' ? null : Number(v))
 
 function ProfilePanel({ token, profile, missing, onSaved }: {
   token: string
@@ -227,6 +229,9 @@ export function CompanyInfoForm({ profile, missing = [], identity, setIdentity, 
     company_size: s(profile?.company_size), established_on: s(profile?.established_on),
     employee_count: s(profile?.employee_count), annual_revenue_krw: s(profile?.annual_revenue_krw),
     revenue_year: s(profile?.revenue_year), region: s(profile?.region), address: s(profile?.address),
+    tax_delinquent: s(profile?.tax_delinquent), insolvent: s(profile?.insolvent), rnd_restricted: s(profile?.rnd_restricted),
+    defense_goods: s(profile?.defense_goods), military_supply_krw: s(profile?.military_supply_krw),
+    export_krw: s(profile?.export_krw), export_year: s(profile?.export_year),
   })
   const [certs, setCerts] = useState<CertRow[]>((profile?.certifications ?? []).filter((c) => c.origin === 'SELF').map((c) => ({
     cert_type_code: c.cert_type_code, cert_no: s(c.cert_no), issued_on: s(c.issued_on), expires_on: s(c.expires_on) })))
@@ -246,6 +251,9 @@ export function CompanyInfoForm({ profile, missing = [], identity, setIdentity, 
       employee_count: f.employee_count ? Number(f.employee_count) : null,
       annual_revenue_krw: f.annual_revenue_krw ? Number(f.annual_revenue_krw) : null,
       revenue_year: f.revenue_year ? Number(f.revenue_year) : null, region: orNull(f.region), address: orNull(f.address),
+      tax_delinquent: tri(f.tax_delinquent), insolvent: tri(f.insolvent), rnd_restricted: tri(f.rnd_restricted),
+      defense_goods: tri(f.defense_goods), military_supply_krw: num(f.military_supply_krw),
+      export_krw: num(f.export_krw), export_year: num(f.export_year),
       certifications: certs.filter((c) => c.cert_type_code).map((c) => ({ cert_type_code: c.cert_type_code,
         cert_no: orNull(c.cert_no), issued_on: orNull(c.issued_on), expires_on: orNull(c.expires_on) })),
       credit_ratings: credits.filter((c) => c.grade.trim()).map((c) => ({ agency: c.agency, grade: c.grade.trim().toUpperCase(),
@@ -315,6 +323,34 @@ export function CompanyInfoForm({ profile, missing = [], identity, setIdentity, 
               공공데이터 값과 다릅니다. 판정은 공공데이터 값으로 합니다.
             </div>
           )}
+        </div>
+      </Card>
+
+      <Card title="결격사유·실적" actions={<span className="small muted">공고 대부분이 이 항목으로 신청 자격을 거릅니다. 모르면 비워 두세요</span>}>
+        <div className="form">
+          <div className="form-row">
+            {([['tax_delinquent', '국세·지방세 체납'], ['insolvent', '부도·자본잠식'], ['rnd_restricted', '국가 R&D 참여제한']] as const).map(([k, label]) => (
+              <label key={k}>{label}
+                <select value={f[k]} onChange={set(k)}>
+                  <option value="">모름</option><option value="false">해당 없음</option><option value="true">해당</option>
+                </select>
+              </label>
+            ))}
+          </div>
+          <div className="form-row">
+            <label>방산물자 생산
+              <select value={f.defense_goods} onChange={set('defense_goods')}>
+                <option value="">모름</option><option value="true">예</option><option value="false">아니오</option>
+              </select>
+            </label>
+            <label>최근 3년 군 납품 실적 (원)
+              <input type="number" min={0} step={1000000} value={f.military_supply_krw} onChange={set('military_supply_krw')} />
+              {f.military_supply_krw && <span className="field-hint">{fmtKrw(Number(f.military_supply_krw))}</span>}</label>
+            <label>최근 연도 수출액 (원)
+              <input type="number" min={0} step={1000000} value={f.export_krw} onChange={set('export_krw')} />
+              {f.export_krw && <span className="field-hint">{fmtKrw(Number(f.export_krw))}</span>}</label>
+            <label>수출 기준 연도<input type="number" value={f.export_year} onChange={set('export_year')} /></label>
+          </div>
         </div>
       </Card>
 

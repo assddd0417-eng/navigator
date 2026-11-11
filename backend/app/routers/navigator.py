@@ -31,7 +31,8 @@ def _send_link(email: str, company_name: str, link: access_link.IssuedLink, firs
         mailer.send(email, f"[Navigator] {company_name} 등록 완료",
                     f"{company_name} 등록이 완료되었습니다.\n조건에 맞는 새 공고가 올라오면 이 주소로 알려 드립니다.\n"
                     "본인이 등록하지 않았다면 이 메일을 무시하세요.")
-        return LinkSent(sent_to=mailer.mask_email(email), expires_at=link.expires_at.isoformat(), dev_management_link=None)
+        return LinkSent(sent_to=mailer.mask_email(email), expires_at=link.expires_at.isoformat(),
+                        dev_management_link=link.url if get_settings().navigator_dev_expose_link else None)
     what = "관리 링크를 다시 보내 드립니다"
     mailer.send(email, f"[Navigator] {company_name} 관리 링크",
                 f"{company_name} 기업 프로필 {what}.\n\n아래 주소에서 회사 정보를 고치고 신용정보를 볼 수 있습니다.\n"

@@ -167,6 +167,13 @@ export interface FullProfile {
   region: string | null
   address: string | null
   is_defense_company: boolean
+  tax_delinquent: boolean | null
+  insolvent: boolean | null
+  rnd_restricted: boolean | null
+  defense_goods: boolean | null
+  military_supply_krw: number | null
+  export_krw: number | null
+  export_year: number | null
   business_status_label: string
   biz_verify_label: string
   registered_email: string | null
@@ -189,6 +196,13 @@ export interface ProfileUpdate {
   revenue_year?: number | null
   region?: string | null
   address?: string | null
+  tax_delinquent?: boolean | null
+  insolvent?: boolean | null
+  rnd_restricted?: boolean | null
+  defense_goods?: boolean | null
+  military_supply_krw?: number | null
+  export_krw?: number | null
+  export_year?: number | null
   certifications?: { cert_type_code: string; cert_no?: string | null; issued_on?: string | null; expires_on?: string | null }[]
   credit_ratings?: { agency: string; grade: string; rated_on?: string | null; valid_until?: string | null }[]
   rnd_history?: { title: string; project_no?: string | null; funding_agency?: string | null; start_date?: string | null;
