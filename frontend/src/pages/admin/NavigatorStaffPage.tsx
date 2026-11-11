@@ -9,13 +9,19 @@ import { fmtDay, fmtKrw, MatchItem, VerdictSummary } from '../navigator/componen
 const fmtBrn = (v?: string) => (v && v.length === 10 ? `${v.slice(0, 3)}-${v.slice(3, 5)}-${v.slice(5)}` : v ?? '')
 const STATES: [string, string][] = [['', '전체'], ['OPEN', '접수중'], ['UPCOMING', '접수전'], ['CLOSED', '마감']]
 const STATE_TONES: Record<string, string> = { OPEN: 'ok', UPCOMING: 'info', CLOSED: 'muted' }
+// 판정별로 나눠 각각 총점 순. 정보부족을 적합 뒤에 이어 붙이면 분야가 맞는 기업이 분야가 다른 적합 기업 뒤로 밀린다
+const GROUPS: { verdict: Verdict; hint: string }[] = [
+  { verdict: 'ELIGIBLE', hint: '필수 요건을 모두 충족' },
+  { verdict: 'NEEDS_INFO', hint: '확인이 필요한 요건만 채우면 적합이 될 수 있음' },
+  { verdict: 'INELIGIBLE', hint: '필수 요건 미충족' },
+]
 
 export function NavigatorStaffPage() {
   const [state, setState] = useState('')
   const anns = useAsync(() => listAnnouncements({ receipt_state: state || undefined }), [state])
   const [selected, setSelected] = useState<number | null>(null)
   const [result, setResult] = useState<MatchRun | null>(null)
-  const [filter, setFilter] = useState<Verdict | null>(null)
+  const [showIneligible, setShowIneligible] = useState(false)
   const [company, setCompany] = useState<FullProfile | null>(null)
   const { busy, run } = useAction()
 
@@ -25,13 +31,18 @@ export function NavigatorStaffPage() {
 
   useEffect(() => {
     if (selected == null) return
-    setResult(null); setCompany(null); setFilter(null)
+    setResult(null); setCompany(null); setShowIneligible(false)
     void run(async () => setResult(await latestAnnouncementRun(selected)))
   }, [selected, run])
 
   const ann = anns.data?.find((a) => a.id === selected) ?? null
   const rerun = () => run(async () => setResult(await runAnnouncementMatching(selected!)))
-  const recs = (result?.recommendations ?? []).filter((r) => !filter || r.verdict === filter)
+  const groups = GROUPS.map((g) => ({
+    ...g,
+    recs: (result?.recommendations ?? []).filter((r) => r.verdict === g.verdict)
+      .sort((a, b) => b.total_score - a.total_score),
+  }))
+  const openProfile = (orgId: number) => void run(async () => setCompany(await staffCompanyProfile(orgId)))
 
   return (
     <>
@@ -79,25 +90,34 @@ export function NavigatorStaffPage() {
           {result && (
             <Card title="판정 결과" actions={<VerdictSummary run={result} />}>
               {!result.run ? <Empty>매칭 이력이 없습니다.</Empty> : (
-                <>
-                  <div className="chips" style={{ marginTop: 0, marginBottom: 10 }}>
-                    <button className={`chip ${!filter ? 'chip-on' : ''}`} onClick={() => setFilter(null)}>전체</button>
-                    {(['ELIGIBLE', 'NEEDS_INFO', 'INELIGIBLE'] as Verdict[]).map((v) => (
-                      <button key={v} className={`chip ${filter === v ? 'chip-on' : ''}`} onClick={() => setFilter(v)}>
-                        {VERDICT_LABELS[v]} {result.summary[v]}
-                      </button>
-                    ))}
-                  </div>
-                  {recs.length === 0 ? <Empty>해당하는 기업이 없습니다.</Empty> : (
-                    <ul className="match-list">
-                      {recs.map((r) => (
-                        <MatchItem key={r.id} rec={r}
-                          title={<span><strong>{r.company_name}</strong> <span className="small muted">{fmtBrn(r.business_reg_no)}</span></span>}
-                          onTitle={() => void run(async () => setCompany(await staffCompanyProfile(r.organization_id)))} />
-                      ))}
-                    </ul>
-                  )}
-                </>
+                <div className="stack">
+                  {groups.map((g) => {
+                    const hidden = g.verdict === 'INELIGIBLE' && !showIneligible
+                    return (
+                      <section key={g.verdict}>
+                        <h4 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span className={`badge badge-${VERDICT_TONES[g.verdict]}`}>{VERDICT_LABELS[g.verdict]}</span>
+                          {g.recs.length}곳
+                          <span className="small muted" style={{ fontWeight: 'normal' }}>{g.hint}</span>
+                          {g.verdict === 'INELIGIBLE' && g.recs.length > 0 && (
+                            <button className="btn btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setShowIneligible(!showIneligible)}>
+                              {showIneligible ? '접기' : '펼치기'}
+                            </button>
+                          )}
+                        </h4>
+                        {hidden ? null : g.recs.length === 0 ? <Empty>해당하는 기업이 없습니다.</Empty> : (
+                          <ul className="match-list">
+                            {g.recs.map((r, i) => (
+                              <MatchItem key={r.id} rec={r} rank={i + 1}
+                                title={<span><strong>{r.company_name}</strong> <span className="small muted">{fmtBrn(r.business_reg_no)}</span></span>}
+                                onTitle={() => openProfile(r.organization_id)} />
+                            ))}
+                          </ul>
+                        )}
+                      </section>
+                    )
+                  })}
+                </div>
               )}
             </Card>
           )}

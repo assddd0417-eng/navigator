@@ -192,13 +192,16 @@ def _metrics(pairs: list[dict], rankings: dict) -> dict:
                "verdict_accuracy_pct": round(100.0 * sum(p["verdict_ok"] for p in pairs) / n, 1),
                "reason_accuracy_pct": round(100.0 * sum(p["why_ok"] for p in pairs) / n, 1),
                "confusion": confusion}
-    hits, eligible_hits, rr, cand = [], [], [], []
+    # 담당자 화면은 판정별 목록(적합 / 정보부족 / 부적격)을 따로 총점 순으로 보여 준다.
+    # group: 정답 기업이 자기 판정 목록 안에서 몇 위인지, overall: 판정 → 총점 한 줄 순위
+    hits, overall, eligible_hits, rr, cand = [], [], [], [], []
     for r in rankings.values():
         order = [o for o, *_ in r["ranked"]]
         verdict = {o: v for o, _, v, _ in r["ranked"]}
         for o in r["major"]:
-            pos = order.index(o) + 1
+            pos = [x for x in order if verdict[x] == verdict[o]].index(o) + 1
             hits.append(pos)
+            overall.append(order.index(o) + 1)
             rr.append(1.0 / pos)
             cand.append(o in r["candidates"])
             if verdict[o] == "ELIGIBLE":
@@ -206,6 +209,7 @@ def _metrics(pairs: list[dict], rankings: dict) -> dict:
     m["major_total"] = len(hits)
     for k in TOP_KS:
         m[f"top{k}_recall_major_pct"] = round(100.0 * sum(h <= k for h in hits) / len(hits), 1)
+        m[f"top{k}_recall_major_overall_pct"] = round(100.0 * sum(h <= k for h in overall) / len(overall), 1)
         m[f"top{k}_recall_eligible_major_pct"] = (round(100.0 * sum(h <= k for h in eligible_hits) / len(eligible_hits), 1)
                                                  if eligible_hits else None)
     m["mrr_major"] = round(sum(rr) / len(rr), 3)
@@ -229,16 +233,16 @@ def print_report(res: dict) -> None:
     print("-" * 78)
     for ann_id, r in res["rankings"].items():
         print(f" 공고 {ann_id} {r['title'][:40]}")
-        for i, (o, name, v, total) in enumerate(r["ranked"][:6], 1):
-            mark = "★" if o in r["major"] else " "
-            print(f"   {i}. {mark} {name:<16} {VERDICT_KO[v]:<5} {total:.3f}")
-        missed = [(o, [x[0] for x in r["ranked"]].index(o) + 1) for o in r["major"]
-                  if [x[0] for x in r["ranked"]].index(o) >= 6]
-        for o, pos in missed:
-            print(f"     ★ {o} 는 {pos}위")
+        for v_code in ("ELIGIBLE", "NEEDS_INFO"):
+            group = [x for x in r["ranked"] if x[2] == v_code]
+            print(f"   [{VERDICT_KO[v_code]} {len(group)}곳]")
+            for i, (o, name, _, total) in enumerate(group, 1):
+                if i <= 4 or o in r["major"]:
+                    print(f"   {i:>2}. {'★' if o in r['major'] else ' '} {name:<16} {total:.3f}")
     print("-" * 78)
-    print(f" 정답 기업 {m['major_total']}건 · 상위 3 포함률 {m['top3_recall_major_pct']}% · 상위 5 {m['top5_recall_major_pct']}% "
-          f"· MRR {m['mrr_major']} · 후보 검색 포함 {m['candidate_recall_major_pct']}%")
+    print(f" 정답 기업 {m['major_total']}건 (판정별 목록 안 순위) · 상위 3 포함률 {m['top3_recall_major_pct']}% "
+          f"· 상위 5 {m['top5_recall_major_pct']}% · MRR {m['mrr_major']} · 후보 검색 포함 {m['candidate_recall_major_pct']}%")
+    print(f" 한 줄 순위(판정 → 총점)였다면: 상위 3 {m['top3_recall_major_overall_pct']}% · 상위 5 {m['top5_recall_major_overall_pct']}%")
     print(f" 그중 적합 판정 정답만: 상위 3 {m['top3_recall_eligible_major_pct']}% · 상위 5 {m['top5_recall_eligible_major_pct']}%")
     if res["embedder"] != "bge_m3":
         print(" ※ EMBEDDER 가 bge_m3 가 아닙니다. 판정 수치는 그대로 쓰되, 순위 수치는 참고만 하세요.")
