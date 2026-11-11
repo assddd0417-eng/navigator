@@ -34,6 +34,14 @@ BASE_URL=http://localhost:8000 ./scripts/smoke_test.sh                     # 4. 
 시드 사용자(`X-User-Id`): 1 PLANNER · 2 DEPT_REVIEWER · 3 EXPERT · 4 CURATOR · 5 VIEWER.
 스모크 스크립트는 단계마다 HTTP 상태코드를 확인해 PASS/FAIL 을 찍고, 하나라도 실패하면 종료 코드 1 을 돌려준다.
 
+## 한 주소로 실행 (맥)
+
+```bash
+./scripts/mac_autostart.sh   # 화면 빌드 + 로그인 시 자동 실행 등록. 이후 http://127.0.0.1:8000/navigator 만 열면 됨
+```
+
+API 는 `/api/*`, 나머지는 빌드된 화면 (`backend/app/site.py`). 자동 실행 없이 한 번만: `cd backend && uvicorn app.site:site --port 8000` (먼저 `cd frontend && npm run build`).
+
 ## 프론트엔드 시연
 
 위 1~3단계로 백엔드를 띄운 뒤 `cd frontend && npm install && npm run dev` → http://localhost:5173 에서 역할을 골라 로그인한다. 자세한 내용과 시연 순서는 `frontend/README.md`.
