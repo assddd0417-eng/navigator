@@ -2,7 +2,13 @@ import { Link } from 'react-router-dom'
 import {
   getRecommendationKpi, getReviewQueue, getWorkTimeKpi, listCards, listDemands, listDocuments,
 } from '../../api/endpoints'
+import { useAuth } from '../../auth/AuthContext'
 import { Card, Empty, PageHeader, pct, statusLabel, useAsync } from '../../components/ui'
+
+const TASK_LABELS: Record<string, string> = {
+  RESEARCH: '관련 성과·과제 조사', DOCUMENT_READING: '자료 읽기',
+  CANDIDATE_LIST: '후보 목록 만들기', REVIEW_MATERIAL: '검토 자료 작성',
+}
 
 function countBy<T>(rows: T[], key: (r: T) => string): Record<string, number> {
   return rows.reduce<Record<string, number>>((acc, r) => {
@@ -35,17 +41,19 @@ function StatusBar({ counts, order }: { counts: Record<string, number>; order: s
 
 /** 관리자(기획자·검수자) 대시보드: 전체 진행 현황과 PoC KPI */
 export function DashboardPage() {
+  const { role } = useAuth()
   const { data, loading } = useAsync(async () => {
-    const [kpi, queue, cards, demands, docs, work] = await Promise.all([
-      getRecommendationKpi(), getReviewQueue(false), listCards(), listDemands(), listDocuments(), getWorkTimeKpi(),
+    const [kpi, queue, mine, cards, demands, docs, work] = await Promise.all([
+      getRecommendationKpi(), getReviewQueue(false), getReviewQueue(true), listCards(), listDemands(), listDocuments(),
+      getWorkTimeKpi(),
     ])
-    return { kpi, queue, cards, demands, docs, work }
+    return { kpi, queue, mine, cards, demands, docs, work }
   })
 
   if (loading && !data) return <div className="page-loading">불러오는 중…</div>
-  if (!data) return <Empty>대시보드를 불러오지 못했습니다. 백엔드 연결을 확인하세요.</Empty>
+  if (!data) return <Empty>화면을 불러오지 못했습니다. 잠시 뒤 새로고침해 주세요.</Empty>
 
-  const { kpi, queue, cards, demands, docs, work } = data
+  const { kpi, queue, mine, cards, demands, docs, work } = data
   const recTotal = kpi.reduce((a, r) => a + r.recommendations, 0)
   const withEvidence = kpi.reduce((a, r) => a + r.with_evidence, 0)
   const reviewed = kpi.reduce((a, r) => a + r.finally_reviewed, 0)
@@ -54,69 +62,101 @@ export function DashboardPage() {
   const overdue = queue.filter((q) => q.is_overdue).length
   const published = cards.filter((c) => c.status === 'PUBLISHED').length
 
+  const mineOverdue = mine.filter((q) => q.is_overdue).length
   const flow = [
-    { label: '원문 문서', value: docs.length, hint: '등록·청킹' },
-    { label: '성과카드', value: published, hint: `발행 / 전체 ${cards.length}` },
-    { label: '기획수요', value: demands.length, hint: '등록' },
-    { label: 'AI 추천', value: recTotal, hint: '매칭 결과' },
-    { label: '검토 대기', value: queue.length, hint: overdue ? `기한 초과 ${overdue}` : '배정됨' },
-    { label: '최종 판정', value: reviewed, hint: `채택 ${adopted}` },
+    { label: '올라온 보고서', value: docs.length, hint: '결과보고서 등 원문', to: null },
+    { label: '발행된 성과카드', value: published, hint: `전체 ${cards.length}장 중`, to: '/projects?tab=cards' },
+    { label: '기획수요', value: demands.length, hint: '새로 필요한 기술', to: '/projects' },
+    { label: 'AI 추천', value: recTotal, hint: '이어 쓸 성과 후보', to: '/projects' },
+    { label: '검토 중', value: queue.length, hint: overdue ? `기한 넘김 ${overdue}건` : '사람이 확인하는 단계', to: '/reviews?view=all' },
+    { label: '최종 결정', value: reviewed, hint: `채택 ${adopted}건`, to: null },
   ]
 
   return (
     <>
-      <PageHeader title="전체 진행 현황" subtitle="문서 등록부터 최종 판정까지 이어달리기 전 과정을 한눈에 봅니다." />
+      <PageHeader title="한눈에 보기" subtitle="보고서가 올라와서 최종 결정이 나기까지 지금 어디까지 왔는지 보여 줍니다." />
+
+      <Card title="오늘 할 일" className="todo-card">
+        <div className="todo">
+          {role === 'DEPT_REVIEWER' ? (
+            <Link to="/reviews" className={`todo-item ${mine.length ? 'todo-hot' : ''}`}>
+              <strong>{mine.length}건</strong>
+              <span>우리 부서로 온 검토 요청{mineOverdue ? ` (기한 넘김 ${mineOverdue}건)` : ''}</span>
+              <span className="todo-go">검토하러 가기 →</span>
+            </Link>
+          ) : (
+            <Link to="/projects" className="todo-item">
+              <strong>{demands.length}건</strong>
+              <span>등록된 기획수요 · AI로 이어 쓸 성과를 찾고 검토를 맡기세요</span>
+              <span className="todo-go">연계 후보 찾기 →</span>
+            </Link>
+          )}
+          <Link to={role === 'DEPT_REVIEWER' ? '/reviews?view=all' : '/reviews'} className="todo-item">
+            <strong>{role === 'DEPT_REVIEWER' ? queue.length : mine.length}건</strong>
+            <span>{role === 'DEPT_REVIEWER' ? '전체 검토 대기 (다른 부서 포함)' : '내가 맡은 검토'}</span>
+            <span className="todo-go">목록 보기 →</span>
+          </Link>
+          <Link to="/gaps" className="todo-item">
+            <strong>🌍</strong>
+            <span>해외 수요와 비교해 우리 기술이 부족한 곳</span>
+            <span className="todo-go">갭 분석 보기 →</span>
+          </Link>
+        </div>
+      </Card>
 
       <div className="flow">
-        {flow.map((s, i) => (
-          <div key={s.label} className="flow-step">
+        {flow.map((s, i) => {
+          const body = (<>
             <div className="flow-num">{i + 1}</div>
             <div className="flow-value">{s.value}</div>
             <div className="flow-label">{s.label}</div>
             <div className="flow-hint">{s.hint}</div>
-          </div>
-        ))}
+          </>)
+          return s.to
+            ? <Link key={s.label} to={s.to} className="flow-step flow-link">{body}</Link>
+            : <div key={s.label} className="flow-step">{body}</div>
+        })}
       </div>
 
       <div className="kpi-row">
         <div className="kpi">
-          <div className="kpi-label">추천 원문 근거 연결률</div>
+          <div className="kpi-label">근거 문서가 붙은 추천</div>
           <div className="kpi-value">{pct(ratio(withEvidence, recTotal))}</div>
-          <div className="kpi-target">목표 100% · {withEvidence}/{recTotal}건</div>
+          <div className="kpi-target">목표 100% · 추천 {recTotal}건 중 {withEvidence}건</div>
         </div>
         <div className="kpi">
-          <div className="kpi-label">최종 검토율</div>
+          <div className="kpi-label">최종 결정까지 끝난 추천</div>
           <div className="kpi-value">{pct(ratio(reviewed, recTotal))}</div>
-          <div className="kpi-target">목표 100% · {reviewed}/{recTotal}건</div>
+          <div className="kpi-target">목표 100% · 추천 {recTotal}건 중 {reviewed}건</div>
         </div>
         <div className="kpi">
-          <div className="kpi-label">채택된 연계 후보</div>
-          <div className="kpi-value">{adopted}</div>
-          <div className="kpi-target">최종 판정 {reviewed}건 중</div>
+          <div className="kpi-label">채택된 연계</div>
+          <div className="kpi-value">{adopted}건</div>
+          <div className="kpi-target">최종 결정 {reviewed}건 중</div>
         </div>
         <div className="kpi">
-          <div className="kpi-label">검토 대기</div>
-          <div className="kpi-value">{queue.length}</div>
-          <div className="kpi-target">{overdue ? `기한 초과 ${overdue}건` : '기한 초과 없음'} · <Link to="/reviews">검토 큐 →</Link></div>
+          <div className="kpi-label">검토 기다리는 추천</div>
+          <div className="kpi-value">{queue.length}건</div>
+          <div className="kpi-target">{overdue ? `기한 넘김 ${overdue}건` : '기한 넘긴 건 없음'} · <Link to="/reviews?view=all">목록 →</Link></div>
         </div>
       </div>
 
       <div className="grid-2">
-        <Card title="문서 처리 상태">
+        <Card title="올라온 보고서 처리 상태">
           <StatusBar counts={countBy(docs, (d) => d.parse_status)} order={['EMBEDDED', 'CHUNKED', 'PARSED', 'PENDING', 'FAILED']} />
-          <p className="muted small">현재 계정이 열람할 수 있는 문서만 집계됩니다.</p>
+          <p className="muted small">내 부서·보안등급으로 볼 수 있는 문서만 셉니다. ‘검색 가능’이 되면 AI 추천의 근거로 쓰입니다.</p>
         </Card>
         <Card title="성과카드 상태">
           <StatusBar counts={countBy(cards, (c) => c.status)} order={['PUBLISHED', 'IN_REVIEW', 'DRAFT', 'ARCHIVED']} />
         </Card>
-        <Card title="매칭 실행별 KPI">
-          {kpi.length === 0 ? <Empty>아직 매칭 실행이 없습니다. 프로젝트 관리에서 매칭을 실행하세요.</Empty> : (
+        <Card title="AI 추천을 받을 때마다의 결과">
+          {kpi.length === 0 ? <Empty>아직 AI 추천을 받은 적이 없습니다. <Link to="/projects">연계 후보 찾기</Link>에서 시작하세요.</Empty> : (
             <table className="table">
-              <thead><tr><th>실행</th><th>추천</th><th>근거 연결률</th><th>최종 검토율</th><th>채택</th></tr></thead>
+              <thead><tr><th>회차</th><th>추천 수</th><th>근거 붙은 비율</th><th>최종 결정 비율</th><th>채택</th></tr></thead>
               <tbody>
-                {kpi.map((r) => (
+                {[...kpi].sort((a, b) => b.match_run_id - a.match_run_id).map((r, i) => (
                   <tr key={r.match_run_id}>
-                    <td>#{r.match_run_id}</td><td>{r.recommendations}</td>
+                    <td>{kpi.length - i}회차{i === 0 ? ' (최근)' : ''}</td><td>{r.recommendations}건</td>
                     <td>{pct(r.evidence_coverage_pct)}</td><td>{pct(r.final_review_pct)}</td><td>{r.adopted}</td>
                   </tr>
                 ))}
@@ -124,14 +164,14 @@ export function DashboardPage() {
             </table>
           )}
         </Card>
-        <Card title="업무시간 단축률">
-          {work.length === 0 ? <Empty>측정 데이터가 없습니다 (조사 70%·검토자료 60% 단축 목표).</Empty> : (
+        <Card title="업무 시간이 얼마나 줄었나">
+          {work.length === 0 ? <Empty>아직 잰 기록이 없습니다. (목표: 조사 시간 70%, 검토 자료 작성 60% 줄이기)</Empty> : (
             <table className="table">
-              <thead><tr><th>업무</th><th>기존(분)</th><th>AX(분)</th><th>단축률</th></tr></thead>
+              <thead><tr><th>업무</th><th>예전 방식(분)</th><th>이 시스템(분)</th><th>줄어든 비율</th></tr></thead>
               <tbody>
                 {work.map((w) => (
                   <tr key={w.task_type}>
-                    <td>{w.task_type}</td>
+                    <td>{TASK_LABELS[w.task_type] ?? w.task_type}</td>
                     <td>{w.avg_manual_min == null ? '–' : Number(w.avg_manual_min).toFixed(0)}</td>
                     <td>{w.avg_ax_min == null ? '–' : Number(w.avg_ax_min).toFixed(0)}</td>
                     <td>{pct(w.reduction_pct)}</td>

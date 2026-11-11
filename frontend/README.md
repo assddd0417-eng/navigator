@@ -19,12 +19,20 @@ npm run dev            # http://localhost:5173  (/api/* → http://localhost:800
 
 | 역할 (X-User-Id) | 화면 묶음 | 메뉴 |
 |---|---|---|
-| PLANNER 기획자 (1) | 관리자 | 진행 현황 · 프로젝트 관리(수요 등록·AI 매칭·검토 배정) · 검토 큐 |
-| DEPT_REVIEWER 조직 관리자·검수자 (2) | 관리자 | 진행 현황 · 프로젝트 관리 · 검토 큐 → 최종 판정 |
-| EXPERT 전문가 (3) | 작업자 | 내 작업(배정된 검토) · 문서 업로드 |
-| CURATOR 큐레이터·작업자 (4) | 작업자 | 내 작업(배정된 검토 + 초안 카드 발행) · 문서 업로드(→ 성과카드 초안) |
+| PLANNER 기획자 (1) | 관리자 | 한눈에 보기 · 검토할 추천 · 연계 후보 찾기(수요 등록·AI 추천·검토 요청) · 해외 수요 갭 분석 |
+| DEPT_REVIEWER 조직 관리자·검수자 (2) | 관리자 | 한눈에 보기 · 검토할 추천 → 최종 결정 · 연계 후보 찾기 · 갭 확정·기각 |
+| EXPERT 전문가 (3) | 작업자 | 내 할 일(나에게 온 검토) · 문서 올리기 · 해외 수요 갭 분석(보기) |
+| CURATOR 큐레이터·작업자 (4) | 작업자 | 내 할 일(검토 + 초안 카드 발행) · 문서 올리기(→ 성과카드 초안) · 갭 분석 다시 돌리기 |
 
-추천 상세(`/recommendations/:id`)는 모든 역할이 열고 의견을 남길 수 있다. 판정은 DEPT_REVIEWER·EXPERT, 최종 판정은 DEPT_REVIEWER 만 가능하다.
+추천 상세(`/recommendations/:id`)와 갭 분석(`/gaps`, `/gaps/:id`)은 모든 역할이 연다. 추천에는 누구나 의견을 남길 수 있다. 판정은 DEPT_REVIEWER·EXPERT, 최종 판정은 DEPT_REVIEWER 만 가능하다.
+
+## 화면 이동 규칙
+
+- 로그인 전 깊은 링크로 들어오면 로그인 뒤 그 주소(조건 포함)로 돌아간다. 그 역할이 못 보는 화면이면 역할의 첫 화면으로 간다.
+- 상단 '사용자 바꾸기'는 새 역할도 볼 수 있는 화면(추천 상세·갭 분석)이면 그대로 머물고, 아니면 첫 화면으로 간다.
+- 고른 기획수요·AI 추천 회차·탭(`/projects?demand=&run=&tab=`), 검토 목록 보기(`/reviews?view=all`), 갭 목록 보기(`/gaps?view=all`)는 주소에 남겨 새로고침·뒤로가기·링크 공유 때 같은 화면이 나온다.
+- 추천·갭 상세의 '돌아가기'는 앱 안에서 왔으면 이전 화면, 새 탭·공유 링크로 열었으면 목록으로 간다.
+- 점수는 0~1 원점수 대신 백분율과 높음(70% 이상)·보통(50% 이상)·낮음으로 보여 준다. 이 눈금은 화면 표시용이며 판정 규칙이 아니다.
 
 ## 권한 처리 원칙
 
@@ -46,6 +54,8 @@ src/
   pages/admin/          DashboardPage, ProjectsPage, ReviewQueuePage
   pages/worker/         MyTasksPage, DocumentUploadPage
   pages/shared/         RecommendationPage (추천 근거·검토 판정·의견·이력)
+  api/gaps.ts           갭 분석 API (/gaps)
+  pages/gaps/           GapListPage(해외 수요 × 갭 종류 표·목록), GapDetailPage(이유·국내 성과·메울 방법·출처·확정/기각)
   api/navigator.ts      Navigator API (기업 쪽은 X-User-Id 없음, 관리 링크는 X-Manage-Token)
   pages/navigator/      기업 화면 (로그인 없음): CompanySearchPage(/navigator), CompanyRegisterPage, CompanyManagePage(관리 링크), AlertsPanel, SubscriptionLinkPage(메일 링크)
   pages/admin/NavigatorStaffPage  담당자: 공고별 적합 기업 (/staff/navigator)
