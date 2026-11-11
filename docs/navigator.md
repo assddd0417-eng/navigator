@@ -16,7 +16,7 @@
 | 매칭 | `backend/app/services/navigator_matching.py`, 벡터 `navigator_embedding.py` |
 | 외부 수집 | 연결 부품 `backend/app/services/external/{nts,kipris,dart,bizinfo}.py` (mock 데이터 `fixtures/*_mock.json`), 실행 `services/collector.py`, API `routers/navigator_sources.py`, 명령 `python -m app.collect` |
 | 관리 링크 / 메일 | `services/access_link.py` / `services/mailer.py` |
-| 화면 | `frontend/src/pages/navigator/`, `frontend/src/pages/admin/NavigatorStaffPage.tsx`, `NavigatorSourcesPage.tsx` |
+| 화면 | `frontend/src/pages/navigator/`, `frontend/src/pages/admin/NavigatorStaffPage.tsx`, `NavigatorSourcesPage.tsx`, 표기 기준 [navigator_ux.md](navigator_ux.md) |
 | 테스트 데이터 | `seeds/navigator_companies.sql`, `seeds/navigator_announcements.sql` (재실행 가능) |
 | 검증 | 가상 기업 20곳 × 공고 5건 정답 `seeds/navigator_eval/corpus.json`, 측정 `python -m app.navigator_eval`, 결과 [navigator_eval.md](navigator_eval.md) |
 

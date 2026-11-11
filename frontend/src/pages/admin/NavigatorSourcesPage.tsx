@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { listFetchJobs, listSources, runSource, type FetchJob, type RunResult, type SourceRow } from '../../api/navigator'
-import { Card, Empty, fmtDate, PageHeader, RoleHint, useAction, useAsync } from '../../components/ui'
+import { Card, Empty, fmtDate, PageHeader, useAction, useAsync } from '../../components/ui'
 
 const KIND_LABELS: Record<string, string> = {
   BIZ_STATUS: '휴·폐업', PATENT: '특허', CREDIT: '신용등급', FINANCE: '재무', RND: 'R&D 과제',
@@ -36,22 +36,19 @@ export function NavigatorSourcesPage() {
 
   return (
     <>
-      <PageHeader title="외부 수집" subtitle="Navigator 기업·공고 외부 출처" actions={<RoleHint roles={['PLANNER']} />} />
+      <PageHeader title="외부 수집" subtitle="기업 정보와 공고를 공공데이터에서 가져온 기록" />
       {last && (
         <div className={`notice ${last.status === 'SUCCEEDED' ? 'notice-ok' : ''}`}>
-          {last.source} ({last.mode}) {last.status === 'SUCCEEDED' ? `완료: ${fmtResult(last.counts)}` : `실패: ${last.error}`}
+          {last.source} {last.status === 'SUCCEEDED' ? `수집 완료: ${fmtResult(last.counts)}` : `수집 실패: ${last.error}`}
         </div>
       )}
       <Card title="출처">
-        <p className="small muted">
-          mock 은 가상 데이터, live 는 실제 API 입니다. 서버 설정 SOURCE_&lt;코드&gt;=mock|live 와 API 키로 바꿉니다.
-          주기 수집은 서버에서 <code>python -m app.collect --due</code> 를 정기 실행합니다.
-        </p>
+        <p className="small muted">‘시험 데이터’는 연결 전이라 가상 자료로 동작하는 출처입니다. 주기가 있는 출처는 정해진 간격으로 자동 수집합니다.</p>
         {sources.loading ? <div className="page-loading">불러오는 중…</div> : !sources.data?.length ? <Empty>출처가 없습니다.</Empty> : (
           <div className="table-wrap">
             <table className="table">
               <thead>
-                <tr><th>출처</th><th>데이터</th><th>모드</th><th>주기</th><th>마지막 수집</th><th>결과</th><th>다음 주기</th><th /></tr>
+                <tr><th>출처</th><th>데이터</th><th>연결</th><th>주기</th><th>마지막 수집</th><th>결과</th><th>다음 수집</th><th /></tr>
               </thead>
               <tbody>
                 {sources.data.map((s) => (
@@ -60,12 +57,12 @@ export function NavigatorSourcesPage() {
                       <button className="link-btn" onClick={() => setFilter(filter === s.code ? null : s.code)}>
                         <strong>{s.name}</strong>
                       </button>
-                      <div className="small muted">{s.code} · {s.provider}{s.is_paid ? ' · 유료' : ''}</div>
+                      <div className="small muted">{s.provider}{s.is_paid ? ' · 유료' : ''}</div>
                     </td>
                     <td className="nowrap">{KIND_LABELS[s.data_kind] ?? s.data_kind}</td>
                     <td>
                       {s.implemented
-                        ? <span className={`badge badge-${s.mode === 'live' ? 'ok' : 'muted'}`}>{s.mode}</span>
+                        ? <span className={`badge badge-${s.mode === 'live' ? 'ok' : 'muted'}`}>{s.mode === 'live' ? '실제 연결' : '시험 데이터'}</span>
                         : <span className="badge badge-warn">미연결</span>}
                     </td>
                     <td className="nowrap">{fmtInterval(s.fetch_interval)}</td>
@@ -91,11 +88,11 @@ export function NavigatorSourcesPage() {
           </div>
         )}
         {sources.data?.some((s) => !s.implemented) && (
-          <p className="small muted">미연결: 유료 계약(NICE·KED) 또는 비용 확인(NTIS) 후 연결합니다. 그 전까지는 기업 자가입력과 증빙으로 받습니다.</p>
+          <p className="small muted">미연결: 유료 계약(NICE·KED) 또는 비용 확인(NTIS) 후 연결합니다. 그 전까지는 기업이 직접 입력한 값과 증빙을 씁니다.</p>
         )}
       </Card>
 
-      <Card title={filter ? `수집 기록 (${filter})` : '수집 기록'} actions={filter &&
+      <Card title={filter ? `수집 기록 (${sources.data?.find((x) => x.code === filter)?.name ?? filter})` : '수집 기록'} actions={filter &&
         <button className="btn btn-sm" onClick={() => setFilter(null)}>전체 보기</button>}>
         {jobs.loading ? <div className="page-loading">불러오는 중…</div> : !jobs.data?.length ? <Empty>기록이 없습니다.</Empty> : (
           <div className="table-wrap">
@@ -105,7 +102,7 @@ export function NavigatorSourcesPage() {
                 {jobs.data.map((j: FetchJob) => (
                   <tr key={j.id}>
                     <td className="nowrap small">{fmtDate(j.started_at)}</td>
-                    <td className="nowrap">{j.source} <span className="small muted">{j.mode.toLowerCase()}</span></td>
+                    <td className="nowrap">{sources.data?.find((x) => x.code === j.source)?.name ?? j.source}</td>
                     <td>{j.company_name ?? '전체'}</td>
                     <td className="nowrap">{TRIGGER_LABELS[j.trigger_kind]}</td>
                     <td><span className={`badge badge-${STATUS[j.status][1]}`}>{STATUS[j.status][0]}</span></td>

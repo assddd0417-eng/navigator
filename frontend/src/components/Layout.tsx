@@ -17,7 +17,7 @@ export function Layout() {
     try {
       const me = await login(id)
       const next = SEED_USERS.find((u) => u.id === me.id)!
-      toast.show({ kind: 'info', title: `${ROLES[next.role].label}(으)로 전환했습니다`, message: `${me.name} · X-User-Id: ${me.id}` })
+      toast.show({ kind: 'info', title: `${ROLES[next.role].label}(으)로 전환했습니다`, message: me.name })
       navigate(homePath(next.role))
     } catch {
       toast.show({ kind: 'error', title: '역할 전환 실패', message: '백엔드에서 사용자를 확인하지 못했습니다.' })
@@ -53,7 +53,6 @@ export function Layout() {
           <div className="whoami">
             <div className="whoami-name">{user.name}</div>
             <div className="whoami-role">{meta.label}</div>
-            <div className="whoami-header">X-User-Id: {user.id}</div>
           </div>
           {menu.map((m) => (
             <NavLink key={m.path} to={m.path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
