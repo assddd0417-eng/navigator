@@ -8,6 +8,7 @@ from app.repositories.sql import CLEARANCE_OK, evidence_from_chunk, insert, upda
 from app.schemas.cards import CardCreate, CardUpdate
 from app.schemas.common import Created, EmbedResult, EvidenceIn
 from app.services.embedding import sync_card_embeddings
+from app.services.gap_analysis import auto_run
 
 router = APIRouter(prefix="/cards", tags=["성과 활용카드"])
 CURATORS = ("CURATOR", "PLANNER")
@@ -131,6 +132,7 @@ async def publish_card(card_id: int, user: CurrentUser = Depends(require_roles("
         await update(conn, "achievement_card", card_id,
                      {"status": "PUBLISHED", "curated_by": user.id}, extra_sql="curated_at = now()")
         await sync_card_embeddings(conn, card_id)
+    await auto_run(user.id, "NEW_CARD", None, rid)  # 새 국내 성과로 열린 갭이 메워졌는지 다시 대조
 
 
 @router.post("/{card_id}/embeddings", response_model=EmbedResult)

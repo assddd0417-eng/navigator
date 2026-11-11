@@ -62,6 +62,7 @@ class ImportSummary(BaseModel):
     demands_created: int
     demands_updated: int
     embedded: int
+    gap_run_id: int | None = Field(None, description="올린 뒤 자동으로 돈 갭 분석 실행 번호")
 
 
 class SimilarCard(BaseModel):
