@@ -27,7 +27,12 @@ def _bizno(raw: str) -> str:
 
 
 def _send_link(email: str, company_name: str, link: access_link.IssuedLink, first: bool) -> LinkSent:
-    what = "등록이 완료되었습니다" if first else "관리 링크를 다시 보내 드립니다"
+    if first:   # 등록 메일은 알림 주소 확인용. 회사 정보는 화면에서 바로 입력하므로 링크를 넣지 않는다
+        mailer.send(email, f"[Navigator] {company_name} 등록 완료",
+                    f"{company_name} 등록이 완료되었습니다.\n조건에 맞는 새 공고가 올라오면 이 주소로 알려 드립니다.\n"
+                    "본인이 등록하지 않았다면 이 메일을 무시하세요.")
+        return LinkSent(sent_to=mailer.mask_email(email), expires_at=link.expires_at.isoformat(), dev_management_link=None)
+    what = "관리 링크를 다시 보내 드립니다"
     mailer.send(email, f"[Navigator] {company_name} 관리 링크",
                 f"{company_name} 기업 프로필 {what}.\n\n아래 주소에서 회사 정보를 고치고 신용정보를 볼 수 있습니다.\n"
                 f"{link.url}\n\n유효기간: {link.expires_at:%Y-%m-%d %H:%M} (UTC) 까지. "

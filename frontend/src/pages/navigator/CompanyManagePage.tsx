@@ -180,21 +180,63 @@ function ProfilePanel({ token, profile, missing, onSaved }: {
   missing: string[]
   onSaved: (p: FullProfile) => void
 }) {
-  const [f, setF] = useState({
-    company_name: profile.company_name, main_business: s(profile.main_business), homepage: s(profile.homepage),
-    company_size: s(profile.company_size), established_on: s(profile.established_on),
-    employee_count: s(profile.employee_count), annual_revenue_krw: s(profile.annual_revenue_krw),
-    revenue_year: s(profile.revenue_year), region: s(profile.region), address: s(profile.address),
-  })
-  const [certs, setCerts] = useState<CertRow[]>(profile.certifications.filter((c) => c.origin === 'SELF').map((c) => ({
-    cert_type_code: c.cert_type_code, cert_no: s(c.cert_no), issued_on: s(c.issued_on), expires_on: s(c.expires_on) })))
-  const [credits, setCredits] = useState<CreditRow[]>(profile.credit_ratings.filter((c) => c.origin === 'SELF').map((c) => ({
-    agency: c.agency, grade: c.grade, rated_on: s(c.rated_on), valid_until: s(c.valid_until) })))
-  const [rnds, setRnds] = useState<RndRow[]>(profile.rnd_history.filter((r) => r.origin === 'SELF').map((r) => ({
-    title: r.title, funding_agency: s(r.funding_agency), start_date: s(r.start_date), end_date: s(r.end_date), role: r.role })))
   const { busy, run } = useAction()
   const toast = useToast()
+  const autofill = () => void run(async () => {
+    const res = await autofillProfile(token)
+    const ok = res.results.filter((r) => r.ok).map((r) => r.label)
+    const failed = res.results.filter((r) => !r.ok).map((r) => r.label)
+    toast.show({ kind: failed.length ? 'error' : 'success', title: '공공데이터로 채웠습니다',
+      message: [ok.length && `가져옴: ${ok.join(', ')}`, failed.length && `연결 안 됨: ${failed.join(', ')}`].filter(Boolean).join(' · ') })
+    onSaved(res.profile)
+  })
+  return (
+    <CompanyInfoForm profile={profile} missing={missing} submitLabel="저장하고 다시 판정"
+      top={
+        <div className="manage-box">
+          <div>
+            <strong>공공데이터로 자동 채우기</strong>
+            <div className="small muted">국세청(휴·폐업), 특허청(특허), DART(매출·근로자 수)에서 가져와 ‘공공데이터 확인’으로 표시합니다. 인증·R&amp;D 이력은 아래에 직접 입력해 주세요.</div>
+          </div>
+          <button type="button" className="btn btn-primary" disabled={busy} onClick={autofill}>{busy ? '가져오는 중…' : '자동 채우기'}</button>
+        </div>
+      }
+      onSubmit={async (body) => {
+        const p = await updateMyProfile(token, body)
+        toast.show({ kind: 'success', title: '저장했습니다', message: '바뀐 정보로 공고를 다시 판정했습니다.' })
+        onSaved(p)
+      }} />
+  )
+}
+
+/** 등록 화면에서만 쓰는 칸 (국세청 확인용 + 알림 이메일) */
+export type Identity = { business_reg_no: string; representative_name: string; opened_on: string; email: string }
+
+/** 회사 정보 입력 양식. 등록(profile 없음, identity 있음)과 수정에 같이 쓴다. */
+export function CompanyInfoForm({ profile, missing = [], identity, setIdentity, top, submitLabel, onSubmit }: {
+  profile: FullProfile | null
+  missing?: string[]
+  identity?: Identity
+  setIdentity?: (i: Identity) => void
+  top?: ReactNode
+  submitLabel: string
+  onSubmit: (body: ProfileUpdate) => Promise<void>
+}) {
+  const [f, setF] = useState({
+    company_name: profile?.company_name ?? '', main_business: s(profile?.main_business), homepage: s(profile?.homepage),
+    company_size: s(profile?.company_size), established_on: s(profile?.established_on),
+    employee_count: s(profile?.employee_count), annual_revenue_krw: s(profile?.annual_revenue_krw),
+    revenue_year: s(profile?.revenue_year), region: s(profile?.region), address: s(profile?.address),
+  })
+  const [certs, setCerts] = useState<CertRow[]>((profile?.certifications ?? []).filter((c) => c.origin === 'SELF').map((c) => ({
+    cert_type_code: c.cert_type_code, cert_no: s(c.cert_no), issued_on: s(c.issued_on), expires_on: s(c.expires_on) })))
+  const [credits, setCredits] = useState<CreditRow[]>((profile?.credit_ratings ?? []).filter((c) => c.origin === 'SELF').map((c) => ({
+    agency: c.agency, grade: c.grade, rated_on: s(c.rated_on), valid_until: s(c.valid_until) })))
+  const [rnds, setRnds] = useState<RndRow[]>((profile?.rnd_history ?? []).filter((r) => r.origin === 'SELF').map((r) => ({
+    title: r.title, funding_agency: s(r.funding_agency), start_date: s(r.start_date), end_date: s(r.end_date), role: r.role })))
+  const { busy, run } = useAction()
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value })
+  const setId = (k: keyof Identity) => (e: { target: { value: string } }) => setIdentity?.({ ...identity!, [k]: e.target.value })
 
   const save = (e: FormEvent) => {
     e.preventDefault()
@@ -211,42 +253,38 @@ function ProfilePanel({ token, profile, missing, onSaved }: {
       rnd_history: rnds.filter((r) => r.title.trim()).map((r) => ({ title: r.title.trim(), funding_agency: orNull(r.funding_agency),
         start_date: orNull(r.start_date), end_date: orNull(r.end_date), role: r.role })),
     }
-    void run(async () => {
-      const p = await updateMyProfile(token, body)
-      toast.show({ kind: 'success', title: '저장했습니다', message: '바뀐 정보로 공고를 다시 판정했습니다.' })
-      onSaved(p)
-    })
+    void run(() => onSubmit(body))
   }
-
-  const autofill = () => void run(async () => {
-    const res = await autofillProfile(token)
-    const ok = res.results.filter((r) => r.ok).map((r) => r.label)
-    const failed = res.results.filter((r) => !r.ok).map((r) => r.label)
-    toast.show({ kind: failed.length ? 'error' : 'success', title: '공공데이터로 채웠습니다',
-      message: [ok.length && `가져옴: ${ok.join(', ')}`, failed.length && `연결 안 됨: ${failed.join(', ')}`].filter(Boolean).join(' · ') })
-    onSaved(res.profile)
-  })
 
   const readonly = (origin: string) => origin !== 'SELF'
   return (
     <form className="stack" onSubmit={save}>
-      <div className="manage-box">
-        <div>
-          <strong>공공데이터로 자동 채우기</strong>
-          <div className="small muted">국세청(휴·폐업), 특허청(특허), DART(매출·근로자 수)에서 가져와 ‘공공데이터 확인’으로 표시합니다. 인증·R&amp;D 이력은 아래에 직접 입력해 주세요.</div>
-        </div>
-        <button type="button" className="btn btn-primary" disabled={busy} onClick={autofill}>{busy ? '가져오는 중…' : '자동 채우기'}</button>
-      </div>
+      {top}
       {missing.length > 0 && (
         <div className="notice small">비어 있는 항목: {missing.join(', ')}. 채울수록 판정이 정확해집니다.</div>
       )}
       <Card title="기본 정보" actions={<span className="small muted">직접 입력한 값은 기관 확인 전까지 ‘직접 입력’으로 표시됩니다</span>}>
         <div className="form">
-          <div className="form-row">
-            <label className="grow">회사 이름<input required value={f.company_name} onChange={set('company_name')} /></label>
-            <label title="국세청 확인에 쓴 값이라 바꿀 수 없습니다">대표자명<input value={s(profile.representative_name)} disabled /></label>
-            <label title="국세청 확인에 쓴 값이라 바꿀 수 없습니다">개업일<input value={s(profile.opened_on)} disabled /></label>
-          </div>
+          {identity ? (
+            <>
+              <div className="form-row">
+                <label>사업자등록번호 *<input required value={identity.business_reg_no} onChange={setId('business_reg_no')} placeholder="123-45-67890" /></label>
+                <label className="grow">회사 이름 *<input required value={f.company_name} onChange={set('company_name')} /></label>
+              </div>
+              <div className="form-row">
+                <label title="국세청 사업자 확인에 씁니다">대표자명 *<input required value={identity.representative_name} onChange={setId('representative_name')} /></label>
+                <label title="국세청 사업자 확인에 씁니다">개업일 *<input required type="date" value={identity.opened_on} onChange={setId('opened_on')} /></label>
+                <label className="grow">새 공고 알림 받을 이메일 *<input required type="email" value={identity.email} onChange={setId('email')} />
+                  <span className="field-hint">조건에 맞는 공고가 올라오면 이 주소로 알려 드립니다</span></label>
+              </div>
+            </>
+          ) : (
+            <div className="form-row">
+              <label className="grow">회사 이름<input required value={f.company_name} onChange={set('company_name')} /></label>
+              <label title="국세청 확인에 쓴 값이라 바꿀 수 없습니다">대표자명<input value={s(profile?.representative_name)} disabled /></label>
+              <label title="국세청 확인에 쓴 값이라 바꿀 수 없습니다">개업일<input value={s(profile?.opened_on)} disabled /></label>
+            </div>
+          )}
           <label>주요 사업<textarea rows={2} value={f.main_business} onChange={set('main_business')} /></label>
           <div className="form-row">
             <label>기업 규모
@@ -271,9 +309,9 @@ function ProfilePanel({ token, profile, missing, onSaved }: {
             <label className="grow">주소<input value={f.address} onChange={set('address')} /></label>
             <label className="grow">홈페이지<input value={f.homepage} onChange={set('homepage')} /></label>
           </div>
-          {profile.field_sources.some((x) => x.differs) && (
+          {profile?.field_sources.some((x) => x.differs) && (
             <div className="notice small">
-              {profile.field_sources.filter((x) => x.differs).map((x) => FIELD_LABELS[x.field_name] ?? x.field_name).join(', ')}이(가)
+              {profile!.field_sources.filter((x) => x.differs).map((x) => FIELD_LABELS[x.field_name] ?? x.field_name).join(', ')}이(가)
               공공데이터 값과 다릅니다. 판정은 공공데이터 값으로 합니다.
             </div>
           )}
@@ -281,7 +319,7 @@ function ProfilePanel({ token, profile, missing, onSaved }: {
       </Card>
 
       <Card title="인증·지정">
-        <ReadonlyRows rows={profile.certifications.filter((c) => readonly(c.origin)).map((c) =>
+        <ReadonlyRows rows={(profile?.certifications ?? []).filter((c) => readonly(c.origin)).map((c) =>
           [`${c.cert_type_name}${c.expires_on ? ` (만료 ${c.expires_on})` : ''}`, ORIGIN_LABELS[c.origin] ?? c.origin])} />
         <EditRows rows={certs} setRows={setCerts} empty={{ cert_type_code: 'VENTURE', cert_no: '', issued_on: '', expires_on: '' }}
           addLabel="인증 추가" render={(r, upd) => (
@@ -299,7 +337,7 @@ function ProfilePanel({ token, profile, missing, onSaved }: {
       </Card>
 
       <Card title="신용등급" actions={<span className="small muted">회사와 기관 담당자만 볼 수 있습니다</span>}>
-        <ReadonlyRows rows={profile.credit_ratings.filter((c) => readonly(c.origin)).map((c) =>
+        <ReadonlyRows rows={(profile?.credit_ratings ?? []).filter((c) => readonly(c.origin)).map((c) =>
           [`${AGENCY_LABELS[c.agency] ?? c.agency} ${c.grade}${c.rated_on ? ` (${c.rated_on} 평가)` : ''}`, ORIGIN_LABELS[c.origin] ?? c.origin])} />
         <EditRows rows={credits} setRows={setCredits} empty={{ agency: 'NICE', grade: '', rated_on: '', valid_until: '' }}
           addLabel="등급 추가" render={(r, upd) => (
@@ -317,7 +355,7 @@ function ProfilePanel({ token, profile, missing, onSaved }: {
       </Card>
 
       <Card title="R&D 수행 이력">
-        <ReadonlyRows rows={profile.rnd_history.filter((r) => readonly(r.origin)).map((r) =>
+        <ReadonlyRows rows={(profile?.rnd_history ?? []).filter((r) => readonly(r.origin)).map((r) =>
           [`${r.title} (${r.role === 'LEAD' ? '주관' : '참여'}, ${r.end_date ? `~${r.end_date}` : '진행 중'})`, ORIGIN_LABELS[r.origin] ?? r.origin])} />
         <EditRows rows={rnds} setRows={setRnds}
           empty={{ title: '', funding_agency: '', start_date: '', end_date: '', role: 'LEAD' as const }}
@@ -337,9 +375,9 @@ function ProfilePanel({ token, profile, missing, onSaved }: {
       </Card>
 
       <Card title="특허">
-        {profile.patents.length === 0 ? <Empty>등록된 특허가 없습니다.</Empty> : (
+        {!profile?.patents.length ? <Empty>등록된 특허가 없습니다. 등록 후 ‘자동 채우기’로 특허청에서 가져올 수 있습니다.</Empty> : (
           <ul className="plain-list small">
-            {profile.patents.map((p) => (
+            {profile!.patents.map((p) => (
               <li key={p.application_no}>{p.title} <span className="muted">{p.registration_no ? `등록 ${p.registration_no}` : `출원 ${p.application_no}`}</span></li>
             ))}
           </ul>
@@ -348,7 +386,7 @@ function ProfilePanel({ token, profile, missing, onSaved }: {
       </Card>
 
       <div className="form-foot sticky-foot">
-        <button className="btn btn-primary" disabled={busy}>{busy ? '저장 중…' : '저장하고 다시 판정'}</button>
+        <button className="btn btn-primary" disabled={busy}>{busy ? '저장 중…' : submitLabel}</button>
       </div>
     </form>
   )

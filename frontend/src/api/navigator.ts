@@ -195,16 +195,12 @@ export interface ProfileUpdate {
     end_date?: string | null; role: 'LEAD' | 'PARTICIPANT'; summary?: string | null }[]
 }
 
-export interface CompanyRegister {
+export interface CompanyRegister extends ProfileUpdate {
   business_reg_no: string
   company_name: string
   representative_name: string
   opened_on: string
   email: string
-  main_business?: string | null
-  company_size?: string | null
-  employee_count?: number | null
-  region?: string | null
 }
 
 export interface LinkSent {
