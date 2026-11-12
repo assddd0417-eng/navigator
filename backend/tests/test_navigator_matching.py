@@ -141,7 +141,7 @@ async def test_announcement_to_company_matrix(client):
     assert abs(sum(s["weight"] for s in top["scores"].values()) - 1) < 1e-6
     assert top["scores"]["IPC"]["score"] == 1.0
     assert any(e["kind"] == "TECH_MATCH" and e["tech_name"] for e in top["evidence"])
-    assert "필수 요건 4/4개 충족" in top["rationale"]
+    assert "필수 요건 5/5개 충족" in top["rationale"]  # 0028 결격사유 요건 추가
     assert top["business_reg_no"] == "9998100015"        # 담당자에게는 보임
     credit = next(c for c in top["checks"] if c["req_type_code"] == "MIN_CREDIT_GRADE")
     assert credit["result"] == "MET" and "detail" in credit and "grade" not in credit["detail"]

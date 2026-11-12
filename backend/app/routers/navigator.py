@@ -6,7 +6,7 @@ from app.config import get_settings
 from app.db import transaction
 from app.errors import Conflict
 from app.schemas.navigator import CompanyRegister, CompanyUpdate, LinkSent, RegisterResult
-from app.services import access_link, mailer
+from app.services import access_link, collector, mailer
 from app.services.bizno import InvalidBizNo, format_bizno, normalize
 from app.services.company_profile import (
     BUSINESS_STATUS_LABEL, LIST_TABLES, PROFILE_FIELDS, VERIFY_LABEL, find_by_bizno, full_view,
@@ -27,7 +27,13 @@ def _bizno(raw: str) -> str:
 
 
 def _send_link(email: str, company_name: str, link: access_link.IssuedLink, first: bool) -> LinkSent:
-    what = "등록이 완료되었습니다" if first else "관리 링크를 다시 보내 드립니다"
+    if first:   # 등록 메일은 알림 주소 확인용. 회사 정보는 화면에서 바로 입력하므로 링크를 넣지 않는다
+        mailer.send(email, f"[Navigator] {company_name} 등록 완료",
+                    f"{company_name} 등록이 완료되었습니다.\n조건에 맞는 새 공고가 올라오면 이 주소로 알려 드립니다.\n"
+                    "본인이 등록하지 않았다면 이 메일을 무시하세요.")
+        return LinkSent(sent_to=mailer.mask_email(email), expires_at=link.expires_at.isoformat(),
+                        dev_management_link=link.url if get_settings().navigator_dev_expose_link else None)
+    what = "관리 링크를 다시 보내 드립니다"
     mailer.send(email, f"[Navigator] {company_name} 관리 링크",
                 f"{company_name} 기업 프로필 {what}.\n\n아래 주소에서 회사 정보를 고치고 신용정보를 볼 수 있습니다.\n"
                 f"{link.url}\n\n유효기간: {link.expires_at:%Y-%m-%d %H:%M} (UTC) 까지. "
@@ -153,6 +159,19 @@ async def resend_access_link(business_reg_no: str, rid: str = Depends(request_id
     return _send_link(found["registered_email"], found["name"], link, first=False)
 
 
+@router.post("/companies/{business_reg_no}/open", dependencies=[Depends(public_rate_limit)])
+async def open_company(business_reg_no: str, rid: str = Depends(request_id)):
+    """이메일 없이 바로 회사 정보 화면을 연다 (관리 토큰 발급, 이전 토큰은 폐기).
+    ponytail: 사업자번호만 알면 누구나 수정·신용등급 열람 가능 (PoC). 운영 전에는 본인 확인(인증서·이메일)을 붙일 것."""
+    bizno = _bizno(business_reg_no)
+    async with transaction(None, rid) as conn:
+        found = await find_by_bizno(conn, bizno, lock=True)
+        if not found or not found["has_profile"] or found["org_type"] != "COMPANY":
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"사업자번호 {format_bizno(bizno)} 로 등록된 기업이 없습니다")
+        link = await access_link.issue(conn, found["organization_id"], found["registered_email"] or "")
+    return {"token": link.token, "expires_at": link.expires_at.isoformat()}
+
+
 async def manage_link(x_manage_token: str | None = Header(default=None, description="관리 링크의 비밀값")) -> dict:
     if not x_manage_token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "관리 링크(X-Manage-Token)가 필요합니다")
@@ -197,3 +216,18 @@ async def update_my_profile(body: CompanyUpdate, link: dict = Depends(manage_lin
         await conn.execute("UPDATE ax.company_profile SET updated_at = now() WHERE organization_id = %s", (org_id,))
         await sync_company_embeddings(conn, org_id)
         return await full_view(conn, org_id)
+
+
+AUTOFILL_SOURCES = {"NTS_BIZ": "국세청 휴·폐업", "KIPRIS": "특허청 특허", "DART": "DART 매출·근로자 수"}
+
+
+@router.post("/manage/autofill", dependencies=[Depends(public_rate_limit)])
+async def autofill(link: dict = Depends(manage_link), rid: str = Depends(request_id)):
+    """연결된 공공데이터(국세청·특허청·DART)로 이 회사 정보를 지금 채운다. 출처별 결과와 갱신된 프로필 반환."""
+    results = []
+    for code, label in AUTOFILL_SOURCES.items():
+        r = await collector.run_source(code, organization_id=link["organization_id"], request_id=rid)
+        results.append({"source": code, "label": label, "ok": r["status"] == "SUCCEEDED", "error": r["error"],
+                        "counts": r["counts"]})
+    async with transaction() as conn:
+        return {"results": results, "profile": await full_view(conn, link["organization_id"])}

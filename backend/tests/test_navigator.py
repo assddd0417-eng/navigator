@@ -63,7 +63,11 @@ async def test_register_verified_company(client):
     assert body["sent_to"] == "c***@gildong.example"
     assert body["dev_management_link"] is None          # 기본값: 응답에 링크를 싣지 않음
     state["org_id"] = body["organization_id"]
-    state["token"] = _token_from_last_mail("ceo@gildong.example")
+    # 등록 메일은 알림 주소 안내만 (링크 없음). 회사 정보 화면은 /open 으로 바로 연다
+    assert "manage#t=" not in mailer.OUTBOX[-1].body
+    r = await client.post("/navigator/companies/999-84-00049/open")
+    assert r.status_code == 200, r.text
+    state["token"] = r.json()["token"]
 
 
 async def test_public_view_hides_private_fields(client):

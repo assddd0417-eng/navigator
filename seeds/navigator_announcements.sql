@@ -62,12 +62,15 @@ SELECT v.ann, v.type, v.rule::jsonb, v.mand, v.descr, v.quote, v.page, v.ord
     (101, 'BUSINESS_STATUS',  '{"allowed":["ACTIVE"]}',                  true,  '휴·폐업 상태가 아닐 것', '휴업 또는 폐업 중인 기업은 신청 불가', 3, 3),
     (101, 'RND_EXPERIENCE',   '{"min_count":1}',                         false, '국가 R&D 수행 경험 우대', '최근 5년 내 국가 R&D 수행 실적 보유 시 가점', 4, 4),
     (101, 'PATENT',           '{"min_count":1,"ipc_prefixes":["H04"]}',  false, '통신 분야(IPC H04) 특허 보유 우대', '관련 분야 지식재산권 보유 시 가점', 4, 5),
+    (101, 'NO_DISQUALIFICATION', '{"checks":["TAX_DELINQUENT","INSOLVENT","RND_RESTRICTED"]}', true, '체납·부도·국가 R&D 참여제한 없음', '국세·지방세 체납, 부도·자본잠식, 국가연구개발사업 참여제한 중인 기업은 신청 불가', 3, 6),
+    (101, 'EXPORT',           '{"min_krw":1}',                           false, '수출 실적 보유 우대', '최근 1년 수출 실적 보유 시 가점', 4, 7),
     -- 102 경량 방탄 복합소재
     (102, 'COMPANY_SIZE',     '{"allowed":["SME","MIDSIZE"]}',           true,  '중소·중견기업', '신청자격: 중소기업 또는 중견기업', 2, 0),
     (102, 'BUSINESS_AGE',     '{"min_years":7}',                         true,  '업력 7년 이상 (접수 마감일 기준)', '개업일로부터 7년 이상 경과한 기업', 2, 1),
     (102, 'REQUIRED_CERT',    '{"any_of":["AS9100","DEFENSE_QMS"]}',     true,  'AS9100 또는 국방품질경영체제 인증 보유', '항공우주 품질경영(AS9100) 또는 국방품질경영체제 인증 보유', 2, 2),
     (102, 'MIN_CREDIT_GRADE', '{"min_grade":"BBB-"}',                    true,  '기업신용등급 BBB- 이상', '신용평가등급 BBB- 이상', 3, 3),
     (102, 'DEFENSE_COMPANY',  '{"required":true}',                       false, '방산업체 지정 기업 우대', '방산업체로 지정된 기업은 가점', 4, 4),
+    (102, 'DEFENSE_SUPPLY',   '{"min_supply_krw":100000000}',            false, '최근 3년 군 납품 실적 1억 원 이상 우대', '최근 3년간 군 납품 실적 보유 시 가점', 4, 5),
     -- 103 AI 영상 신속시범
     (103, 'BUSINESS_AGE',     '{"max_years":7}',                         true,  '업력 7년 이하', '창업 7년 이내 기업', 1, 0),
     (103, 'COMPANY_SIZE',     '{"allowed":["SME","STARTUP","VENTURE"]}', true,  '중소·창업·벤처기업', '중소기업(창업·벤처 포함)', 1, 1),

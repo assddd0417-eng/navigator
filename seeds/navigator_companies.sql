@@ -39,6 +39,13 @@ ON CONFLICT (organization_id) DO UPDATE SET
   biz_verify_status = EXCLUDED.biz_verify_status, biz_verified_at = EXCLUDED.biz_verified_at,
   registered_email = EXCLUDED.registered_email, registration_channel = EXCLUDED.registration_channel;
 
+-- 결격사유·실적 (0028)
+UPDATE company_profile SET tax_delinquent = false, insolvent = false, rnd_restricted = false,
+       defense_goods = false, military_supply_krw = 0, export_krw = 1200000000, export_year = 2025 WHERE organization_id = 101;
+UPDATE company_profile SET tax_delinquent = false, insolvent = false, rnd_restricted = false,
+       defense_goods = true, military_supply_krw = 8700000000, export_krw = 3400000000, export_year = 2025 WHERE organization_id = 102;
+-- 103 새봄비전AI 는 비워 둠 (화면에서 '확인 필요' 흐름 시연)
+
 -- 초기화
 DELETE FROM company_patent        WHERE organization_id IN (101,102,103);
 DELETE FROM company_certification WHERE organization_id IN (101,102,103);

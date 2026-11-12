@@ -167,6 +167,13 @@ export interface FullProfile {
   region: string | null
   address: string | null
   is_defense_company: boolean
+  tax_delinquent: boolean | null
+  insolvent: boolean | null
+  rnd_restricted: boolean | null
+  defense_goods: boolean | null
+  military_supply_krw: number | null
+  export_krw: number | null
+  export_year: number | null
   business_status_label: string
   biz_verify_label: string
   registered_email: string | null
@@ -189,22 +196,25 @@ export interface ProfileUpdate {
   revenue_year?: number | null
   region?: string | null
   address?: string | null
+  tax_delinquent?: boolean | null
+  insolvent?: boolean | null
+  rnd_restricted?: boolean | null
+  defense_goods?: boolean | null
+  military_supply_krw?: number | null
+  export_krw?: number | null
+  export_year?: number | null
   certifications?: { cert_type_code: string; cert_no?: string | null; issued_on?: string | null; expires_on?: string | null }[]
   credit_ratings?: { agency: string; grade: string; rated_on?: string | null; valid_until?: string | null }[]
   rnd_history?: { title: string; project_no?: string | null; funding_agency?: string | null; start_date?: string | null;
     end_date?: string | null; role: 'LEAD' | 'PARTICIPANT'; summary?: string | null }[]
 }
 
-export interface CompanyRegister {
+export interface CompanyRegister extends ProfileUpdate {
   business_reg_no: string
   company_name: string
   representative_name: string
   opened_on: string
   email: string
-  main_business?: string | null
-  company_size?: string | null
-  employee_count?: number | null
-  region?: string | null
 }
 
 export interface LinkSent {
@@ -242,6 +252,11 @@ export const getPublicMatches = (brn: string) =>
   api<MatchRun>(`/navigator/companies/${bizno(brn)}/matches`, anon)
 export const requestAccessLink = (brn: string) =>
   api<LinkSent>(`/navigator/companies/${bizno(brn)}/access-link`, { ...anon, method: 'POST' })
+export const openCompany = (brn: string) =>
+  api<{ token: string; expires_at: string }>(`/navigator/companies/${bizno(brn)}/open`, { ...anon, method: 'POST' })
+export interface AutofillResult { source: string; label: string; ok: boolean; error: string | null; counts: Record<string, number> }
+export const autofillProfile = (token: string) =>
+  api<{ results: AutofillResult[]; profile: FullProfile }>('/navigator/manage/autofill', { ...manage(token), method: 'POST' })
 export const registerCompany = (body: CompanyRegister) =>
   api<RegisterResult>('/navigator/companies', { ...anon, method: 'POST', body })
 
