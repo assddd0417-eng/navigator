@@ -45,7 +45,7 @@ export interface PolicyAction {
   overseas_demand_id: number
   demand_no: string
   demand_title: string
-  demand_kind: 'ROADMAP' | 'CALL' | 'EXPORT_REQ'
+  demand_kind: 'ROADMAP' | 'CALL' | 'EXPORT_REQ' | 'DOMESTIC_PLAN' | 'UPGRADE' | 'SUPPLY'
   region: string
   area: string
   target_period: string | null

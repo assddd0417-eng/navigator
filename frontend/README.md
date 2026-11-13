@@ -19,10 +19,10 @@ npm run dev            # http://localhost:5173  (/api/* → http://localhost:800
 
 | 역할 (X-User-Id) | 화면 묶음 | 메뉴 |
 |---|---|---|
-| PLANNER 기획자 (1) | 관리자 | 한눈에 보기 · 기관 포트폴리오(갭 → 기획수요 넘기기) · 검토할 추천 · 연계 후보 찾기(수요 등록·AI 추천·검토 요청) · 해외 수요 갭 분석 |
-| DEPT_REVIEWER 조직 관리자·검수자 (2) | 관리자 | 한눈에 보기 · 검토할 추천 → 최종 결정 · 연계 후보 찾기 · 갭 확정·기각 |
+| PLANNER 기획자 (1) | 관리자 | 한눈에 보기 · 신규 과제 기획(기획 참고서 → 기획수요) · 기관 포트폴리오(갭 → 기획수요 넘기기) · 검토할 추천 · 연계 후보 찾기(수요 등록·AI 추천·검토 요청) · 해외 수요 갭 분석 |
+| DEPT_REVIEWER 조직 관리자·검수자 (2) | 관리자 | 한눈에 보기 · 신규 과제 기획(보기) · 검토할 추천 → 최종 결정 · 연계 후보 찾기 · 갭 확정·기각 |
 | EXPERT 전문가 (3) | 작업자 | 내 할 일(나에게 온 검토) · 문서 올리기 · 해외 수요 갭 분석(보기) |
-| CURATOR 큐레이터·작업자 (4) | 작업자 | 내 할 일(검토 + 초안 카드 발행) · 문서 올리기(→ 성과카드 초안) · 갭 분석 다시 돌리기 |
+| CURATOR 큐레이터·작업자 (4) | 작업자 | 내 할 일(검토 + 초안 카드 발행) · 신규 과제 기획(동향 입력) · 문서 올리기(→ 성과카드 초안) · 갭 분석 다시 돌리기 |
 | VIEWER 기관 열람자 (6) | 기관 열람 | 기관 포트폴리오(보기·엑셀) · 해외 수요 갭 분석(보기). 고치거나 결정하지 않음 |
 
 추천 상세(`/recommendations/:id`)와 갭 분석(`/gaps`, `/gaps/:id`)은 모든 역할이 연다. 추천에는 누구나 의견을 남길 수 있다. 판정은 DEPT_REVIEWER·EXPERT, 최종 판정은 DEPT_REVIEWER 만 가능하다.
@@ -58,6 +58,8 @@ src/
   api/gaps.ts           갭 분석 API (/gaps)
   pages/gaps/           GapListPage(해외 수요 × 갭 종류 표·목록), GapDetailPage(이유·국내 성과·메울 방법·출처·확정/기각)
   api/portfolio.ts      기관 포트폴리오 API (/portfolio)
+  api/planning.ts       신규 과제 기획 API (/planning)
+  pages/planning/       PlanningPage(동향 목록·입력 → 기획 참고서: 관련 과거 과제·요구 성능 비교·새 기획에 넣을 것 → 기획수요, ?trend=&group=&wide=1)
   pages/portfolio/      PortfolioPage(숫자·분야별 대조표·무기체계별 국내 성과·정책·예산 기획 후보·엑셀, ?draft=1&area=)
   api/navigator.ts      Navigator API (기업 쪽은 X-User-Id 없음, 관리 링크는 X-Manage-Token)
   pages/navigator/      기업 화면 (로그인 없음): CompanySearchPage(/navigator), CompanyRegisterPage, CompanyManagePage(관리 링크), AlertsPanel, SubscriptionLinkPage(메일 링크)

@@ -163,6 +163,9 @@ export interface DemandRow {
 
 export interface DemandDetail extends DemandRow {
   tech_need: string
+  /** 동향(해외 수요·국내 동향)에서 만든 기획수요면 그 동향 id */
+  origin_overseas_demand_id: number | null
+  origin_gap_finding_id: number | null
   match_runs: { id: number; status: string; created_at: string; finished_at: string | null }[]
 }
 

@@ -10,6 +10,7 @@ export const GAP_TYPES: { code: GapType; name: string; help: string }[] = [
 
 export const DEMAND_KIND: Record<string, string> = {
   ROADMAP: '해외 기술로드맵', CALL: '해외 공모', EXPORT_REQ: '수출 요구',
+  DOMESTIC_PLAN: '국내 계획(국방부·방사청)', UPGRADE: '성능개량 요구', SUPPLY: '국산화·단종 대응',
 }
 
 /** 갭 점수 → 급한 정도 (화면 표시용 눈금) */

@@ -16,6 +16,7 @@ from app.db import transaction
 from app.repositories.sql import CLEARANCE_OK, insert
 from app.routers.gaps import _visible_finding
 from app.services.embedding import sync_demand_embeddings
+from app.services.planning_brief import DEMAND_KIND_KO
 
 router = APIRouter(prefix="/portfolio", tags=["기관 포트폴리오"])
 READERS = ("PLANNER", "DEPT_REVIEWER", "VIEWER")
@@ -29,7 +30,6 @@ DIRECTIONS = {
 }
 GAP_TYPES = list(DIRECTIONS)
 STATUS_KO = {"CONFIRMED": "확정", "DRAFT": "검수 전", "REJECTED": "기각", "SUPERSEDED": "새 분석으로 대체"}
-DEMAND_KIND_KO = {"ROADMAP": "해외 기술로드맵", "CALL": "해외 공모", "EXPORT_REQ": "수출 요구"}
 
 _OK = CLEARANCE_OK.format
 

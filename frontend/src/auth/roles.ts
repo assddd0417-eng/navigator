@@ -22,7 +22,7 @@ export const ROLES: Record<RoleCode, RoleMeta> = {
     label: '기획자',
     group: 'ADMIN',
     description: '새로 필요한 기술(기획수요)을 등록하고, AI가 찾아 준 기존 성과 중 쓸 만한 것을 골라 검토를 맡깁니다.',
-    can: ['기획수요 등록', 'AI로 연계 후보 찾기', '검토 요청', '갭 분석 다시 돌리기'],
+    can: ['기획 참고서 보기', '기획수요 등록', 'AI로 연계 후보 찾기', '검토 요청', '갭 분석 다시 돌리기'],
   },
   DEPT_REVIEWER: {
     code: 'DEPT_REVIEWER',
@@ -43,7 +43,7 @@ export const ROLES: Record<RoleCode, RoleMeta> = {
     label: '큐레이터·작업자',
     group: 'WORKER',
     description: '과제 결과보고서를 올리고, 그 내용으로 성과카드를 만들어 확인 후 발행합니다.',
-    can: ['문서 올리기', '성과카드 작성', '성과카드 발행', '갭 분석 다시 돌리기'],
+    can: ['문서 올리기', '성과카드 작성', '성과카드 발행', '동향 입력', '갭 분석 다시 돌리기'],
   },
   VIEWER: {
     code: 'VIEWER',
@@ -75,6 +75,8 @@ export const WORKER_ROLES: RoleCode[] = ['CURATOR', 'EXPERT']
 /** 기관 포트폴리오를 보는 역할: 관리자 + 기관 열람자 (넘기기는 기획자만, 서버가 판단) */
 export const PORTFOLIO_ROLES: RoleCode[] = [...ADMIN_ROLES, 'VIEWER']
 export const ALL_ROLES: RoleCode[] = [...ADMIN_ROLES, ...WORKER_ROLES, 'VIEWER']
+/** 신규 과제 기획: 관리자 + 큐레이터(동향 입력). 기획수요로 넘기기는 기획자만 (서버가 판단) */
+export const PLANNING_ROLES: RoleCode[] = [...ADMIN_ROLES, 'CURATOR']
 
 export interface MenuItem {
   path: string
@@ -85,6 +87,7 @@ export interface MenuItem {
 
 export const MENU: MenuItem[] = [
   { path: '/dashboard', label: '한눈에 보기', icon: '🏠', roles: ADMIN_ROLES },
+  { path: '/planning', label: '신규 과제 기획', icon: '📝', roles: PLANNING_ROLES },
   { path: '/portfolio', label: '기관 포트폴리오', icon: '🗺️', roles: PORTFOLIO_ROLES },
   { path: '/reviews', label: '검토할 추천', icon: '📥', roles: ADMIN_ROLES },
   { path: '/projects', label: '연계 후보 찾기', icon: '🔎', roles: ADMIN_ROLES },
@@ -103,6 +106,7 @@ const PATH_ROLES: [RegExp, RoleCode[]][] = [
   [/^\/(dashboard|projects|reviews|staff\/navigator|staff\/sources)(\/|$)/, ADMIN_ROLES],
   [/^\/(my-tasks|documents\/upload)(\/|$)/, WORKER_ROLES],
   [/^\/portfolio(\/|$)/, PORTFOLIO_ROLES],
+  [/^\/planning(\/|$)/, PLANNING_ROLES],
   [/^\/(recommendations|gaps)(\/|$)/, ALL_ROLES],
 ]
 
