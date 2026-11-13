@@ -422,4 +422,20 @@ api "국내 성과 분포 (검수자)" 200 GET /portfolio/domestic "$REVIEWER"
 api "기획 후보 (기관 열람자)" 200 GET /portfolio/actions "$AGENCY"
 api "포트폴리오는 관리자·열람자만 (EXPERT)" 403 GET /portfolio/overview "$EXPERT"
 api "기획수요로 넘기기는 기획자만 (기관 열람자)" 403 POST /portfolio/actions/1/to-demand "$AGENCY"
+
+section "⑭ 신규 과제 기획 (동향 → 기획 참고서 → 기획수요)"
+api "동향 직접 입력 (큐레이터)" 201 POST /planning/trends "$CURATOR" \
+    '{"title":"스모크 성능개량 동향 '"$RUN_TAG"'","demand_kind":"UPGRADE","region":"육군","requirement":"항재밍 데이터링크 동기 유지 시간 향상","source_note":"스모크 시험용 메모","performances":[{"metric_name":"동기 유지 시간","required_value":30,"unit":"s"}]}'
+TREND_ID=$(pick '.id')
+[[ -n "$TREND_ID" ]] || abort "동향 id 를 받지 못함"
+api "출처 메모 없는 동향은 거부" 422 POST /planning/trends "$PLANNER" \
+    '{"title":"출처 없음","demand_kind":"UPGRADE","region":"육군","requirement":"요구"}'
+api "기획 참고서 (기획자)" 200 GET "/planning/brief/$TREND_ID?min_sim=-1" "$PLANNER"
+check "관련 과제·성능 비교·새 기획에 넣을 것" 'has("projects") and (.comparison | length) == 1 and (.suggestions | length) >= 1'
+api "기획 참고서는 기획·검수·큐레이터만 (EXPERT)" 403 GET "/planning/brief/$TREND_ID" "$EXPERT"
+api "기획수요 만들기는 기획자만 (큐레이터)" 403 POST "/planning/brief/$TREND_ID/to-demand" "$CURATOR"
+api "기획 참고서로 기획수요 만들기" 201 POST "/planning/brief/$TREND_ID/to-demand?min_sim=-1" "$PLANNER"
+PD_ID=$(pick '.demand_id')
+api "기획수요에 붙은 참고서 사본" 200 GET "/planning/demands/$PD_ID/brief" "$REVIEWER"
+check "참고서 문서" '.content_md | startswith("# 기획 참고서")'
 summary

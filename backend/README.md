@@ -97,6 +97,13 @@ app/
 | GET | `/portfolio/overview`·`/areas`·`/domestic`·`/actions` | PLANNER, DEPT_REVIEWER, VIEWER (보안등급별) | 기관 포트폴리오: 숫자·분야별 대조표·무기체계별 국내 성과·정책 기획 후보 (`include_draft`, `area`) |
 | GET | `/portfolio/export.xlsx` | PLANNER, DEPT_REVIEWER, VIEWER | 위 내용을 엑셀로 (분야별 대조·국내 성과 분포·기획 후보·작성기준) |
 | POST | `/portfolio/actions/{갭id}/to-demand` | PLANNER | 확정된 갭 → 신규 기획수요(OPEN). 이미 넘긴 갭이면 200 + 기존 기획수요 (0028) |
+| POST | `/planning/trends` | PLANNER, CURATOR | 동향 직접 입력 (해외 3종 + 국내 계획·성능개량·국산화/단종 대응). 출처 메모 필수, 저장 즉시 갭 분석 |
+| GET | `/planning/trends` | PLANNER, DEPT_REVIEWER, CURATOR | 동향 목록 (해외 수요 + 직접 입력), 만든 기획수요 번호 |
+| GET | `/planning/brief/{동향id}` | PLANNER, DEPT_REVIEWER, CURATOR | 기획 참고서: 관련 과거 과제(결과 구분·한계·평가 의견)·요구 성능 비교·새 기획에 넣을 것 (`k`, `min_sim`) |
+| POST | `/planning/brief/{동향id}/to-demand` | PLANNER | 참고서로 신규 기획수요(OPEN) + 참고서 사본(planning_draft). 이미 있으면 200 + 기존 것 |
+| GET | `/planning/demands/{기획수요id}/brief` | PLANNER, DEPT_REVIEWER, CURATOR | 기획수요에 붙은 참고서 사본 (Markdown) |
+| GET·POST | `/planning/projects/{과제id}/evaluations` | 읽기 위 3역할 · 쓰기 PLANNER, CURATOR | 과제 평가 의견 (결과평가·중간평가·전문가·소요군). 과제보다 낮은 보안등급 불가 (0029) |
+| PUT | `/planning/projects/{과제id}/outcome` | PLANNER, CURATOR | 과제 결과 구분 (전력화·후속·기술만·전환 실패·중단). 실패·중단은 원인 필수 (DB 강제) |
 
 ## 문서 파일 업로드 (PDF)
 
@@ -179,6 +186,17 @@ python -m app.synthetic load --corpus ../seeds/overseas/국내성과_K2파워팩
 ```bash
 EMBEDDER=bge_m3 python -m app.gap_eval all    # 해외 수요·K2 카드 적재 + 갭 분석 + 정답 비교 (재실행 안전)
 ```
+
+## 신규 과제 기획 (기획 참고서)
+
+`app/services/planning_brief.py`(판정, DB 없음) · `app/routers/planning.py`, 스키마 0029.
+동향 하나와 가까운 성과 카드(갭 분석과 같은 짝으로 찾음, 열람 가능 + 비슷한 정도 `min_sim` 이상)를 과제별로 묶어 정리한다.
+
+- 관련 과거 과제: 결과 구분(`project.outcome_code`), 성과·달성 성능, 한계·향후 과제(카드 미해결 항목), 평가 의견(`project_evaluation`).
+- 요구 성능 비교: 지표명이 같은 과거 달성값 중 가장 잘 맞는 것 → 충족 / 부족(달성률) / 과거 자료 없음 / 단위 다름 / 서술형.
+- 새 기획에 넣을 것 (이 순서): 실패 원인 먼저(전환 실패·중단 과제, 목표 미달 성능, 미흡 평가) → 성능 높이기 → 남은 숙제 풀기(우선순위 높음 또는 동향과 관련) → 평가 의견 반영 → 국산화(수입 품목) → 새로 개발 → 이어받기.
+- `min_sim` 기본 0.45 는 BGE-M3 기준이다. 해시 임베더로 돌릴 때는 화면의 ‘덜 비슷한 과제도 보기’(0.35)나 더 낮은 값을 쓴다.
+- K2 파워팩 시연 자료(`seeds/overseas/국내성과_K2파워팩.json`)에 과제 결과 구분·평가 의견이 들어 있다 (평가 의견은 합성, 평가 주체에 표시).
 
 ## 매칭 로직 요약
 

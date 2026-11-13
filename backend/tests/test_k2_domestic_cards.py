@@ -42,3 +42,11 @@ def test_keys_do_not_clash_with_synthetic_corpus():
     for key in ("projects", "organizations", "items", "weapon_systems"):
         assert not {x["key"] for x in main[key]} & {x["key"] for x in k2[key]}, key
     assert not {p["project_no"] for p in main["projects"]} & {p["project_no"] for p in k2["projects"]}
+
+
+def test_outcome_and_evaluations():
+    """기획 참고서용 과제 결과 구분·평가 의견 (평가 의견은 합성이라 평가 주체에 표시)."""
+    c = syn.load_corpus(PATH)
+    for p in c["projects"]:
+        assert p["outcome"]["code"] in {"FIELDED", "FOLLOW_ON", "TECH_ONLY", "NOT_TRANSITIONED", "STOPPED"}
+        assert p["evaluations"] and all(e["opinion"] and "(합성)" in e["evaluator"] for e in p["evaluations"])

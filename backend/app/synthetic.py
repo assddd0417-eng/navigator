@@ -104,7 +104,22 @@ async def upsert_masters(c: dict) -> dict[str, dict[str, int]]:
                    RETURNING id""",
                 (p["project_no"], p["title"], ids["program"][p["program"]], ids["org"][p["lead_org"]],
                  ids["dept"][p["dept"]], p["status"], p["start"], p["end"], p["report"][0]["paragraphs"][0]))
+            await _upsert_outcome_and_evaluations(conn, ids["project"][p["key"]], p)
     return ids
+
+
+async def _upsert_outcome_and_evaluations(conn, project_id: int, p: dict) -> None:
+    """과제 결과 구분·평가 의견 (있는 과제만). 같은 종류·의견이 이미 있으면 다시 넣지 않는다."""
+    if p.get("outcome"):
+        await conn.execute("UPDATE ax.project SET outcome_code = %s, outcome_note = %s WHERE id = %s",
+                           (p["outcome"]["code"], p["outcome"].get("note"), project_id))
+    for e in p.get("evaluations", []):
+        await conn.execute(
+            """INSERT INTO ax.project_evaluation (project_id, eval_kind, eval_date, grade, opinion, suggestion, evaluator)
+               SELECT %(pid)s, %(eval_kind)s, %(eval_date)s, %(grade)s, %(opinion)s, %(suggestion)s, %(evaluator)s
+                WHERE NOT EXISTS (SELECT 1 FROM ax.project_evaluation
+                                   WHERE project_id = %(pid)s AND eval_kind = %(eval_kind)s AND opinion = %(opinion)s)""",
+            {"pid": project_id, "eval_date": None, "grade": None, "suggestion": None, "evaluator": None, **e})
 
 
 def document_body(p: dict, ids: dict) -> dict:

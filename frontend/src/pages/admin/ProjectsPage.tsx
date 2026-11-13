@@ -200,7 +200,9 @@ function DemandDetailPanel({ demandId, runId, onRun }:
     <>
       <Card title={data.title} actions={<StatusBadge status={data.status} />}>
         <p>{data.tech_need}</p>
-        <div className="muted small">필요한 기술 성숙도 {trlText(data.required_trl_min, data.required_trl_max)} · 관리 번호 {data.demand_no}</div>
+        <div className="muted small">필요한 기술 성숙도 {trlText(data.required_trl_min, data.required_trl_max)} · 관리 번호 {data.demand_no}
+          {data.origin_overseas_demand_id != null && data.origin_gap_finding_id == null && (
+            <> · <Link to={`/planning?trend=${data.origin_overseas_demand_id}`}>📝 기획 참고서 보기</Link></>)}</div>
         <div className="form-foot">
           <RoleHint roles={['PLANNER']} />
           <button className="btn btn-primary" disabled={busy} onClick={() => void match()}>

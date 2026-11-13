@@ -458,3 +458,27 @@ label.check input { width: auto; }
   .pf-facts dt { margin-top: 4px; }
 }
 .table th.num { text-align: right; }
+/* 신규 과제 기획 (기획 참고서) */
+.pl-suggestions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.pl-suggestions li { display: grid; grid-template-columns: 110px 1fr; gap: 10px; align-items: start; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); }
+.pl-suggestions .badge { justify-self: start; }
+.pl-projects { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.pl-project { padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); }
+.pl-project-fail { border-color: var(--bad); background: var(--bad-soft); }
+.pl-project p { margin: 6px 0 0; }
+.pl-card { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.pl-perf { display: inline-block; margin: 4px 8px 0 0; padding: 1px 8px; border-radius: 6px; background: #eef0f3; }
+.pl-perf-miss { background: var(--warn-soft); color: var(--warn); }
+.pl-limits { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
+.pl-limits li + li { margin-top: 2px; }
+.pl-evals blockquote { margin: 8px 0 0; padding: 6px 10px; border-left: 3px solid var(--info); background: var(--info-soft); font-size: 13px; }
+.pl-gaps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.pl-perfs { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.pl-perfs legend { font-size: 13px; color: var(--muted); padding: 0 4px; }
+.pl-perf-row { display: grid; grid-template-columns: 2fr 80px 1fr 80px 2fr auto; gap: 6px; }
+@media (max-width: 640px) {
+  .pl-suggestions li { grid-template-columns: 1fr; }
+  .pl-perf-row { grid-template-columns: 1fr 1fr; }
+}
+.pl-check { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; }
+.pl-perfs > .btn { align-self: flex-start; }
