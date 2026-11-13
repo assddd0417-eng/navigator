@@ -144,6 +144,7 @@ class RequirementIn(BaseModel):
     evidence: EvidenceIn | None = Field(default=None, description="공고문 청크 근거 (PDF 로 올린 공고)")
     source_quote: str | None = Field(default=None, max_length=2000)
     source_page: int | None = Field(default=None, gt=0)
+    origin: Literal["MANUAL", "AI_EXTRACTED"] = Field(default="MANUAL", description="AI_EXTRACTED = 뽑은 후보를 담당자가 확인")
 
 
 class RequirementUpdate(BaseModel):
@@ -205,3 +206,23 @@ class AnnouncementCreated(BaseModel):
     document_id: int | None = None
     chunk_count: int | None = None
     warnings: list[str] = []
+
+
+class AnnouncementFromText(BaseModel):
+    """홈페이지에 없는 공고를 담당자가 공고문 글자로 등록. 작성중으로 만들고 조건은 확인 화면에서 넣는다."""
+    title: str = Field(min_length=1, max_length=500)
+    agency_name: str = Field(default="국방기술진흥연구소", min_length=1, max_length=200)
+    announcement_no: str | None = Field(default=None, max_length=100, description="비우면 MAN-날짜시각")
+    body_text: str = Field(min_length=20, max_length=200_000, description="공고문 본문 (붙여넣기)")
+    source_url: str | None = None
+    posted_on: date | None = None
+    domain: Domain = "DEFENSE_RND"
+
+
+class AnnouncementReview(BaseModel):
+    """확인 화면 저장. 조건·요구기술은 통째로 바꾼다."""
+    fields: AnnouncementUpdate = AnnouncementUpdate()
+    requirements: list[RequirementIn] = []
+    tech_needs: list[TechNeedIn] = []
+    confirm: bool = Field(default=True, description="조건 확인 완료로 표시")
+    publish: bool = Field(default=False, description="확인과 함께 공개 (구독 기업 알림)")

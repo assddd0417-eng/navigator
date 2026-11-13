@@ -482,3 +482,9 @@ label.check input { width: auto; }
 }
 .pl-check { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; }
 .pl-perfs > .btn { align-self: flex-start; }
+
+/* 공고 조건 확인 */
+.source-text { white-space: pre-wrap; word-break: break-word; font-family: inherit; font-size: 12.5px; line-height: 1.6; background: var(--bg); border-radius: 8px; padding: 10px 12px; max-height: 560px; overflow-y: auto; margin: 6px 0 0; }
+.req-edit { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+.req-edit .form-row > select { flex: 1 1 140px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }

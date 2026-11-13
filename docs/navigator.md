@@ -7,7 +7,7 @@
 
 | 구분 | 위치 |
 |------|------|
-| 마이그레이션 | 0019 기업 프로필(특허·인증·신용등급·R&D 이력·관리 링크), 0020 외부 출처·값 출처, 0021 공고·자격요건, 0022 임베딩·매칭 결과, 0024 알림 구독, 0025 외부 수집(기업마당 출처, 출처별 기업 식별자), 0030 국기원 공지사항 출처·공고 첨부 |
+| 마이그레이션 | 0019 기업 프로필(특허·인증·신용등급·R&D 이력·관리 링크), 0020 외부 출처·값 출처, 0021 공고·자격요건, 0022 임베딩·매칭 결과, 0024 알림 구독, 0025 외부 수집(기업마당 출처, 출처별 기업 식별자), 0030 국기원 공지사항 출처·공고 첨부, 0031 공고 조건 확인 표시 |
 | 기업 API | `backend/app/routers/navigator.py` |
 | 공고 API | `backend/app/routers/announcements.py`, 요건 형식 `backend/app/schemas/announcements.py` (`RULE_MODELS`) |
 | 매칭 API | `backend/app/routers/navigator_matching.py` |
@@ -45,7 +45,7 @@
 
 | 메서드·경로 | 인증 | 설명 |
 |-------------|------|------|
-| `GET /navigator/announcements?receipt_state=&q=` | - | 목록. 비로그인은 PUBLISHED 만 |
+| `GET /navigator/announcements?receipt_state=&q=&review=` | - | 목록. 비로그인은 PUBLISHED 만. 담당자는 `review=PENDING`(조건 확인 전)·`DONE` |
 | `GET /navigator/announcements/{id}` | - | 상세 (자격요건, 원문 인용·쪽, 요구기술) |
 | `GET /navigator/announcements/{id}/chunks?q=` | - | 공고문 원문 청크 |
 | `POST /navigator/announcements` | 담당자 | 직접 등록. 요건 하나라도 형식 오류면 전체 롤백 |
@@ -53,6 +53,11 @@
 | `PATCH /navigator/announcements/{id}` | 담당자 | 수정. `status` 로 PUBLISHED / CANCELLED |
 | `POST .../requirements`, `PATCH`·`DELETE .../requirements/{rid}` | 담당자 | 자격요건 (`evidence.chunk_id` 로 원문 연결) |
 | `POST .../tech-needs`, `DELETE .../tech-needs/{tid}` | 담당자 | 요구기술 |
+| `POST /navigator/announcements/text` | 담당자 | 공고문 글자를 붙여 넣어 작성중 공고 만들기 |
+| `GET /navigator/announcements/{id}/source` | 담당자 | 게시글 본문 + 첨부에서 뽑은 글자 (PDF 로 올린 공고는 청크를 이어 붙임) |
+| `POST /navigator/announcements/{id}/extract` | 담당자 | 조건·접수기간·지원 한도·지원 기간·대상·목적 후보. 저장 안 함 |
+| `PUT /navigator/announcements/{id}/review` | 담당자 | 확인 저장: 공고 칸 수정 + 조건·요구기술 통째 교체 + 확인 표시, `publish: true` 면 공개(조건 0개면 422) |
+| `GET /navigator/announcements/requirement-types` | 담당자 | 조건 종류·인증 코드 |
 
 담당자 = `PLANNER` 또는 `ADMIN`. 접수 상태(UPCOMING / OPEN / CLOSED)는 날짜로 계산한다 (`v_announcement`).
 
@@ -114,6 +119,15 @@
   - `series_key` 는 제목에서 차수·연도·재공고·연장 표시를 지운 값. 같은 사업의 여러 공고를 묶는다.
   - 평소에는 앞 `KRIT_MAX_PAGES`(3) 쪽만 읽고 이미 받은 공고는 건너뛴다. 처음 채울 때는 `KRIT_MAX_PAGES=61 SOURCE_KRIT=live python -m app.collect --source KRIT` (2021년 6월부터 약 600건, 요청 사이 0.5초라 수십 분 걸림).
   - 게시판에 동시에 여러 요청을 보내면 빈 페이지가 와서 한 건씩 받는다. 상세는 목록에서 받은 쿠키와 Referer 가 있어야 열린다.
+
+### 조건 뽑기 (`app/services/requirement_extract.py`)
+
+- `REQUIREMENT_EXTRACTOR=auto`(기본)는 LLM 자격증명이 있으면 LLM, 없으면 규칙. `rules` 는 외부로 보내는 것 없음.
+- 규칙: 신청자격·신청제한·우대 구역을 나눠 기업규모, 휴·폐업, 체납·부도·참여제한, 연구소·인증, 신용등급, 업력, 지역, TRL, 우대 특허·수출만 찾는다. 지원 한도는 "기업당·한도·최대" 줄에서, 총 예산은 뺀다.
+- LLM: 공고문 글자(최대 4만 자)와 조건 코드표를 보내 JSON 으로 받는다. 규칙 형식이 틀리거나 목록에 없는 인증이면 '기타'로 바꾸고 경고. 근거 문장이 공고문에 그대로 없으면 `quote_found=false`.
+- 뽑은 것은 후보일 뿐이다. 담당자가 원문과 대조해 저장해야 `origin = AI_EXTRACTED` 로 들어가고, 공개해야 기업 추천·알림에 쓰인다.
+- 실제 국기원 공고 19건에 규칙을 돌려 보면 대부분 기업규모·휴폐업·결격사유가 나오고, 방산혁신클러스터 공고는 지역이 나온다. "다음 각 호 중 하나" 같은 조건은 규칙으로 못 뽑으니 '기타'로 직접 넣는다.
+
 - live 연결 부품은 공개 문서의 응답 모양으로 해석을 테스트했지만 실제 키로는 아직 호출해 보지 않았다 (개발 환경에서 외부 API 차단). 키를 받으면 `SOURCE_<코드>=live` 로 한 출처씩 확인한다.
 - NICE·KED(유료 계약), NTIS(비용 확인), 인증서 PDF 는 연결 부품이 없다. 화면에 "미연결"로 표시.
 
@@ -209,6 +223,7 @@ R&D 이력의 과제번호가 `project.project_no` 와 같으면 내부 과제�
 | `/navigator/register` | 기업 | 신규 등록 |
 | `/navigator/manage#t=…` | 기업 (관리 링크) | 탭: 추천 공고 / 보완질문 / 알림 / 내 정보. 저장하면 재판정 |
 | `/navigator/subscriptions/confirm#t=…`, `/navigator/unsubscribe#t=…` | 메일 수신자 | 수신 확인, 수신 거부 |
+| `/staff/announcements` | 담당자 (메뉴 "공고 등록·조건 확인") | 확인 전 / 확인 완료 공고 → 왼쪽 원문(본문·첨부 글자), 오른쪽 조건 뽑기 → 접수기간·지원 한도·조건·요구기술 고치기 → 확인 저장 또는 공개. 공고문 붙여넣기 등록 |
 | `/staff/navigator` | 담당자 (메뉴 "공고별 적합 기업") | 공고 목록 → 마지막 매칭 결과(적합 / 정보부족 / 부적격 목록을 따로 총점 순, 부적격은 접힘) → 다시 매칭, 기업 프로필, 구독 기업 알림 현황 |
 | `/staff/sources` | 담당자 (메뉴 "외부 수집") | 출처별 모드·주기·마지막 결과, 지금 수집, 수집 기록 |
 
@@ -246,6 +261,7 @@ R&D 이력의 과제번호가 `project.project_no` 와 같으면 내부 과제�
 | `SOURCE_KRIT` | `mock` | `live` 면 국기원 공지사항을 직접 읽음 (키 불필요) |
 | `KRIT_MAX_PAGES` | `3` | 한 번에 읽을 쪽 수 (쪽당 10건). 처음 채울 때 61 |
 | `KRIT_REQUEST_DELAY_S` | `0.5` | 국기원 요청 사이 대기 |
+| `REQUIREMENT_EXTRACTOR` | `auto` | 공고 조건 뽑기. `auto` 는 LLM 키가 있으면 LLM (`LLM_PROVIDER`·`LLM_MODEL` 따름), `rules` 는 규칙만 |
 | `NAVIGATOR_ANNOUNCEMENT_KEYWORDS` | `국방,방산,방위산업,방위사업,무기체계,군수` | 외부 공고 거르기 (쉼표). "방위"만 쓰면 "주방위생" 같은 공고가 걸림 |
 | `MAILER` | `mock` | mock 은 발송 없이 로그만 (본문은 DEBUG 로그) |
 | `NAVIGATOR_PUBLIC_BASE_URL` | `http://localhost:5173` | 관리 링크 주소 |
@@ -301,11 +317,10 @@ curl -s -X POST localhost:8000/navigator/announcements -H 'X-User-Id: 1' -H 'Con
 
 ## 미구현
 
-- 공고문 자격요건 자동 추출 (`origin = AI_EXTRACTED` 컬럼만 있음). 국기원 공고는 첨부 글자까지 받아 두었음
+- 실제 LLM 키로 조건 뽑기 정확도 측정 (지금은 규칙으로만 실공고 확인)
 - 실제 키로 live 연결 확인 (국세청 → KIPRIS → DART → 기업마당 순서)
 - 나라장터·방사청 공고, NICE·KED 신용등급, NTIS 과제 연결 부품
 - 실제 메일 발송 (SMTP 등, `mailer.send` 만 바꾸면 됨). 지금은 mock
 - 알림 발송을 큐로 분리 (지금은 공고 등록 요청 안에서 처리)
 - 증빙 PDF 업로드 연결 (`evidence_document_id` 컬럼만 있음)
 - 운영 임베딩 모델(bge-m3) 기준 순위 재측정·가중치 조정
-- 담당자용 공고 요건 입력·공개 화면 (기업마당 수집 공고는 작성중으로 들어오고, 지금은 API 로만 요건을 넣을 수 있음)

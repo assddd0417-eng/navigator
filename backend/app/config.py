@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     # LLM(anthropic·openai)은 외부 API 로 수요·카드 정보와 근거 인용문을 보내므로 명시적으로 켤 때만 쓴다.
     # LLM 실패·근거 검증 탈락 시에는 추천별로 템플릿 문장을 쓴다
     rationale_generator: str = "template"
+    # 공고 지원 조건 뽑기: "auto"(기본) = LLM 자격증명이 있으면 LLM, 없으면 규칙 / "llm" / "rules"
+    # 공개 공고문 글자만 보낸다 (기업 정보는 보내지 않음)
+    requirement_extractor: str = "auto"
     llm_provider: str = "anthropic"   # anthropic | openai
     llm_model: str = ""               # 비우면 제공자 기본값 (DEFAULT_LLM_MODELS)
     llm_effort: str = "medium"        # low | medium | high | xhigh | max (비우면 보내지 않음)

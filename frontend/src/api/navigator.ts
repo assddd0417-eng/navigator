@@ -286,9 +286,13 @@ export interface AnnouncementRow {
   requirement_count: number
   mandatory_count: number
   tech_need_count: number
+  source_kind?: string
+  posted_on?: string | null
+  attachment_count?: number
+  requirements_confirmed_at?: string | null
 }
 
-export const listAnnouncements = (query: { receipt_state?: string; q?: string } = {}) =>
+export const listAnnouncements = (query: { receipt_state?: string; q?: string; review?: 'PENDING' | 'DONE' } = {}) =>
   api<AnnouncementRow[]>('/navigator/announcements', { query: { limit: 200, ...query } })
 export const latestAnnouncementRun = (annId: number) =>
   api<MatchRun>(`/navigator/matching/announcements/${annId}`)
@@ -428,3 +432,58 @@ export const listFetchJobs = (source?: string) =>
   api<FetchJob[]>('/navigator/sources/jobs', { query: { source, limit: 50 } })
 export const runSource = (code: string, organizationId?: number) =>
   api<RunResult>(`/navigator/sources/${code}/run`, { method: 'POST', query: { organization_id: organizationId } })
+
+// 공고 등록·조건 확인
+export interface ReqDraft {
+  req_type_code: string
+  rule: Record<string, unknown>
+  is_mandatory: boolean
+  description: string
+  source_quote: string | null
+  quote_found?: boolean
+  origin?: 'MANUAL' | 'AI_EXTRACTED'
+}
+export interface TechDraft { tech_name: string; description?: string | null; is_core: boolean }
+export interface AnnFields {
+  receipt_start?: string | null
+  receipt_end?: string | null
+  support_amount_krw?: number | null
+  support_period_months?: number | null
+  target_desc?: string | null
+  summary?: string | null
+}
+export interface Extraction {
+  extractor: string
+  fields: AnnFields
+  requirements: ReqDraft[]
+  tech_needs: TechDraft[]
+  warnings: string[]
+}
+export interface AnnSource {
+  announcement_id: number
+  body_text: string | null
+  attachments: { id: number | null; file_name: string; file_ext: string | null; parse_status: string; parse_note: string | null; text_content: string | null; source_url: string | null }[]
+}
+export interface AnnDetail extends AnnouncementRow {
+  support_amount_krw: number | null
+  support_period_months: number | null
+  target_desc: string | null
+  summary: string | null
+  source_url: string | null
+  requirements: (ReqDraft & { id: number; req_type_name: string })[]
+  tech_needs: (TechDraft & { id: number })[]
+}
+export interface RequirementTypes {
+  types: { code: string; name_ko: string; rule_example: Record<string, unknown>; description: string | null }[]
+  certifications: { code: string; name_ko: string }[]
+}
+
+export const getAnnouncement = (id: number) => api<AnnDetail>(`/navigator/announcements/${id}`)
+export const getAnnouncementSource = (id: number) => api<AnnSource>(`/navigator/announcements/${id}/source`)
+export const extractRequirements = (id: number) =>
+  api<Extraction>(`/navigator/announcements/${id}/extract`, { method: 'POST' })
+export const getRequirementTypes = () => api<RequirementTypes>('/navigator/announcements/requirement-types')
+export const saveReview = (id: number, body: { fields: AnnFields; requirements: ReqDraft[]; tech_needs: TechDraft[]; confirm: boolean; publish: boolean }) =>
+  api<void>(`/navigator/announcements/${id}/review`, { method: 'PUT', body })
+export const createAnnouncementFromText = (body: { title: string; agency_name?: string; announcement_no?: string; body_text: string; source_url?: string; posted_on?: string }) =>
+  api<{ id: number }>('/navigator/announcements/text', { method: 'POST', body })
