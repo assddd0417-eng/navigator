@@ -121,7 +121,7 @@ async def test_registration_with_live_nts_without_key_is_unverified(client, monk
 async def test_due_sources_and_overview(client):
     _q("DELETE FROM ax.external_fetch_job WHERE trigger_kind = 'SCHEDULED'")
     first = await collector.run_due()
-    assert {r["source"] for r in first} == {"NTS_BIZ", "KIPRIS", "DART", "BIZINFO"}
+    assert {r["source"] for r in first} == {"NTS_BIZ", "KIPRIS", "DART", "BIZINFO", "KRIT"}
     assert all(r["status"] == "SUCCEEDED" for r in first)
     assert await collector.run_due() == []                                  # 주기 안에는 다시 안 돎
 

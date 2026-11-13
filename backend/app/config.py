@@ -68,10 +68,13 @@ class Settings(BaseSettings):
     source_kipris: str = "mock"
     source_dart: str = "mock"
     source_bizinfo: str = "mock"
+    source_krit: str = "mock"
     nts_service_key: str | None = None      # 공공데이터포털 (국세청 사업자등록정보)
     kipris_access_key: str | None = None    # KIPRIS Plus
     dart_api_key: str | None = None         # OpenDART
     bizinfo_api_key: str | None = None      # 기업마당
+    krit_max_pages: int = 3                 # 국기원 공지사항 한 번에 읽을 쪽 수 (쪽당 10건). 처음 채울 때는 61
+    krit_request_delay_s: float = 0.5       # 국기원 요청 사이 대기 (동시·연속 요청 시 빈 페이지가 옴)
     navigator_announcement_keywords: str = "국방,방산,방위산업,방위사업,무기체계,군수"   # 외부 공고 거르기 (쉼표)
 
     @property
