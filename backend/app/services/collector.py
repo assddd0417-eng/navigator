@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 from collections.abc import Awaitable, Callable
@@ -16,8 +17,9 @@ from psycopg import AsyncConnection
 from app.config import get_settings
 from app.db import transaction
 from app.errors import NotFound
+from app.services import hwp_text
 from app.services.company_profile import record_field
-from app.services.external import bizinfo, dart, kipris, nts
+from app.services.external import bizinfo, dart, kipris, krit, nts
 from app.services.external.base import ConnectorUnavailable, content_hash
 from app.services.navigator_embedding import sync_announcement_embeddings, sync_company_embeddings
 
@@ -200,6 +202,89 @@ async def collect_bizinfo(conn: AsyncConnection, run: Run, org_id: int | None) -
             await sync_announcement_embeddings(conn, row["id"])
 
 
+# 국기원 공지사항: 기업 대상 모집 공고 → 작성중 공고 (본문·첨부 글자 포함)
+async def collect_krit(conn: AsyncConnection, run: Run, org_id: int | None) -> None:
+    s = get_settings()
+    connector = await asyncio.to_thread(krit.get_krit_connector)
+    known = {r["announcement_no"] for r in await (await conn.execute(
+        "SELECT announcement_no FROM ax.announcement WHERE announcement_no LIKE 'KRIT-%'")).fetchall()}
+    for page in range(1, s.krit_max_pages + 1):
+        items = await asyncio.to_thread(connector.list_page, page)
+        if not items:
+            break
+        fresh = 0
+        for it in items:
+            no = f"{krit.SOURCE_CODE}-{it.ntt_id}"
+            if not krit.is_company_recruitment(it.title):
+                run.add("skipped")
+                continue
+            if no in known:
+                run.add("unchanged")
+                continue
+            fresh += 1
+            detail = await asyncio.to_thread(connector.view, it)
+            await _raw(conn, run, None, it.ntt_id, {"title": it.title, "posted_on": it.posted_on, "url": it.url,
+                                                   "body": detail.body,
+                                                   "attachments": [a.file_name for a in detail.attachments]})
+            files = [await _krit_attachment(connector, a) for a in detail.attachments]
+            start, end = krit.receipt_period(detail.body, it.posted_on)
+            if end is None:
+                for f in files:
+                    start, end = krit.receipt_period(f["text_content"] or "", it.posted_on)
+                    if end:
+                        break
+            row = await (await conn.execute(
+                """INSERT INTO ax.announcement (announcement_no, title, agency_name, summary, receipt_start, receipt_end,
+                                                source_kind, external_source_id, source_url, status, posted_on,
+                                                series_key, body_text)
+                   VALUES (%(no)s, %(title)s, %(agency)s, %(summary)s, %(start)s, %(end)s, 'EXTERNAL', %(src)s,
+                           %(url)s, 'DRAFT', %(posted)s, %(series)s, %(body)s)
+                   ON CONFLICT (announcement_no) DO NOTHING
+                   RETURNING id""",
+                {"no": no, "title": it.title[:500], "agency": krit.AGENCY_NAME, "summary": detail.body[:2000] or None,
+                 "start": start, "end": end, "src": run.source_id, "url": it.url, "posted": it.posted_on,
+                 "series": krit.series_key(it.title), "body": detail.body or None})).fetchone()
+            if row is None:
+                continue
+            known.add(no)
+            run.add("inserted")
+            for f in files:
+                await conn.execute(
+                    """INSERT INTO ax.announcement_attachment (announcement_id, file_name, source_url, file_ext,
+                                                               byte_size, content_hash, text_content, parse_status,
+                                                               parse_note)
+                       VALUES (%(ann)s, %(file_name)s, %(source_url)s, %(file_ext)s, %(byte_size)s, %(content_hash)s,
+                               %(text_content)s, %(parse_status)s, %(parse_note)s)
+                       ON CONFLICT (announcement_id, source_url) DO NOTHING""", {"ann": row["id"], **f})
+                run.add("attachments_" + f["parse_status"].lower())
+            await sync_announcement_embeddings(conn, row["id"])
+        if fresh == 0 and page > 1:
+            break   # 이미 받은 쪽까지 왔음
+
+
+async def _krit_attachment(connector, ref: krit.AttachmentRef) -> dict:
+    out = {"file_name": ref.file_name[:300], "source_url": ref.url, "file_ext": ref.ext or None, "byte_size": None,
+           "content_hash": None, "text_content": None, "parse_status": "SKIPPED", "parse_note": None}
+    if ref.ext not in krit.READABLE_EXT:
+        out["parse_note"] = f"읽지 않는 형식 ({ref.ext or '확장자 없음'})"
+        return out
+    try:
+        data = await asyncio.to_thread(connector.download, ref)
+    except ConnectorUnavailable as e:
+        return {**out, "parse_status": "FAILED", "parse_note": str(e)[:500]}
+    out.update(byte_size=len(data), content_hash=hashlib.sha256(data).hexdigest())
+    if connector.mode == "mock":   # 픽스처는 첨부 글자를 그대로 둔다
+        return {**out, "text_content": data.decode("utf-8"), "parse_status": "PARSED"}
+    try:
+        text = await asyncio.to_thread(hwp_text.extract_text, ref.file_name, data)
+    except hwp_text.UnsupportedFile as e:
+        return {**out, "parse_status": "UNSUPPORTED", "parse_note": str(e)[:500]}
+    except Exception as e:  # noqa: BLE001  손상 파일 하나 때문에 수집 전체를 멈추지 않는다
+        return {**out, "parse_status": "FAILED", "parse_note": f"{type(e).__name__}: {e}"[:500]}
+    return {**out, "text_content": text or None, "parse_status": "PARSED" if text else "UNSUPPORTED",
+            "parse_note": None if text else "글자 없음 (스캔본일 수 있음)"}
+
+
 Collector = Callable[[AsyncConnection, Run, "int | None"], Awaitable[None]]
 COLLECTORS: dict[str, tuple[Collector, str, bool]] = {
     # code: (함수, 설정 이름, 기업별 실행 가능)
@@ -207,6 +292,7 @@ COLLECTORS: dict[str, tuple[Collector, str, bool]] = {
     kipris.SOURCE_CODE: (collect_kipris, "source_kipris", True),
     dart.SOURCE_CODE: (collect_dart, "source_dart", True),
     bizinfo.SOURCE_CODE: (collect_bizinfo, "source_bizinfo", False),
+    krit.SOURCE_CODE: (collect_krit, "source_krit", False),
 }
 
 

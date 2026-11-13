@@ -7,7 +7,7 @@
 
 | 구분 | 위치 |
 |------|------|
-| 마이그레이션 | 0019 기업 프로필(특허·인증·신용등급·R&D 이력·관리 링크), 0020 외부 출처·값 출처, 0021 공고·자격요건, 0022 임베딩·매칭 결과, 0024 알림 구독, 0025 외부 수집(기업마당 출처, 출처별 기업 식별자) |
+| 마이그레이션 | 0019 기업 프로필(특허·인증·신용등급·R&D 이력·관리 링크), 0020 외부 출처·값 출처, 0021 공고·자격요건, 0022 임베딩·매칭 결과, 0024 알림 구독, 0025 외부 수집(기업마당 출처, 출처별 기업 식별자), 0030 국기원 공지사항 출처·공고 첨부 |
 | 기업 API | `backend/app/routers/navigator.py` |
 | 공고 API | `backend/app/routers/announcements.py`, 요건 형식 `backend/app/schemas/announcements.py` (`RULE_MODELS`) |
 | 매칭 API | `backend/app/routers/navigator_matching.py` |
@@ -101,12 +101,19 @@
 | `KIPRIS` | KIPRIS Plus | 7일 | `company_patent` (origin EXTERNAL, 확인됨). 같은 출원번호의 자가입력 행은 외부값으로 바뀜 |
 | `DART` | OpenDART | 30일 | 매출·직원 수·기준연도를 값 출처(확인됨)로. 판정은 확인된 외부값 우선 |
 | `BIZINFO` | 기업마당 지원사업 | 1일 | `announcement` 작성중(DRAFT, source_kind EXTERNAL). 담당자가 요건 입력 후 공개하면 알림 |
+| `KRIT` | 국방기술진흥연구소 공지사항 (www.krit.re.kr) | 1일 | `announcement` 작성중 + 본문(`body_text`)·게시일·묶음 키, 첨부 글자는 `announcement_attachment` |
 
 - 한 번 실행 = `external_fetch_job` 1행, 받은 원본은 `external_raw_record` 에 그대로. 실패하면 반영은 롤백하고 FAILED 와 오류를 남긴다.
 - 주기 실행: `python -m app.collect --due` 를 cron 으로 (예: 매시간). 출처별 마지막 주기 실행 뒤 `fetch_interval` 이 지난 것만 돈다.
 - KIPRIS 는 사업자번호 검색이 없어 출원인 이름이 정확히 같은 것만 가져오고, 처음 찾은 특허고객번호를 저장해 다음부터 그 번호로 찾는다.
 - DART 는 회사명으로 후보를 찾고 `company.json` 의 사업자번호가 같은 것을 고유번호로 저장한다. 상장·외부감사 대상만 있다.
 - 기업마당 공고는 `NAVIGATOR_ANNOUNCEMENT_KEYWORDS` 가 제목·요약·해시태그에 있는 것만. 공고번호는 `BIZINFO-<공고ID>`, 작성중일 때만 갱신.
+- 국기원 공지사항은 키 없이 게시판을 읽는다. 제목으로 기업 대상 모집 공고만 고르고(결과·설명회·대학·채용 등 제외) 공고번호는 `KRIT-<게시글 번호>`.
+  - 신청기간은 본문의 "신청기간 : ’26. 11. 5.(목) ~ 11. 12.(목)" 같은 줄에서, 본문에 없으면 첨부 글자에서 찾는다.
+  - 첨부는 HWP·HWPX·PDF 만 받아 글자를 뽑는다(`app/services/hwp_text.py`). 원본 파일은 저장하지 않는다. zip·xlsx·이미지는 SKIPPED, 배포용 HWP·스캔 PDF 는 UNSUPPORTED.
+  - `series_key` 는 제목에서 차수·연도·재공고·연장 표시를 지운 값. 같은 사업의 여러 공고를 묶는다.
+  - 평소에는 앞 `KRIT_MAX_PAGES`(3) 쪽만 읽고 이미 받은 공고는 건너뛴다. 처음 채울 때는 `KRIT_MAX_PAGES=61 SOURCE_KRIT=live python -m app.collect --source KRIT` (2021년 6월부터 약 600건, 요청 사이 0.5초라 수십 분 걸림).
+  - 게시판에 동시에 여러 요청을 보내면 빈 페이지가 와서 한 건씩 받는다. 상세는 목록에서 받은 쿠키와 Referer 가 있어야 열린다.
 - live 연결 부품은 공개 문서의 응답 모양으로 해석을 테스트했지만 실제 키로는 아직 호출해 보지 않았다 (개발 환경에서 외부 API 차단). 키를 받으면 `SOURCE_<코드>=live` 로 한 출처씩 확인한다.
 - NICE·KED(유료 계약), NTIS(비용 확인), 인증서 PDF 는 연결 부품이 없다. 화면에 "미연결"로 표시.
 
@@ -236,6 +243,9 @@ R&D 이력의 과제번호가 `project.project_no` 와 같으면 내부 과제�
 | `KIPRIS_ACCESS_KEY` | - | KIPRIS Plus |
 | `DART_API_KEY` | - | OpenDART |
 | `BIZINFO_API_KEY` | - | 기업마당 |
+| `SOURCE_KRIT` | `mock` | `live` 면 국기원 공지사항을 직접 읽음 (키 불필요) |
+| `KRIT_MAX_PAGES` | `3` | 한 번에 읽을 쪽 수 (쪽당 10건). 처음 채울 때 61 |
+| `KRIT_REQUEST_DELAY_S` | `0.5` | 국기원 요청 사이 대기 |
 | `NAVIGATOR_ANNOUNCEMENT_KEYWORDS` | `국방,방산,방위산업,방위사업,무기체계,군수` | 외부 공고 거르기 (쉼표). "방위"만 쓰면 "주방위생" 같은 공고가 걸림 |
 | `MAILER` | `mock` | mock 은 발송 없이 로그만 (본문은 DEBUG 로그) |
 | `NAVIGATOR_PUBLIC_BASE_URL` | `http://localhost:5173` | 관리 링크 주소 |
@@ -291,7 +301,7 @@ curl -s -X POST localhost:8000/navigator/announcements -H 'X-User-Id: 1' -H 'Con
 
 ## 미구현
 
-- 공고문 자격요건 자동 추출 (`origin = AI_EXTRACTED` 컬럼만 있음)
+- 공고문 자격요건 자동 추출 (`origin = AI_EXTRACTED` 컬럼만 있음). 국기원 공고는 첨부 글자까지 받아 두었음
 - 실제 키로 live 연결 확인 (국세청 → KIPRIS → DART → 기업마당 순서)
 - 나라장터·방사청 공고, NICE·KED 신용등급, NTIS 과제 연결 부품
 - 실제 메일 발송 (SMTP 등, `mailer.send` 만 바꾸면 됨). 지금은 mock

@@ -361,8 +361,8 @@ check "가상 공고 5건, 105 는 마감" \
     '([.[] | select(.announcement_no | startswith("NAV-2026-"))] | length) == 5
      and any(.[]; .announcement_no == "NAV-2026-105" and .receipt_state == "CLOSED")'
 api "공고 상세 (자격요건·요구기술)" 200 GET /navigator/announcements/101 -
-check "자격요건 6줄 (필수 4·우대 2) · 요구기술 2" \
-    '(.requirements | length) == 6 and ([.requirements[] | select(.is_mandatory)] | length) == 4
+check "자격요건 8줄 (필수 5·우대 3) · 요구기술 2" \
+    '(.requirements | length) == 8 and ([.requirements[] | select(.is_mandatory)] | length) == 5
      and (.tech_needs | length) == 2'
 api "로그인 없이 공고 등록 거부" 401 POST /navigator/announcements - '{"announcement_no":"x","title":"x","agency_name":"x"}'
 api "공고 직접 입력 (PLANNER)" 201 POST /navigator/announcements "$PLANNER" \
@@ -410,6 +410,7 @@ api "국세청 휴·폐업 재확인" 200 POST /navigator/sources/NTS_BIZ/run "$
 api "KIPRIS 특허 (한빛)" 200 POST "/navigator/sources/KIPRIS/run?organization_id=101" "$PLANNER"
 api "DART 재무 (누리)" 200 POST "/navigator/sources/DART/run?organization_id=102" "$PLANNER"
 api "기업마당 공고" 200 POST /navigator/sources/BIZINFO/run "$PLANNER"
+api "국기원 공지사항 공고" 200 POST /navigator/sources/KRIT/run "$PLANNER"
 api "공고는 기업별 수집 안 됨" 422 POST "/navigator/sources/BIZINFO/run?organization_id=101" "$PLANNER"
 api "연결 안 된 출처" 404 POST /navigator/sources/NICE/run "$PLANNER"
 api "수집 기록" 200 GET "/navigator/sources/jobs?limit=5" "$PLANNER"
