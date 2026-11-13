@@ -1,7 +1,7 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react'
 import {
   createCard, createDocument, listDocuments, parseDocumentFile, uploadDocumentFile,
-  type DocumentCreated, type ParsePreview,
+  type DocumentCreated, type LinkedProject, type ParsePreview,
 } from '../../api/endpoints'
 import { useAuth } from '../../auth/AuthContext'
 import { useToast } from '../../components/Toast'
@@ -9,7 +9,8 @@ import { Link } from 'react-router-dom'
 import { Card, Empty, fmtDate, More, PageHeader, RoleHint, StatusBadge, Steps, useAction, useAsync } from '../../components/ui'
 
 const DOC_TYPES = [
-  ['FINAL_REPORT', '결과보고서'], ['RND_PLAN', '연구개발계획서'], ['TEST_REPORT', '시험성적서'],
+  ['FINAL_REPORT', '결과보고서'], ['RND_PLAN', '연구개발계획서'], ['PROGRAM_PLAN', '사업 기획서'], ['PROGRAM_NOTICE', '공모서'],
+  ['TEST_REPORT', '시험성적서'],
   ['PAPER', '논문'], ['PATENT', '특허·지재권'], ['EVALUATION', '평가자료'], ['OTHER', '기타'],
 ] as const
 
@@ -50,7 +51,9 @@ function PdfPreview({ preview, onClear }: { preview: ParsePreview; onClear: () =
   )
 }
 
-function UploadForm({ onUploaded }: { onUploaded: (doc: DocumentCreated, projectId: number, title: string) => void }) {
+function UploadForm({ onUploaded, onListed }:
+  { onUploaded: (doc: DocumentCreated, projectId: number, title: string) => void; onListed: () => void }) {
+  const [linked, setLinked] = useState<LinkedProject[] | null>(null)
   const toast = useToast()
   const { busy, run } = useAction()
   const [f, setF] = useState({ title: '', doc_type: 'FINAL_REPORT', project: '1', section_no: '', heading: '', page: '', text: '' })
@@ -87,32 +90,37 @@ function UploadForm({ onUploaded }: { onUploaded: (doc: DocumentCreated, project
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
-    const project = PROJECTS.find((p) => p.id === Number(f.project))!
+    const project = PROJECTS.find((p) => p.id === Number(f.project))  // 없으면 자동 (본문의 과제번호로 찾기)
+    const done = (res: DocumentCreated, what: string) => {
+      const subject = project?.id ?? res.linked_projects.find((x) => x.link_role === 'SUBJECT')?.project_id
+      const found = res.linked_projects.filter((x) => x.match_method !== 'MANUAL')
+      toast.success(what, found.length
+        ? `과제 ${found.length}개에 연결했습니다: ${found.map((x) => x.project_no).join(', ')}`
+        : '이어서 성과카드를 만들어 보세요.')
+      setLinked(res.linked_projects)
+      if (subject && !['PROGRAM_PLAN', 'PROGRAM_NOTICE'].includes(f.doc_type)) onUploaded(res, subject, f.title)
+      else onListed()
+      setF({ ...f, title: '', text: '' })
+    }
     if (pdf) {
       const res = await run(() => uploadDocumentFile(pdf.file, {
-        doc_type_code: f.doc_type, title: f.title, project_id: project.id, owner_dept_id: project.dept,
+        doc_type_code: f.doc_type, title: f.title, project_id: project?.id, owner_dept_id: project?.dept,
       }))
       if (res) {
-        toast.success('PDF 문서를 올렸습니다', `${res.page_count}쪽을 읽어 검색할 수 있게 했습니다. 이어서 성과카드를 만들어 보세요.`)
-        onUploaded(res, project.id, f.title)
+        done(res, `PDF ${res.page_count}쪽을 올렸습니다`)
         setPdf(null)
-        setF({ ...f, title: '', text: '' })
       }
       return
     }
     const page = f.page ? Number(f.page) : null
     const hasSection = Boolean(f.section_no || f.heading)
     const res = await run(() => createDocument({
-      doc_type_code: f.doc_type, title: f.title, project_id: project.id, owner_dept_id: project.dept,
+      doc_type_code: f.doc_type, title: f.title, project_id: project?.id, owner_dept_id: project?.dept,
       sections: hasSection ? [{ key: 's1', section_no: f.section_no || undefined, heading: f.heading || undefined,
         page_start: page ?? undefined, page_end: page ?? undefined }] : [],
       chunks: chunks.map((content) => ({ content, section_key: hasSection ? 's1' : undefined, page_start: page, page_end: page })),
     }))
-    if (res) {
-      toast.success('문서를 올렸습니다', `문단 ${res.chunk_ids.length}개를 검색할 수 있게 했습니다. 이어서 성과카드를 만들어 보세요.`)
-      onUploaded(res, project.id, f.title)
-      setF({ ...f, title: '', text: '' })
-    }
+    if (res) done(res, `문서를 올렸습니다 (문단 ${res.chunk_ids.length}개)`)
   }
 
   return (
@@ -131,6 +139,7 @@ function UploadForm({ onUploaded }: { onUploaded: (doc: DocumentCreated, project
         </select></label>
       </div>
       <label>어느 과제의 문서인가요? (과제 담당 부서가 이 문서를 볼 수 있게 됩니다)<select value={f.project} onChange={set('project')}>
+        <option value="auto">자동: 본문의 과제번호·과제명으로 찾기 (기획서·공모서)</option>
         {PROJECTS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
       </select></label>
       {pdf ? <PdfPreview preview={pdf.preview} onClear={() => setPdf(null)} /> : (
@@ -152,6 +161,18 @@ function UploadForm({ onUploaded }: { onUploaded: (doc: DocumentCreated, project
         <button className="btn btn-primary" disabled={busy || parsing || chunkCount === 0}>
           {busy ? '올리는 중…' : '문서 올리기'}</button>
       </div>
+      {linked && (
+        <div className="notice small">
+          {linked.length === 0 ? '본문에서 과제번호나 과제명을 찾지 못했습니다. 과제의 다른 번호(예: DTiMS 번호)를 등록하면 다시 연결할 수 있습니다.' : (<>
+            📎 연결한 과제:{' '}
+            {linked.map((x, i) => (
+              <span key={x.project_id}>{i > 0 && ', '}{x.project_no} {x.title}
+                <span className="muted"> ({x.link_role === 'SUBJECT' ? '이 과제의 문서' : '문서에 실린 과제'}{
+                  x.match_method === 'TITLE' ? ' · 과제명으로 찾음' : x.match_method === 'IDENTIFIER' ? ' · 다른 번호로 찾음' : ''})</span></span>
+            ))}
+          </>)}
+        </div>
+      )}
     </form>
   )
 }
@@ -222,7 +243,8 @@ export function DocumentUploadPage() {
       )}
       <div className="grid-2">
         <Card title="① 문서 올리기">
-          <UploadForm onUploaded={(doc, projectId, title) => { setUploaded({ doc, projectId, title }); setSaved(false); void docs.reload() }} />
+          <UploadForm onUploaded={(doc, projectId, title) => { setUploaded({ doc, projectId, title }); setSaved(false); void docs.reload() }}
+            onListed={() => { setUploaded(null); void docs.reload() }} />
         </Card>
         <Card title="② 성과카드 초안 만들기">
           {uploaded

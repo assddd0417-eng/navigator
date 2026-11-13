@@ -103,6 +103,9 @@ app/
 | POST | `/planning/brief/{동향id}/to-demand` | PLANNER | 참고서로 신규 기획수요(OPEN) + 참고서 사본(planning_draft). 이미 있으면 200 + 기존 것 |
 | GET | `/planning/demands/{기획수요id}/brief` | PLANNER, DEPT_REVIEWER, CURATOR | 기획수요에 붙은 참고서 사본 (Markdown) |
 | GET·POST | `/planning/projects/{과제id}/evaluations` | 읽기 위 3역할 · 쓰기 PLANNER, CURATOR | 과제 평가 의견 (결과평가·중간평가·전문가·소요군). 과제보다 낮은 보안등급 불가 (0029) |
+| GET | `/planning/projects/{과제id}/chain` | PLANNER, DEPT_REVIEWER, CURATOR | 자료 사슬 (사업 기획서 → 공모서 → 연구개발계획서 → 결과보고서 → 평가서)과 과제의 다른 번호 (0032) |
+| POST | `/planning/projects/{과제id}/identifiers` | PLANNER, CURATOR | 과제의 다른 번호 등록 (PMS·DTiMS 번호가 다를 때). 같은 시스템 같은 번호는 한 과제만 |
+| POST | `/planning/documents/{문서id}/relink` | PLANNER, CURATOR | 문서를 과제번호·다른 번호·과제명으로 다시 연결 |
 | PUT | `/planning/projects/{과제id}/outcome` | PLANNER, CURATOR | 과제 결과 구분 (전력화·후속·기술만·전환 실패·중단). 실패·중단은 원인 필수 (DB 강제) |
 
 ## 문서 파일 업로드 (PDF)
@@ -196,6 +199,7 @@ EMBEDDER=bge_m3 python -m app.gap_eval all    # 해외 수요·K2 카드 적재 
 - 요구 성능 비교: 지표명이 같은 과거 달성값 중 가장 잘 맞는 것 → 충족 / 부족(달성률) / 과거 자료 없음 / 단위 다름 / 서술형.
 - 새 기획에 넣을 것 (이 순서): 실패 원인 먼저(전환 실패·중단 과제, 목표 미달 성능, 미흡 평가) → 성능 높이기 → 남은 숙제 풀기(우선순위 높음 또는 동향과 관련) → 평가 의견 반영 → 국산화(수입 품목) → 새로 개발 → 이어받기.
 - `min_sim` 기본 0.45 는 BGE-M3 기준이다. 해시 임베더로 돌릴 때는 화면의 ‘덜 비슷한 과제도 보기’(0.35)나 더 낮은 값을 쓴다.
+- 문서 등록(`POST /documents`, `/documents/upload`) 때 본문에서 과제번호·다른 번호·과제명(8글자 이상)을 찾아 `document_project_link` 에 남긴다. 공모서·사업 기획서나 과제가 여럿 나온 문서는 '실린 과제', 하나뿐이면 그 과제의 문서로 보고 문서의 과제·소관부서를 채운다. 시연용 합성 문서: `seeds/planning_docs/`.
 - K2 파워팩 시연 자료(`seeds/overseas/국내성과_K2파워팩.json`)에 과제 결과 구분·평가 의견이 들어 있다 (평가 의견은 합성, 평가 주체에 표시).
 
 ## 매칭 로직 요약

@@ -482,3 +482,7 @@ label.check input { width: auto; }
 }
 .pl-check { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; }
 .pl-perfs > .btn { align-self: flex-start; }
+.pl-chain { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.pl-step { color: var(--muted); }
+.pl-step-on { color: var(--ok); font-weight: 600; }
+.pl-arrow { margin: 0 6px 0 2px; color: var(--muted); font-weight: 400; }
