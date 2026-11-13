@@ -9,13 +9,16 @@ from app.db import transaction
 from app.errors import NotFound
 from app.repositories.sql import evidence_from_chunk, insert, update
 from app.routers.documents import parse_file, store_document
-from app.schemas.announcements import (AnnouncementCreate, AnnouncementCreated, AnnouncementUpdate,
-                                       RequirementIn, RequirementUpdate, TechNeedIn, normalize_rule)
+from app.config import get_settings
+from app.schemas.announcements import (AnnouncementCreate, AnnouncementCreated, AnnouncementFromText,
+                                       AnnouncementReview, AnnouncementUpdate, RequirementIn, RequirementUpdate,
+                                       TechNeedIn, normalize_rule)
 from app.schemas.common import Created
 from app.schemas.documents import ChunkIn, DocumentCreate
 from app.services.navigator_alerts import safe_dispatch
 from app.services.navigator_embedding import sync_announcement_embeddings
 from app.services.ratelimit import public_rate_limit
+from app.services.requirement_extract import extract, source_text
 
 router = APIRouter(prefix="/navigator/announcements", tags=["Navigator 공고"])
 STAFF = ("PLANNER",)
@@ -71,7 +74,7 @@ async def _insert_requirement(conn: AsyncConnection, ann_id: int, document_id: i
     return await insert(conn, "announcement_requirement", {
         "announcement_id": ann_id, "req_type_code": r.req_type_code, "rule": rule,
         "is_mandatory": r.is_mandatory, "description": r.description, "evidence_id": evidence_id,
-        "source_quote": quote, "source_page": page, "sort_order": sort_order})
+        "source_quote": quote, "source_page": page, "sort_order": sort_order, "origin": r.origin})
 
 
 async def _insert_tech_need(conn: AsyncConnection, ann_id: int, t: TechNeedIn, sort_order: int) -> int:
@@ -162,25 +165,42 @@ async def upload_announcement(
 @router.get("", dependencies=[Depends(public_rate_limit)])
 async def list_announcements(receipt_state: str | None = Query(None, description="UPCOMING | OPEN | CLOSED"),
                              domain: str | None = None, q: str | None = Query(None, description="제목 검색"),
+                             review: str | None = Query(None, description="담당자: PENDING = 조건 확인 전, DONE = 확인"),
                              limit: int = Query(50, le=200), offset: int = 0,
                              user: CurrentUser | None = Depends(optional_user)):
     async with transaction() as conn:
         rows = await (await conn.execute(
             """SELECT id, announcement_no, title, agency_name, domain, program_id, program_code, program_name,
                       support_amount_krw, receipt_start, receipt_end, status, receipt_state, source_kind,
-                      requirement_count, mandatory_count, tech_need_count, updated_at
+                      requirement_count, mandatory_count, tech_need_count, updated_at,
+                      posted_on, series_key, attachment_count, requirements_confirmed_at
                  FROM ax.v_announcement
                 WHERE (%(staff)s OR status = 'PUBLISHED')
+                  AND (%(review)s::text IS NULL OR NOT %(staff)s
+                       OR (%(review)s = 'PENDING') = (requirements_confirmed_at IS NULL))
                   AND (%(state)s::text IS NULL OR receipt_state = %(state)s)
                   AND (%(domain)s::text IS NULL OR domain = %(domain)s)
                   AND (%(q)s::text IS NULL OR title ILIKE '%%' || %(q)s || '%%')
-                ORDER BY (receipt_state = 'OPEN') DESC, receipt_end NULLS LAST, id
+                ORDER BY CASE WHEN %(review)s::text IS NOT NULL THEN posted_on END DESC NULLS LAST,
+                         (receipt_state = 'OPEN') DESC, receipt_end NULLS LAST, id
                 LIMIT %(limit)s OFFSET %(offset)s""",
-            {"staff": _is_staff(user), "state": receipt_state, "domain": domain, "q": q,
+            {"staff": _is_staff(user), "state": receipt_state, "domain": domain, "q": q, "review": review,
              "limit": limit, "offset": offset})).fetchall()
     for r in rows:
         r["receipt_state_label"] = RECEIPT_LABEL[r["receipt_state"]]
     return rows
+
+
+@router.get("/requirement-types")
+async def requirement_types(user: CurrentUser = Depends(require_roles(*STAFF))):
+    """확인 화면의 조건 종류·인증 코드 목록."""
+    async with transaction() as conn:
+        types = await (await conn.execute(
+            """SELECT code, name_ko, rule_example, description FROM ax.code_requirement_type
+                WHERE is_active ORDER BY sort_order""")).fetchall()
+        certs = await (await conn.execute(
+            "SELECT code, name_ko FROM ax.code_certification_type WHERE is_active ORDER BY sort_order")).fetchall()
+    return {"types": types, "certifications": certs}
 
 
 @router.get("/{ann_id}", dependencies=[Depends(public_rate_limit)])
@@ -188,6 +208,7 @@ async def get_announcement(ann_id: int, user: CurrentUser | None = Depends(optio
     async with transaction() as conn:
         a = await _announcement(conn, ann_id, user)
         a["receipt_state_label"] = RECEIPT_LABEL[a["receipt_state"]]
+        a.pop("body_text", None)   # 원문은 /source 로
         a["requirements"] = await (await conn.execute(
             """SELECT r.id, r.req_type_code, t.name_ko AS req_type_name, r.rule, r.is_mandatory,
                       CASE WHEN r.is_mandatory THEN '필수' ELSE '우대' END AS mandatory_label,
@@ -305,4 +326,92 @@ async def delete_tech_need(ann_id: int, tech_id: int, user: CurrentUser = Depend
         if cur.rowcount == 0:
             raise NotFound("요구 기술", tech_id)
         await _changed(conn, ann_id)
+    return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# 담당자 공고 등록·조건 확인
+# ---------------------------------------------------------------------------
+@router.post("/text", response_model=AnnouncementCreated, status_code=201)
+async def create_from_text(body: AnnouncementFromText, user: CurrentUser = Depends(require_roles(*STAFF)),
+                           rid: str = Depends(request_id)):
+    """공고문 글자를 붙여 넣어 작성중 공고를 만든다. 조건은 /extract 로 후보를 보고 /review 로 저장."""
+    from datetime import datetime
+    no = (body.announcement_no or "").strip() or f"MAN-{datetime.now():%Y%m%d%H%M%S}"
+    async with transaction(user.id, rid) as conn:
+        if await (await conn.execute("SELECT 1 FROM ax.announcement WHERE announcement_no = %s", (no,))).fetchone():
+            raise HTTPException(status.HTTP_409_CONFLICT, f"이미 있는 공고 번호입니다: {no}")
+        ann_id = await insert(conn, "announcement", {
+            "announcement_no": no, "title": body.title, "agency_name": body.agency_name, "domain": body.domain,
+            "source_url": body.source_url, "posted_on": body.posted_on, "body_text": body.body_text,
+            "summary": body.body_text[:2000], "status": "DRAFT", "source_kind": "MANUAL", "created_by": user.id})
+        await sync_announcement_embeddings(conn, ann_id)
+    return AnnouncementCreated(id=ann_id)
+
+
+async def _source(conn: AsyncConnection, a: dict) -> dict:
+    atts = await (await conn.execute(
+        """SELECT id, file_name, file_ext, parse_status, parse_note, text_content, source_url
+             FROM ax.announcement_attachment WHERE announcement_id = %s ORDER BY id""", (a["id"],))).fetchall()
+    if a["document_id"]:   # PDF 로 올린 공고는 청크를 이어 붙인다
+        chunks = await (await conn.execute(
+            "SELECT content FROM ax.document_chunk WHERE document_id = %s ORDER BY chunk_index",
+            (a["document_id"],))).fetchall()
+        atts.append({"id": None, "file_name": "올린 공고문", "file_ext": None, "parse_status": "PARSED",
+                     "parse_note": None, "source_url": None, "text_content": "\n".join(c["content"] for c in chunks)})
+    return {"announcement_id": a["id"], "body_text": a["body_text"], "attachments": atts,
+            "text": source_text(a["body_text"], atts)}
+
+
+@router.get("/{ann_id}/source")
+async def get_source(ann_id: int, user: CurrentUser = Depends(require_roles(*STAFF))):
+    """확인 화면 왼쪽: 게시글 본문과 첨부에서 뽑은 글자."""
+    async with transaction() as conn:
+        src = await _source(conn, await _announcement(conn, ann_id, user))
+    src.pop("text")
+    return src
+
+
+@router.post("/{ann_id}/extract")
+async def extract_requirements(ann_id: int, user: CurrentUser = Depends(require_roles(*STAFF))):
+    """공고문에서 조건·접수기간·지원금액 후보를 뽑는다. 저장하지 않는다."""
+    async with transaction() as conn:
+        a = await _announcement(conn, ann_id, user)
+        src = await _source(conn, a)
+        codes = await (await conn.execute(
+            """SELECT code, name_ko, rule_example, description FROM ax.code_requirement_type
+                WHERE is_active ORDER BY sort_order""")).fetchall()
+        certs = await (await conn.execute(
+            "SELECT code, name_ko FROM ax.code_certification_type WHERE is_active ORDER BY sort_order")).fetchall()
+    ex = await extract(src["text"], a["posted_on"], get_settings(), codes, certs)
+    return ex.as_dict()
+
+
+@router.put("/{ann_id}/review", status_code=204)
+async def save_review(ann_id: int, body: AnnouncementReview, user: CurrentUser = Depends(require_roles(*STAFF)),
+                      rid: str = Depends(request_id)):
+    """확인 화면 저장: 공고 칸 수정 + 조건·요구기술 통째 교체 + 확인 표시 (+ 공개)."""
+    data = body.fields.model_dump(exclude_unset=True)
+    if body.publish:
+        data["status"] = "PUBLISHED"
+    async with transaction(user.id, rid) as conn:
+        a = await _announcement(conn, ann_id, user)
+        start, end = data.get("receipt_start", a["receipt_start"]), data.get("receipt_end", a["receipt_end"])
+        if start and end and end < start:
+            raise _unprocessable("접수 마감일이 접수 시작일보다 빠릅니다")
+        if body.publish and not body.requirements:
+            raise _unprocessable("지원 조건이 하나도 없으면 공개할 수 없습니다")
+        if body.confirm:
+            data["requirements_confirmed_by"] = user.id
+        await update(conn, "announcement", ann_id, data,
+                     "requirements_confirmed_at = now()" if body.confirm else "")
+        await conn.execute("DELETE FROM ax.announcement_requirement WHERE announcement_id = %s", (ann_id,))
+        await conn.execute("DELETE FROM ax.announcement_tech_need WHERE announcement_id = %s", (ann_id,))
+        for i, r in enumerate(body.requirements):
+            await _insert_requirement(conn, ann_id, a["document_id"], r, i)
+        for i, t in enumerate(body.tech_needs):
+            await _insert_tech_need(conn, ann_id, t, i)
+        await _changed(conn, ann_id)
+    if body.publish and a["status"] != "PUBLISHED":
+        await safe_dispatch(ann_id, rid)
     return Response(status_code=204)

@@ -415,6 +415,23 @@ api "공고는 기업별 수집 안 됨" 422 POST "/navigator/sources/BIZINFO/ru
 api "연결 안 된 출처" 404 POST /navigator/sources/NICE/run "$PLANNER"
 api "수집 기록" 200 GET "/navigator/sources/jobs?limit=5" "$PLANNER"
 
+section "⑫-2 공고 등록·조건 확인"
+NOTICE_TEXT='신청자격\n방산 부품을 생산하는 중소기업으로서 기업부설연구소를 보유한 기업\n신청제한\n1. 국세 체납 또는 휴·폐업 중인 기업\n신청기간 : 2026. 11. 16. ~ 11. 27.'
+api "공고문 붙여넣기 등록" 201 POST /navigator/announcements/text "$PLANNER" \
+    "{\"announcement_no\":\"SMK-$RUN_TAG\",\"title\":\"스모크 공고 $RUN_TAG\",\"body_text\":\"$NOTICE_TEXT\"}"
+TXT_ANN=$(pick '.id')
+if [[ -n "$TXT_ANN" ]]; then
+    api "확인 전 목록에 있음" 200 GET "/navigator/announcements?review=PENDING&q=$RUN_TAG" "$PLANNER"
+    check "작성 중 공고 1건" 'length == 1 and .[0].status == "DRAFT"'
+    api "조건 뽑기" 200 POST "/navigator/announcements/$TXT_ANN/extract" "$PLANNER"
+    check "기업규모·연구소·휴폐업·체납 후보, 접수 마감" \
+        '([.requirements[].req_type_code] | contains(["COMPANY_SIZE","REQUIRED_CERT","BUSINESS_STATUS","NO_DISQUALIFICATION"]))
+         and .fields.receipt_end == "2026-11-27"'
+    REQS=$(printf '%s' "$BODY" | jq -c '[.requirements[] | {req_type_code, rule, is_mandatory, description, source_quote, origin: "AI_EXTRACTED"}]')
+    api "조건 확인 저장" 204 PUT "/navigator/announcements/$TXT_ANN/review" "$PLANNER" "{\"requirements\":$REQS}"
+    api "조건 확인은 담당자만 (VIEWER)" 403 POST "/navigator/announcements/$TXT_ANN/extract" "$VIEWER"
+fi
+
 section "⑬ 기관 포트폴리오"
 api "포트폴리오 숫자 (기관 열람자)" 200 GET /portfolio/overview "$AGENCY"
 check "숫자 5개" 'has("cards_published") and has("overseas_demands") and has("gaps_confirmed") and has("gaps_draft") and has("handed_off")'

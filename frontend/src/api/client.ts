@@ -55,7 +55,7 @@ function formatDetail(detail: unknown): string {
 }
 
 export interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   query?: Record<string, string | number | boolean | null | undefined>
   /** FormData 면 multipart/form-data 로 그대로 보낸다 (파일 업로드). 그 외는 JSON. */
   body?: unknown
