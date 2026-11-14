@@ -26,8 +26,15 @@ from app.services.eligibility import (
 from app.services.embedding import active_model_id
 from app.services.navigator_embedding import ensure_embeddings, rnd_facts
 
-RULE_VERSION = "navigator-v1"
-WEIGHTS = {"TECH": 0.45, "IPC": 0.15, "PURPOSE": 0.20, "PREFERENCE": 0.20}
+RULE_VERSION = "navigator-v2"
+# NAVIGATOR_RANKING=vector (기본, A안): 규칙 판정으로 거른 뒤 벡터 유사도(요구기술 0.7 + 사업 목적 0.3) 순.
+#   IPC 일치·우대 충족은 순위에 넣지 않고 같은 점수일 때만 앞에 둔다.
+# weighted: 이전 방식 (기술 .45 · IPC .15 · 목적 .20 · 우대 .20 가중합)
+WEIGHTS_BY_MODE = {
+    "vector": {"TECH": 0.7, "IPC": 0.0, "PURPOSE": 0.3, "PREFERENCE": 0.0},
+    "weighted": {"TECH": 0.45, "IPC": 0.15, "PURPOSE": 0.20, "PREFERENCE": 0.20},
+}
+WEIGHTS = WEIGHTS_BY_MODE["weighted"]   # 이전 결과 해석용
 NEUTRAL = 0.5
 VERDICT_ORDER = {"ELIGIBLE": 0, "NEEDS_INFO": 1, "INELIGIBLE": 2}
 COMPANY_TECH_FACETS = ("TECH", "PATENT", "RND", "BUSINESS")
@@ -258,7 +265,7 @@ def score_pair(org: CompanyFacts, ann: AnnInfo, sims: list[dict]) -> Scored:
                   if pref else (NEUTRAL, "neutral:우대 요건 없음", {}))
 
     scores = {"TECH": tech, "IPC": ipc, "PURPOSE": purpose, "PREFERENCE": preference}
-    total = _clamp(sum(WEIGHTS[k] * v[0] for k, v in scores.items()))
+    total = combine(scores)
 
     for req, ch in checks:
         if ch.result != "MET" or not req.is_mandatory:
@@ -288,13 +295,39 @@ def rationale_text(org: CompanyFacts, ann: AnnInfo, checks: list[tuple[Requireme
     return head
 
 
+def ranking_mode() -> str:
+    mode = get_settings().navigator_ranking.lower()
+    if mode not in WEIGHTS_BY_MODE:
+        raise ValueError(f"NAVIGATOR_RANKING={mode} (vector|weighted)")
+    return mode
+
+
+def weights() -> dict[str, float]:
+    return WEIGHTS_BY_MODE[ranking_mode()]
+
+
+def combine(scores: dict[str, tuple]) -> float:
+    """기준별 점수 → 관련도. vector 모드는 값이 없는(neutral) 기준을 빼고 나머지 비율로 다시 나눈다."""
+    w = weights()
+    if ranking_mode() == "weighted":
+        return _clamp(sum(w[k] * v[0] for k, v in scores.items()))
+    used = {k: w[k] for k, v in scores.items() if w[k] > 0 and not str(v[1]).startswith("neutral")}
+    if not used:
+        return NEUTRAL
+    return _clamp(sum(wk * scores[k][0] for k, wk in used.items()) / sum(used.values()))
+
+
 def rank(scored: list[Scored]) -> list[Scored]:
-    return sorted(scored, key=lambda s: (VERDICT_ORDER[s.verdict], -s.total, s.org.organization_id, s.ann.id))
+    # 판정 → 관련도 → (같으면) 우대 충족 → IPC 일치
+    return sorted(scored, key=lambda s: (VERDICT_ORDER[s.verdict], -round(s.total, 4),
+                                         -s.scores["PREFERENCE"][0], -s.scores["IPC"][0],
+                                         s.org.organization_id, s.ann.id))
 
 
 def rule_snapshot() -> dict[str, Any]:
     s = get_settings()
-    return {"version": RULE_VERSION, "weights": WEIGHTS, "candidate_k": s.navigator_match_candidate_k,
+    return {"version": RULE_VERSION, "ranking": ranking_mode(), "weights": weights(),
+            "candidate_k": s.navigator_match_candidate_k,
             "verdict": "mandatory UNMET=INELIGIBLE, UNKNOWN=NEEDS_INFO", "neutral": NEUTRAL}
 
 
@@ -320,7 +353,7 @@ async def _save(conn: AsyncConnection, direction: str, ranked: list[Scored], *, 
             await conn.execute(
                 "INSERT INTO ax.company_recommendation_score (recommendation_id, criterion, score, weight, method, detail) "
                 "VALUES (%s, %s, %s, %s, %s, %s)",
-                (rec_id, crit, round(_clamp(score), 5), WEIGHTS[crit], method, json.dumps(detail, ensure_ascii=False)))
+                (rec_id, crit, round(_clamp(score), 5), weights()[crit], method, json.dumps(detail, ensure_ascii=False)))
         for req, ch in s.checks:
             await conn.execute(
                 """INSERT INTO ax.eligibility_check (recommendation_id, requirement_id, result, is_mandatory, reason,
@@ -399,8 +432,14 @@ async def fresh_company_run(conn: AsyncConnection, org_id: int, include_closed: 
                     (SELECT max(updated_at) FROM ax.company_patent WHERE organization_id = %(org)s),
                     (SELECT max(updated_at) FROM ax.company_certification WHERE organization_id = %(org)s),
                     (SELECT max(updated_at) FROM ax.company_credit_rating WHERE organization_id = %(org)s),
-                    (SELECT max(updated_at) FROM ax.company_rnd_history WHERE organization_id = %(org)s))
-            ORDER BY r.created_at DESC LIMIT 1""", {"org": org_id, "closed": include_closed})).fetchone()
+                    (SELECT max(updated_at) FROM ax.company_rnd_history WHERE organization_id = %(org)s),
+                    (SELECT max(updated_at) FROM ax.company_product WHERE organization_id = %(org)s),
+                    (SELECT max(created_at) FROM ax.company_technology WHERE organization_id = %(org)s),
+                    (SELECT max(updated_at) FROM ax.company_support_history WHERE organization_id = %(org)s))
+              AND r.rule_snapshot->>'version' = %(ver)s
+              AND r.rule_snapshot->>'ranking' = %(mode)s
+            ORDER BY r.created_at DESC LIMIT 1""",
+        {"org": org_id, "closed": include_closed, "ver": RULE_VERSION, "mode": ranking_mode()})).fetchone()
     return row["id"] if row else None
 
 

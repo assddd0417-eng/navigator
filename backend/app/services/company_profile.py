@@ -5,6 +5,7 @@ from typing import Any
 from psycopg import AsyncConnection
 from psycopg.types.json import Jsonb
 
+from app.services import company_radar
 from app.repositories.sql import insert
 from app.schemas.navigator import RndHistoryIn
 from app.services.bizno import format_bizno
@@ -156,4 +157,5 @@ async def full_view(conn: AsyncConnection, org_id: int) -> dict:
     p["field_sources"] = await (await conn.execute(
         """SELECT field_name, preferred_value, any_verified, differs, sources
              FROM ax.v_company_field_compare WHERE organization_id = %s ORDER BY field_name""", (org_id,))).fetchall()
+    p["radar"] = await company_radar.radar(conn, org_id)
     return p
