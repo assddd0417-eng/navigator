@@ -9,6 +9,7 @@ import {
 import { useToast } from '../../components/Toast'
 import { Card, Empty, useAction } from '../../components/ui'
 import { AlertsPanel } from './AlertsPanel'
+import { PastPanel } from './PastPanel'
 import { AGENCY_LABELS, bizStatus, CompanyShell, Deadline, fmtKrw, GroupedMatches, MatchCard } from './components'
 import { RadarChart } from '../../components/RadarChart'
 
@@ -25,7 +26,7 @@ function readToken(): string | null {
   try { return sessionStorage.getItem(TOKEN_KEY) } catch { return null }
 }
 
-type Tab = 'matches' | 'alerts' | 'profile'
+type Tab = 'matches' | 'past' | 'alerts' | 'profile'
 
 export function CompanyManagePage() {
   const [token] = useState(readToken)
@@ -34,15 +35,12 @@ export function CompanyManagePage() {
   const [invalid, setInvalid] = useState<string | null>(token ? null : '회사가 선택되지 않았습니다.')
   const [matches, setMatches] = useState<MatchRun | null>(null)
   const [questions, setQuestions] = useState<Question[] | null>(null)
-  const [includeClosed, setIncludeClosed] = useState(false)
   const [unread, setUnread] = useState(0)
   const [profileKey, setProfileKey] = useState(0)
   const { run } = useAction()
   const toast = useToast()
 
-  const loadMatches = useCallback((closed: boolean) => run(async () => {
-    setMatches(await getMyMatches(token!, { include_closed: closed }))
-  }), [run, token])
+  const loadMatches = useCallback(() => run(async () => setMatches(await getMyMatches(token!))), [run, token])
   const loadQuestions = useCallback(() => run(async () => setQuestions((await getMyQuestions(token!)).questions)),
     [run, token])
 
@@ -50,7 +48,7 @@ export function CompanyManagePage() {
     if (!token) return
     getMyProfile(token)
       .then((p) => {
-        setProfile(p); void loadMatches(false); void loadQuestions()
+        setProfile(p); void loadMatches(); void loadQuestions()
         getMyAlerts(token).then((a) => setUnread(a.unread)).catch(() => undefined)
       })
       .catch((e) => setInvalid(e instanceof ApiError ? e.detail : '회사 정보를 불러오지 못했습니다.'))
@@ -62,8 +60,7 @@ export function CompanyManagePage() {
     const gained = (res.summary.ELIGIBLE ?? 0) - before
     toast.show({ kind: 'success', title: '답변을 반영했습니다',
       message: gained > 0 ? `지원 가능 공고가 ${gained}건 늘었습니다.` : `지원 가능 ${res.summary.ELIGIBLE}건 · 확인 필요 ${res.summary.NEEDS_INFO}건` })
-    if (includeClosed) void loadMatches(true)
-    else setMatches(res)
+    setMatches(res)
     void loadQuestions()
   }
 
@@ -101,6 +98,9 @@ export function CompanyManagePage() {
         <button role="tab" className={tab === 'matches' ? 'on' : ''} onClick={() => setTab('matches')}>
           지원 가능 공고 {matches && <span className="tab-count tab-count-ok">{eligible}</span>}
         </button>
+        <button role="tab" className={tab === 'past' ? 'on' : ''} onClick={() => setTab('past')}>
+          참여할 수 있었던 사업
+        </button>
         <button role="tab" className={tab === 'alerts' ? 'on' : ''} onClick={() => setTab('alerts')}>
           알림 {unread > 0 && <span className="tab-count">{unread}</span>}
         </button>
@@ -111,11 +111,7 @@ export function CompanyManagePage() {
 
       {tab === 'matches' && (
         <Card title="지원 가능 공고" actions={
-          <label className="check small">
-            <input type="checkbox" checked={includeClosed}
-              onChange={(e) => { setIncludeClosed(e.target.checked); void loadMatches(e.target.checked) }} />
-            마감된 공고도 보기
-          </label>
+          <button className="link-btn small" onClick={() => setTab('past')}>마감된 공고는 ‘참여할 수 있었던 사업’에서</button>
         }>
           {missing.length > 0 && (
             <div className="notice small">
@@ -137,13 +133,17 @@ export function CompanyManagePage() {
         </Card>
       )}
 
+      {tab === 'past' && (
+        <PastPanel key={profileKey} token={token!} onOpenCurrent={() => setTab('matches')} onEditProfile={() => setTab('profile')} />
+      )}
+
       {tab === 'alerts' && <AlertsPanel token={token!} onUnread={setUnread} />}
 
       {tab === 'profile' && (
         <ProfilePanel key={profileKey} token={token!} profile={profile} missing={missing} onSaved={(p) => {
           setProfile(p)
           setProfileKey((k) => k + 1)
-          void loadMatches(includeClosed)
+          void loadMatches()
           void loadQuestions()
         }} />
       )}

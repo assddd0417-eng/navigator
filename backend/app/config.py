@@ -65,6 +65,7 @@ class Settings(BaseSettings):
     navigator_dev_expose_link: bool = False    # 응답에 관리 링크 포함 (로컬 전용)
     navigator_match_candidate_k: int = 50
     navigator_ranking: str = "vector"   # vector = 판정 후 벡터 유사도 순 (A안) / weighted = 이전 가중합
+    navigator_past_years: int = 2          # 참여할 수 있었던 사업: 마감 후 몇 년까지 볼지
     mailer: str = "mock"
 
     # 외부 수집. SOURCE_<CODE>=mock|live, 키는 live 에서만 필요

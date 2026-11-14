@@ -511,3 +511,7 @@ label.check input { width: auto; }
 .radar-table th { text-align: left; font-weight: 500; padding: 2px 12px 2px 0; }
 .radar-table td { padding: 2px 0 2px 12px; }
 .radar-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* 참여할 수 있었던 사업 */
+.past-tag { margin-left: 6px; }
+.past-next { display: block; margin-top: 4px; }

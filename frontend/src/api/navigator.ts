@@ -81,6 +81,10 @@ export interface MatchRec {
   hidden_requirements?: number
 }
 
+export interface NextRound { id: number; title: string; receipt_state: string; receipt_start: string | null; receipt_end: string | null }
+export interface PastMatchRec extends MatchRec { next_round: NextRound | null; participated: boolean }
+export interface PastMatchRun extends Omit<MatchRun, 'recommendations'> { recommendations: PastMatchRec[]; closed_since: string }
+
 export interface MatchRun {
   run: { id: number; direction: string; announcement_id: number | null; organization_id: number | null;
     created_at: string; model: string; candidate_count: number; requested_via: string } | null
@@ -308,6 +312,8 @@ export const updateMyProfile = (token: string, body: ProfileUpdate) =>
   api<FullProfile>('/navigator/manage/profile', { ...manage(token), method: 'PATCH', body })
 export const getMyMatches = (token: string, query: { include_closed?: boolean; refresh?: boolean } = {}) =>
   api<MatchRun>('/navigator/manage/matches', { ...manage(token), method: 'POST', query })
+export const getMyPastMatches = (token: string, query: { refresh?: boolean } = {}) =>
+  api<PastMatchRun>('/navigator/manage/past-matches', { ...manage(token), method: 'POST', query })
 export const getMyQuestions = (token: string) =>
   api<{ run_id: number; questions: Question[] }>('/navigator/manage/questions', manage(token))
 export const answerQuestions = (token: string, answers: { requirement_id: number; value: number | boolean }[]) =>

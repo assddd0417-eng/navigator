@@ -22,8 +22,11 @@ export const FIT_LEVELS = [
 ] as const
 export const fitLevel = (score: number) => FIT_LEVELS.find((l) => score >= l.min) ?? FIT_LEVELS[2]
 
-export function VerdictBadge({ verdict, audience = 'staff' }: { verdict: Verdict; audience?: Audience }) {
-  return <span className={`badge badge-${VERDICT_TONES[verdict]}`}>{VERDICT_TEXT[audience][verdict]}</span>
+// 마감 공고(참여할 수 있었던 사업)에서 쓰는 말
+export const PAST_VERDICT_TEXT: Record<Verdict, string> = { ELIGIBLE: '지원할 수 있었음', NEEDS_INFO: '확인 필요', INELIGIBLE: '지원 어려움' }
+
+export function VerdictBadge({ verdict, audience = 'staff', text }: { verdict: Verdict; audience?: Audience; text?: Record<Verdict, string> }) {
+  return <span className={`badge badge-${VERDICT_TONES[verdict]}`}>{(text ?? VERDICT_TEXT[audience])[verdict]}</span>
 }
 
 export function FitBadge({ score }: { score: number }) {
@@ -107,9 +110,10 @@ function Summary({ rec, audience }: { rec: MatchRec; audience: Audience }) {
   )
 }
 
-export function MatchCard({ rec, audience, title, meta, onTitle, rank, questions, onAnswer, onEditProfile, defaultOpen = false }: {
+export function MatchCard({ rec, audience, title, meta, onTitle, rank, questions, onAnswer, onEditProfile, defaultOpen = false, verdictText }: {
   rec: MatchRec
   audience: Audience
+  verdictText?: Record<Verdict, string>
   title: ReactNode
   meta?: ReactNode
   onTitle?: () => void
@@ -133,7 +137,7 @@ export function MatchCard({ rec, audience, title, meta, onTitle, rank, questions
           {meta && <div className="small muted">{meta}</div>}
         </div>
         <div className="match-badges">
-          <VerdictBadge verdict={rec.verdict} audience={audience} />
+          <VerdictBadge verdict={rec.verdict} audience={audience} text={verdictText} />
           {audience === 'staff'
             ? <span className="match-score" title="회사 기술·실적과 공고의 관련도 (100점 환산)"><strong>{Math.round(rec.total_score * 100)}</strong><span className="small muted">관련도</span></span>
             : <FitBadge score={rec.total_score} />}
@@ -267,9 +271,10 @@ function InlineQuestions({ questions, onAnswer }: {
 }
 
 /** 판정별 목록. '지원 어려움/부적격'은 접어 둔다 */
-export function GroupedMatches({ run, audience, renderCard, hints }: {
+export function GroupedMatches({ run, audience, renderCard, hints, verdictText }: {
   run: MatchRun
   audience: Audience
+  verdictText?: Record<Verdict, string>
   renderCard: (rec: MatchRec, indexInGroup: number) => ReactNode
   hints?: Partial<Record<Verdict, string>>
 }) {
@@ -283,7 +288,7 @@ export function GroupedMatches({ run, audience, renderCard, hints }: {
         return (
           <section key={v}>
             <div className="group-head">
-              <VerdictBadge verdict={v} audience={audience} />
+              <VerdictBadge verdict={v} audience={audience} text={verdictText} />
               <strong>{recs.length}건</strong>
               {hints?.[v] && <span className="small muted">{hints[v]}</span>}
               {v === 'INELIGIBLE' && (
