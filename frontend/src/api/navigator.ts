@@ -121,6 +121,7 @@ export interface Certification {
   issued_on: string | null
   expires_on: string | null
   is_expired: boolean
+  company_evidence_id: number | null
   origin: string
   is_verified: boolean
 }
@@ -131,6 +132,7 @@ export interface CreditRating {
   grade: string
   rated_on: string | null
   valid_until: string | null
+  company_evidence_id: number | null
   origin: string
   is_verified: boolean
 }
@@ -181,8 +183,34 @@ export interface FullProfile {
   certifications: Certification[]
   credit_ratings: CreditRating[]
   rnd_history: RndHistory[]
+  products: Product[]
+  technologies: Technology[]
+  support_history: SupportHistory[]
+  evidence: Evidence[]
   field_sources: { field_name: string; preferred_value: unknown; any_verified: boolean; differs: boolean }[]
   access_link?: { expires_at: string }
+}
+
+export type ProductCategory = 'WEAPON_SYSTEM' | 'COMPONENT' | 'MATERIAL' | 'SOFTWARE' | 'EQUIPMENT' | 'SERVICE' | 'OTHER'
+export const PRODUCT_CATEGORIES: Record<ProductCategory, string> = {
+  WEAPON_SYSTEM: '무기체계', COMPONENT: '부품·구성품', MATERIAL: '소재', SOFTWARE: '소프트웨어', EQUIPMENT: '장비', SERVICE: '서비스', OTHER: '기타',
+}
+export type SupportResult = 'APPLIED' | 'SELECTED' | 'COMPLETED' | 'SUCCESS' | 'FAILED'
+export const SUPPORT_RESULTS: Record<SupportResult, string> = {
+  APPLIED: '신청', SELECTED: '선정', COMPLETED: '수행 완료', SUCCESS: '성공 판정', FAILED: '탈락·실패',
+}
+export interface Product { id: number; name: string; category: ProductCategory; description: string | null; is_defense: boolean; customers: string | null; origin: string }
+export interface Technology { id: number; tech_name: string; description: string | null; trl: number | null; origin: string }
+export interface SupportHistory { id: number; program_name: string; agency: string | null; year: number | null; result: SupportResult; amount_krw: number | null; summary: string | null; origin: string }
+export interface Evidence {
+  id: number
+  file_name: string
+  parse_status: 'PARSED' | 'UNSUPPORTED' | 'FAILED'
+  parse_note: string | null
+  detected_kind: 'CERTIFICATION' | 'CREDIT_RATING' | 'UNKNOWN' | null
+  detected: Record<string, string>
+  created_at: string
+  text_excerpt?: string | null
 }
 
 export interface ProfileUpdate {
@@ -203,8 +231,11 @@ export interface ProfileUpdate {
   military_supply_krw?: number | null
   export_krw?: number | null
   export_year?: number | null
-  certifications?: { cert_type_code: string; cert_no?: string | null; issued_on?: string | null; expires_on?: string | null }[]
-  credit_ratings?: { agency: string; grade: string; rated_on?: string | null; valid_until?: string | null }[]
+  certifications?: { cert_type_code: string; cert_no?: string | null; issued_on?: string | null; expires_on?: string | null; company_evidence_id?: number | null }[]
+  credit_ratings?: { agency: string; grade: string; rated_on?: string | null; valid_until?: string | null; company_evidence_id?: number | null }[]
+  products?: { name: string; category: ProductCategory; description?: string | null; is_defense: boolean; customers?: string | null }[]
+  technologies?: { tech_name: string; description?: string | null; trl?: number | null }[]
+  support_history?: { program_name: string; agency?: string | null; year?: number | null; result: SupportResult; amount_krw?: number | null; summary?: string | null }[]
   rnd_history?: { title: string; project_no?: string | null; funding_agency?: string | null; start_date?: string | null;
     end_date?: string | null; role: 'LEAD' | 'PARTICIPANT'; summary?: string | null }[]
 }
@@ -255,6 +286,13 @@ export const requestAccessLink = (brn: string) =>
 export const openCompany = (brn: string) =>
   api<{ token: string; expires_at: string }>(`/navigator/companies/${bizno(brn)}/open`, { ...anon, method: 'POST' })
 export interface AutofillResult { source: string; label: string; ok: boolean; error: string | null; counts: Record<string, number> }
+export const uploadEvidence = (token: string, file: File) => {
+  const form = new FormData()
+  form.append('file', file)
+  return api<Evidence>('/navigator/manage/evidence', { ...manage(token), method: 'POST', body: form })
+}
+export const deleteEvidence = (token: string, id: number) =>
+  api<void>(`/navigator/manage/evidence/${id}`, { ...manage(token), method: 'DELETE' })
 export const autofillProfile = (token: string) =>
   api<{ results: AutofillResult[]; profile: FullProfile }>('/navigator/manage/autofill', { ...manage(token), method: 'POST' })
 export const registerCompany = (body: CompanyRegister) =>

@@ -349,6 +349,7 @@ check "확인됨 · 특허 공개 · 신용등급 숨김" \
 api "미확인 가상 기업 공개 조회" 200 GET /navigator/companies/9998300038 -
 check "미확인 표시" '.biz_verify_label == "미확인"'
 api "관리 링크 없이 내 프로필" 401 GET /navigator/manage/profile -
+api "관리 링크 없이 증빙 올리기" 401 POST /navigator/manage/evidence -
 api "사업자번호 형식 오류" 422 POST /navigator/companies - \
     '{"business_reg_no":"999-81-00016","company_name":"x","representative_name":"x","opened_on":"2020-01-01","email":"a@b.co"}'
 api "이미 등록된 사업자번호 재등록 거부" 409 POST /navigator/companies - \

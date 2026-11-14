@@ -1,12 +1,15 @@
 """Navigator 기업 프로필 (공개 API). 수정·민감정보 조회는 관리 링크(X-Manage-Token) 필요."""
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+import hashlib
+
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Response, UploadFile, status
+from psycopg.types.json import Jsonb
 
 from app.auth import request_id
 from app.config import get_settings
 from app.db import transaction
 from app.errors import Conflict
 from app.schemas.navigator import CompanyRegister, CompanyUpdate, LinkSent, RegisterResult
-from app.services import access_link, collector, mailer
+from app.services import access_link, collector, company_evidence, mailer
 from app.services.bizno import InvalidBizNo, format_bizno, normalize
 from app.services.company_profile import (
     BUSINESS_STATUS_LABEL, LIST_TABLES, PROFILE_FIELDS, VERIFY_LABEL, find_by_bizno, full_view,
@@ -231,3 +234,40 @@ async def autofill(link: dict = Depends(manage_link), rid: str = Depends(request
                         "counts": r["counts"]})
     async with transaction() as conn:
         return {"results": results, "profile": await full_view(conn, link["organization_id"])}
+
+
+@router.post("/manage/evidence", status_code=201, dependencies=[Depends(public_rate_limit)])
+async def upload_evidence(file: UploadFile = File(..., description="확인서·인정서·인증서·신용평가 등급 확인서 (PDF·HWP)"),
+                          link: dict = Depends(manage_link), rid: str = Depends(request_id)):
+    """증빙을 올리면 종류·번호·날짜·등급을 뽑아 돌려준다. 프로필에는 기업이 확인하고 저장할 때 들어간다."""
+    limit = get_settings().upload_max_mb * 1024 * 1024
+    data = await file.read(limit + 1)
+    if len(data) > limit:
+        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, f"파일이 {get_settings().upload_max_mb}MB 를 넘습니다")
+    if not data:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "빈 파일입니다")
+    name = (file.filename or "증빙").strip()[:300]
+    p = company_evidence.parse(name, data)
+    org_id = link["organization_id"]
+    async with transaction(None, f"{rid}|company-link:{link['link_id']}") as conn:
+        row = await (await conn.execute(
+            """INSERT INTO ax.company_evidence (organization_id, file_name, file_ext, byte_size, content_hash,
+                                               text_content, parse_status, parse_note, detected_kind, detected)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+               ON CONFLICT (organization_id, content_hash) DO UPDATE SET file_name = EXCLUDED.file_name
+               RETURNING id, file_name, parse_status, parse_note, detected_kind, detected, created_at""",
+            (org_id, name, name.rsplit(".", 1)[-1].lower() if "." in name else None, len(data),
+             hashlib.sha256(data).hexdigest(), p.text, p.status, p.note, p.detected.kind,
+             Jsonb(p.detected.values)))).fetchone()
+    row["text_excerpt"] = (p.text or "")[:600] or None
+    return row
+
+
+@router.delete("/manage/evidence/{evidence_id}", status_code=204, dependencies=[Depends(public_rate_limit)])
+async def delete_evidence(evidence_id: int, link: dict = Depends(manage_link), rid: str = Depends(request_id)):
+    async with transaction(None, f"{rid}|company-link:{link['link_id']}") as conn:
+        cur = await conn.execute("DELETE FROM ax.company_evidence WHERE id = %s AND organization_id = %s",
+                                 (evidence_id, link["organization_id"]))
+        if cur.rowcount == 0:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "증빙이 없습니다")
+    return Response(status_code=204)

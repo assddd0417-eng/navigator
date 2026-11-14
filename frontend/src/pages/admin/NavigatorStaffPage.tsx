@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  dispatchAnnouncementAlerts, getAnnouncementAlerts, latestAnnouncementRun, listAnnouncements, runAnnouncementMatching, SIZE_LABELS, staffCompanyProfile,
+  dispatchAnnouncementAlerts, getAnnouncementAlerts, latestAnnouncementRun, listAnnouncements, PRODUCT_CATEGORIES, runAnnouncementMatching, SIZE_LABELS, staffCompanyProfile, SUPPORT_RESULTS,
   type AnnouncementAlerts, type AnnouncementRow, type FullProfile, type MatchRun, type Verdict,
 } from '../../api/navigator'
 import { useAuth } from '../../auth/AuthContext'
@@ -142,9 +142,18 @@ function CompanyDrawer({ p, onClose }: { p: FullProfile; onClose: () => void }) 
           <dt>연락처</dt><dd>{p.registered_email ?? '–'}</dd>
         </dl>
         {p.main_business && <p>{p.main_business}</p>}
+        <h4>제품 {p.products.length}</h4>
+        <ul className="plain-list small">
+          {p.products.map((x) => <li key={x.id}>{x.name} <span className="muted">{PRODUCT_CATEGORIES[x.category]}{x.is_defense ? ' · 국방' : ''}{x.customers ? ` · ${x.customers}` : ''}</span></li>)}
+        </ul>
+        <h4>보유 기술 {p.technologies.length}</h4>
+        <ul className="plain-list small">
+          {p.technologies.map((t) => <li key={t.id}>{t.tech_name}{t.trl ? ` (TRL ${t.trl})` : ''}</li>)}
+        </ul>
         <h4>인증 {p.certifications.length}</h4>
         <ul className="plain-list small">
-          {p.certifications.map((c) => <li key={c.id}>{c.cert_type_name}{c.is_expired ? ' (만료)' : ''} <Origin v={c.is_verified} /></li>)}
+          {p.certifications.map((c) => <li key={c.id}>{c.cert_type_name}{c.is_expired ? ' (만료)' : ''} <Origin v={c.is_verified} />
+            {c.company_evidence_id != null && <span className="badge badge-info">증빙 있음</span>}</li>)}
         </ul>
         <h4>신용등급</h4>
         {p.credit_ratings.length === 0 ? <p className="small muted">없음</p> : (
@@ -155,6 +164,10 @@ function CompanyDrawer({ p, onClose }: { p: FullProfile; onClose: () => void }) 
         <h4>R&amp;D 이력 {p.rnd_history.length}</h4>
         <ul className="plain-list small">
           {p.rnd_history.map((r) => <li key={r.id}>{r.title} ({r.role === 'LEAD' ? '주관' : '참여'}) <Origin v={r.is_verified} /></li>)}
+        </ul>
+        <h4>지원사업 참여 {p.support_history.length}</h4>
+        <ul className="plain-list small">
+          {p.support_history.map((h) => <li key={h.id}>{h.program_name}{h.year ? ` (${h.year})` : ''} · {SUPPORT_RESULTS[h.result]}</li>)}
         </ul>
         <h4>특허 {p.patents.length}</h4>
         <ul className="plain-list small">{p.patents.map((x) => <li key={x.application_no}>{x.title}</li>)}</ul>
