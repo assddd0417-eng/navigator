@@ -1,4 +1,4 @@
--- 0032: 기업 입력 항목 확장
+-- 0033: 기업 입력 항목 확장
 --   company_product          제품 (무기체계·부품·소재·SW·장비·서비스)
 --   company_technology       보유 기술에 TRL·입력 출처 추가 (기업이 직접 입력)
 --   company_support_history  정부 지원사업 참여 이력 (R&D 과제는 company_rnd_history)
