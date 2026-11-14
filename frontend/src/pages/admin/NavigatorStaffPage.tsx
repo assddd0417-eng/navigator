@@ -6,6 +6,7 @@ import {
 import { useAuth } from '../../auth/AuthContext'
 import { Card, Empty, fmtDate, PageHeader, useAction, useAsync } from '../../components/ui'
 import { AGENCY_LABELS, bizStatus, fmtBrn, fmtDay, fmtKrw, GroupedMatches, MatchCard, VerdictBadge, VerdictSummary } from '../navigator/components'
+import { RadarChart } from '../../components/RadarChart'
 
 const STATES: [string, string][] = [['', '전체'], ['OPEN', '접수중'], ['UPCOMING', '접수전'], ['CLOSED', '마감']]
 const STATE_TONES: Record<string, string> = { OPEN: 'ok', UPCOMING: 'info', CLOSED: 'muted' }
@@ -142,6 +143,8 @@ function CompanyDrawer({ p, onClose }: { p: FullProfile; onClose: () => void }) 
           <dt>연락처</dt><dd>{p.registered_email ?? '–'}</dd>
         </dl>
         {p.main_business && <p>{p.main_business}</p>}
+        <h4>역량</h4>
+        <RadarChart radar={p.radar} compact who="이 회사" />
         <h4>제품 {p.products.length}</h4>
         <ul className="plain-list small">
           {p.products.map((x) => <li key={x.id}>{x.name} <span className="muted">{PRODUCT_CATEGORIES[x.category]}{x.is_defense ? ' · 국방' : ''}{x.customers ? ` · ${x.customers}` : ''}</span></li>)}

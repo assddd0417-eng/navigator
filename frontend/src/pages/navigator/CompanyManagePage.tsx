@@ -10,6 +10,7 @@ import { useToast } from '../../components/Toast'
 import { Card, Empty, useAction } from '../../components/ui'
 import { AlertsPanel } from './AlertsPanel'
 import { AGENCY_LABELS, bizStatus, CompanyShell, Deadline, fmtKrw, GroupedMatches, MatchCard } from './components'
+import { RadarChart } from '../../components/RadarChart'
 
 const TOKEN_KEY = 'navigator.manageToken'
 
@@ -198,7 +199,10 @@ function ProfilePanel({ token, profile, missing, onSaved }: {
   })
   return (
     <CompanyInfoForm profile={profile} missing={missing} token={token} submitLabel="저장하고 다시 판정"
-      top={
+      top={<>
+        <Card title="회사 역량 한눈에" actions={<span className="small muted">저장하면 다시 계산합니다</span>}>
+          <RadarChart radar={profile.radar} />
+        </Card>
         <div className="manage-box">
           <div>
             <strong>공공데이터로 자동 채우기</strong>
@@ -206,7 +210,7 @@ function ProfilePanel({ token, profile, missing, onSaved }: {
           </div>
           <button type="button" className="btn btn-primary" disabled={busy} onClick={autofill}>{busy ? '가져오는 중…' : '자동 채우기'}</button>
         </div>
-      }
+      </>}
       onSubmit={async (body) => {
         const p = await updateMyProfile(token, body)
         toast.show({ kind: 'success', title: '저장했습니다', message: '바뀐 정보로 공고를 다시 판정했습니다.' })

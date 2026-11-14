@@ -188,8 +188,12 @@ export interface FullProfile {
   support_history: SupportHistory[]
   evidence: Evidence[]
   field_sources: { field_name: string; preferred_value: unknown; any_verified: boolean; differs: boolean }[]
+  radar: Radar
   access_link?: { expires_at: string }
 }
+
+export type RadarAxis = { code: string; label: string; note: string; value: number | null; average: number | null }
+export type Radar = { axes: RadarAxis[]; company_count: number }
 
 export type ProductCategory = 'WEAPON_SYSTEM' | 'COMPONENT' | 'MATERIAL' | 'SOFTWARE' | 'EQUIPMENT' | 'SERVICE' | 'OTHER'
 export const PRODUCT_CATEGORIES: Record<ProductCategory, string> = {

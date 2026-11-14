@@ -493,3 +493,21 @@ label.check input { width: auto; }
 .file-btn { cursor: pointer; display: inline-block; }
 .evidence-tag { align-self: flex-end; margin-bottom: 8px; }
 .form-row > label.inline-check { flex: 0 0 auto; flex-direction: row; align-items: center; gap: 6px; align-self: flex-end; padding-bottom: 8px; }
+
+/* 역량 레이더 */
+.radar { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+.radar svg { width: 260px; height: 260px; flex-shrink: 0; overflow: visible; }
+.radar-compact svg { width: 200px; height: 200px; }
+.radar-grid { fill: none; stroke: var(--border); stroke-width: 1; }
+.radar-avg { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.radar-mine { fill: var(--primary); fill-opacity: .18; stroke: var(--primary); stroke-width: 2; }
+.radar-dot { fill: var(--primary); }
+.radar-label { font-size: 12px; fill: var(--text); }
+.radar-side { flex: 0 1 300px; min-width: 200px; display: flex; flex-direction: column; gap: 8px; }
+.radar-legend { display: flex; gap: 14px; flex-wrap: wrap; }
+.radar-legend .sw { display: inline-block; width: 14px; height: 0; vertical-align: middle; margin-right: 5px; border-top: 2px solid var(--primary); }
+.radar-legend .sw-avg { border-top: 2px dashed var(--muted); }
+.radar-table { border-collapse: collapse; }
+.radar-table th { text-align: left; font-weight: 500; padding: 2px 12px 2px 0; }
+.radar-table td { padding: 2px 0 2px 12px; }
+.radar-table .num { text-align: right; font-variant-numeric: tabular-nums; }
