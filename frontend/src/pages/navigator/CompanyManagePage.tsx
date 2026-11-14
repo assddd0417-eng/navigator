@@ -9,6 +9,7 @@ import {
 import { useToast } from '../../components/Toast'
 import { Card, Empty, useAction } from '../../components/ui'
 import { AlertsPanel } from './AlertsPanel'
+import { OutreachConsent } from './OutreachConsent'
 import { PastPanel } from './PastPanel'
 import { AGENCY_LABELS, bizStatus, CompanyShell, Deadline, fmtKrw, GroupedMatches, MatchCard } from './components'
 import { RadarChart } from '../../components/RadarChart'
@@ -137,7 +138,10 @@ export function CompanyManagePage() {
         <PastPanel key={profileKey} token={token!} onOpenCurrent={() => setTab('matches')} onEditProfile={() => setTab('profile')} />
       )}
 
-      {tab === 'alerts' && <AlertsPanel token={token!} onUnread={setUnread} />}
+      {tab === 'alerts' && <>
+        <OutreachConsent token={token!} profile={profile} onChange={(at) => setProfile({ ...profile, outreach_consent_at: at })} />
+        <AlertsPanel token={token!} onUnread={setUnread} />
+      </>}
 
       {tab === 'profile' && (
         <ProfilePanel key={profileKey} token={token!} profile={profile} missing={missing} onSaved={(p) => {

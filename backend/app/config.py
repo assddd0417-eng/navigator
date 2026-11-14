@@ -66,7 +66,15 @@ class Settings(BaseSettings):
     navigator_match_candidate_k: int = 50
     navigator_ranking: str = "vector"   # vector = 판정 후 벡터 유사도 순 (A안) / weighted = 이전 가중합
     navigator_past_years: int = 2          # 참여할 수 있었던 사업: 마감 후 몇 년까지 볼지
-    mailer: str = "mock"
+    mailer: str = "mock"                   # mock = 보내지 않고 OUTBOX 에만 / smtp = 실제 발송
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""                    # 비우면 smtp_user
+    smtp_from_name: str = "Navigator"
+    smtp_security: str = "starttls"        # starttls (587) | ssl (465) | none
+    smtp_timeout_s: float = 15
 
     # 외부 수집. SOURCE_<CODE>=mock|live, 키는 live 에서만 필요
     source_nts_biz: str = "mock"

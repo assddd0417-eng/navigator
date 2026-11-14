@@ -105,8 +105,8 @@ async def renew_confirm_token(conn: AsyncConnection, org_id: int, sub_id: int) -
     return await get_subscription(conn, org_id, sub_id), token
 
 
-def send_confirm_mail(email: str, company_name: str, token: str) -> None:
-    mailer.send(email, f"[Navigator] {company_name} 공고 알림 수신 확인",
+async def send_confirm_mail(email: str, company_name: str, token: str) -> None:
+    await mailer.send_async(email, f"[Navigator] {company_name} 공고 알림 수신 확인",
                 f"{company_name}에서 이 주소로 새 공고 알림을 받도록 신청했습니다.\n\n"
                 f"받으시려면 {CONFIRM_TTL_DAYS}일 안에 아래 주소를 여세요.\n{confirm_url(token)}\n\n"
                 "신청한 적이 없다면 이 메일을 무시하세요. 확인하지 않으면 알림은 가지 않습니다.")
@@ -258,7 +258,7 @@ async def dispatch_for_announcement(ann_id: int, request_id: str | None = None) 
     results: list[tuple[int, str | None]] = []
     for m in outgoing:
         try:
-            mailer.send(m.email, m.subject, m.body)
+            await mailer.send_async(m.email, m.subject, m.body)
             results.append((m.notification_id, None))
         except Exception as e:  # noqa: BLE001  메일 한 통 실패가 나머지를 막지 않게
             log.warning("알림 메일 실패 notification=%s: %s", m.notification_id, e)

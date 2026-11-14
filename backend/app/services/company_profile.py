@@ -116,7 +116,8 @@ async def full_view(conn: AsyncConnection, org_id: int) -> dict:
                    cp.representative_name, cp.opened_on, cp.is_defense_company,
                    {", ".join(f"cp.{f}" for f in PROFILE_FIELDS)},
                    cp.business_status, cp.business_status_checked_at, cp.biz_verify_status, cp.biz_verified_at,
-                   cp.registered_email, cp.registration_channel, cp.created_at, cp.updated_at
+                   cp.registered_email, cp.registration_channel, cp.created_at, cp.updated_at,
+                   cp.outreach_consent_at
               FROM ax.organization o JOIN ax.company_profile cp ON cp.organization_id = o.id
              WHERE o.id = %s""", (org_id,))).fetchone()
     p["business_reg_no"] = format_bizno(p["business_reg_no"])
