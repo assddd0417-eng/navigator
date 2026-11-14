@@ -6,7 +6,7 @@ from psycopg import AsyncConnection
 from psycopg.types.json import Jsonb
 
 from app.repositories.sql import insert
-from app.schemas.navigator import CertificationIn, CreditRatingIn, PatentIn, RndHistoryIn
+from app.schemas.navigator import RndHistoryIn
 from app.services.bizno import format_bizno
 
 VERIFY_LABEL = {"VERIFIED": "확인됨", "UNVERIFIED": "미확인", "FAILED": "불일치"}
@@ -22,6 +22,9 @@ LIST_TABLES = {
     "certifications": "company_certification",
     "credit_ratings": "company_credit_rating",
     "rnd_history": "company_rnd_history",
+    "products": "company_product",
+    "technologies": "company_technology",
+    "support_history": "company_support_history",
 }
 
 
@@ -55,12 +58,14 @@ async def insert_list_items(conn: AsyncConnection, org_id: int, key: str, items:
             row = await (await conn.execute(
                 "SELECT id FROM ax.project WHERE project_no = %s", (item.project_no,))).fetchone()
             data["internal_project_id"] = row["id"] if row else None
+        if data.get("company_evidence_id") and not await (await conn.execute(
+                "SELECT 1 FROM ax.company_evidence WHERE id = %s AND organization_id = %s",
+                (data["company_evidence_id"], org_id))).fetchone():
+            data["company_evidence_id"] = None   # 다른 회사 증빙은 연결하지 않는다
         await insert(conn, LIST_TABLES[key], data)
 
 
-async def replace_self_items(conn: AsyncConnection, org_id: int, key: str,
-                             items: list[PatentIn] | list[CertificationIn] | list[CreditRatingIn] | list[RndHistoryIn]
-                             ) -> None:
+async def replace_self_items(conn: AsyncConnection, org_id: int, key: str, items: list) -> None:
     # SELF 행만 교체
     await conn.execute(
         f"DELETE FROM ax.{LIST_TABLES[key]} WHERE organization_id = %s AND origin = 'SELF'", (org_id,))
@@ -121,11 +126,11 @@ async def full_view(conn: AsyncConnection, org_id: int) -> dict:
     p["certifications"] = await (await conn.execute(
         """SELECT c.id, c.cert_type_code, t.name_ko AS cert_type_name, c.cert_no, c.issuer, c.issued_on, c.expires_on,
                   c.expires_on IS NOT NULL AND c.expires_on < current_date AS is_expired,
-                  c.evidence_document_id, c.origin, c.verified_at IS NOT NULL AS is_verified
+                  c.evidence_document_id, c.company_evidence_id, c.origin, c.verified_at IS NOT NULL AS is_verified
              FROM ax.company_certification c JOIN ax.code_certification_type t ON t.code = c.cert_type_code
             WHERE c.organization_id = %s ORDER BY t.sort_order, c.id""", (org_id,))).fetchall()
     p["credit_ratings"] = await (await conn.execute(
-        """SELECT id, agency, grade, rated_on, valid_until, evidence_document_id, origin,
+        """SELECT id, agency, grade, rated_on, valid_until, evidence_document_id, company_evidence_id, origin,
                   verified_at IS NOT NULL AS is_verified
              FROM ax.company_credit_rating WHERE organization_id = %s
             ORDER BY rated_on DESC NULLS LAST, id""", (org_id,))).fetchall()
@@ -135,6 +140,19 @@ async def full_view(conn: AsyncConnection, org_id: int) -> dict:
                   h.verified_at IS NOT NULL AS is_verified
              FROM ax.company_rnd_history h LEFT JOIN ax.project pr ON pr.id = h.internal_project_id
             WHERE h.organization_id = %s ORDER BY h.start_date DESC NULLS LAST, h.id""", (org_id,))).fetchall()
+    p["products"] = await (await conn.execute(
+        """SELECT id, name, category, description, is_defense, customers, origin
+             FROM ax.company_product WHERE organization_id = %s ORDER BY id""", (org_id,))).fetchall()
+    p["technologies"] = await (await conn.execute(
+        """SELECT id, tech_name, description, trl, origin
+             FROM ax.company_technology WHERE organization_id = %s ORDER BY id""", (org_id,))).fetchall()
+    p["support_history"] = await (await conn.execute(
+        """SELECT id, program_name, agency, year, result, amount_krw, announcement_id, summary, origin
+             FROM ax.company_support_history WHERE organization_id = %s
+            ORDER BY year DESC NULLS LAST, id""", (org_id,))).fetchall()
+    p["evidence"] = await (await conn.execute(
+        """SELECT id, file_name, parse_status, parse_note, detected_kind, detected, created_at
+             FROM ax.company_evidence WHERE organization_id = %s ORDER BY id DESC""", (org_id,))).fetchall()
     p["field_sources"] = await (await conn.execute(
         """SELECT field_name, preferred_value, any_verified, differs, sources
              FROM ax.v_company_field_compare WHERE organization_id = %s ORDER BY field_name""", (org_id,))).fetchall()

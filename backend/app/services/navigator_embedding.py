@@ -42,6 +42,11 @@ async def company_facets(conn: AsyncConnection, org_id: int) -> list[FacetText]:
     for t in await (await conn.execute(
             "SELECT id, tech_name, description FROM ax.company_technology WHERE organization_id = %s", (org_id,))).fetchall():
         facets.append(FacetText("TECH", _join(t["tech_name"], t["description"]), "company_technology", t["id"]))
+    for pr in await (await conn.execute(
+            "SELECT id, name, description, customers FROM ax.company_product WHERE organization_id = %s",
+            (org_id,))).fetchall():
+        facets.append(FacetText("TECH", _join(pr["name"], pr["description"], pr["customers"]),
+                                "company_product", pr["id"]))
     for pt in await (await conn.execute(
             "SELECT id, title, abstract FROM ax.company_patent WHERE organization_id = %s AND status <> 'LAPSED'",
             (org_id,))).fetchall():

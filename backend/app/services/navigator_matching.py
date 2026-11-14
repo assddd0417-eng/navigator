@@ -33,7 +33,7 @@ VERDICT_ORDER = {"ELIGIBLE": 0, "NEEDS_INFO": 1, "INELIGIBLE": 2}
 COMPANY_TECH_FACETS = ("TECH", "PATENT", "RND", "BUSINESS")
 COMPANY_SUMMARY_FACETS = ("SUMMARY", "BUSINESS")
 SOURCE_KO = {"company_patent": "특허", "company_rnd_history": "R&D 이력", "project": "내부 과제",
-             "company_technology": "보유기술", None: "주요사업"}
+             "company_technology": "보유기술", "company_product": "제품", None: "주요사업"}
 SENSITIVE_TYPES = ("MIN_CREDIT_GRADE", "REVENUE")   # 공개(사업자번호만) 조회에서는 결과를 가린다
 
 

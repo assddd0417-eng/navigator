@@ -488,3 +488,8 @@ label.check input { width: auto; }
 .req-edit { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
 .req-edit .form-row > select { flex: 1 1 140px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* 기업 입력: 증빙 */
+.file-btn { cursor: pointer; display: inline-block; }
+.evidence-tag { align-self: flex-end; margin-bottom: 8px; }
+.form-row > label.inline-check { flex: 0 0 auto; flex-direction: row; align-items: center; gap: 6px; align-self: flex-end; padding-bottom: 8px; }

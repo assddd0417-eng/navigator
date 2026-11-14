@@ -34,6 +34,7 @@ class CertificationIn(BaseModel):
     issuer: str | None = None
     issued_on: date | None = None
     expires_on: date | None = None
+    company_evidence_id: int | None = Field(default=None, description="올린 증빙 (POST /navigator/manage/evidence)")
 
 
 class CreditRatingIn(BaseModel):
@@ -41,6 +42,7 @@ class CreditRatingIn(BaseModel):
     grade: str = Field(min_length=1, max_length=10)
     rated_on: date | None = None
     valid_until: date | None = None
+    company_evidence_id: int | None = None
 
 
 class RndHistoryIn(BaseModel):
@@ -52,6 +54,32 @@ class RndHistoryIn(BaseModel):
     amount_krw: int | None = Field(default=None, ge=0)
     role: Literal["LEAD", "PARTICIPANT"] = "LEAD"
     summary: str | None = None
+
+
+ProductCategory = Literal["WEAPON_SYSTEM", "COMPONENT", "MATERIAL", "SOFTWARE", "EQUIPMENT", "SERVICE", "OTHER"]
+
+
+class ProductIn(BaseModel):
+    name: str = Field(min_length=1, max_length=300)
+    category: ProductCategory = "COMPONENT"
+    description: str | None = Field(default=None, max_length=2000)
+    is_defense: bool = Field(default=False, description="군 납품·국방용 개발 제품")
+    customers: str | None = Field(default=None, max_length=500, description="주요 납품처")
+
+
+class TechnologyIn(BaseModel):
+    tech_name: str = Field(min_length=1, max_length=300)
+    description: str | None = Field(default=None, max_length=2000)
+    trl: int | None = Field(default=None, ge=1, le=9, description="기술성숙도 1~9")
+
+
+class SupportHistoryIn(BaseModel):
+    program_name: str = Field(min_length=1, max_length=300)
+    agency: str | None = Field(default=None, max_length=200)
+    year: int | None = Field(default=None, ge=1990, le=2100)
+    result: Literal["APPLIED", "SELECTED", "COMPLETED", "SUCCESS", "FAILED"] = "SELECTED"
+    amount_krw: int | None = Field(default=None, ge=0)
+    summary: str | None = Field(default=None, max_length=2000)
 
 
 class ProfileFields(BaseModel):
@@ -80,6 +108,9 @@ class CompanyLists(BaseModel):
     certifications: list[CertificationIn] = []
     credit_ratings: list[CreditRatingIn] = []
     rnd_history: list[RndHistoryIn] = []
+    products: list[ProductIn] = []
+    technologies: list[TechnologyIn] = []
+    support_history: list[SupportHistoryIn] = []
 
 
 class CompanyRegister(ProfileFields, CompanyLists):
@@ -98,6 +129,9 @@ class CompanyUpdate(ProfileFields):
     certifications: list[CertificationIn] | None = None
     credit_ratings: list[CreditRatingIn] | None = None
     rnd_history: list[RndHistoryIn] | None = None
+    products: list[ProductIn] | None = None
+    technologies: list[TechnologyIn] | None = None
+    support_history: list[SupportHistoryIn] | None = None
 
 
 class LinkSent(BaseModel):

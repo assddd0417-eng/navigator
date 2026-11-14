@@ -7,7 +7,7 @@
 
 | 구분 | 위치 |
 |------|------|
-| 마이그레이션 | 0019 기업 프로필(특허·인증·신용등급·R&D 이력·관리 링크), 0020 외부 출처·값 출처, 0021 공고·자격요건, 0022 임베딩·매칭 결과, 0024 알림 구독, 0025 외부 수집(기업마당 출처, 출처별 기업 식별자), 0030 국기원 공지사항 출처·공고 첨부, 0031 공고 조건 확인 표시 |
+| 마이그레이션 | 0019 기업 프로필(특허·인증·신용등급·R&D 이력·관리 링크), 0020 외부 출처·값 출처, 0021 공고·자격요건, 0022 임베딩·매칭 결과, 0024 알림 구독, 0025 외부 수집(기업마당 출처, 출처별 기업 식별자), 0030 국기원 공지사항 출처·공고 첨부, 0031 공고 조건 확인 표시, 0033 기업 제품·보유 기술·지원사업 이력·증빙 (0032 는 다른 작업이 사용) |
 | 기업 API | `backend/app/routers/navigator.py` |
 | 공고 API | `backend/app/routers/announcements.py`, 요건 형식 `backend/app/schemas/announcements.py` (`RULE_MODELS`) |
 | 매칭 API | `backend/app/routers/navigator_matching.py` |
@@ -33,8 +33,10 @@
 | `GET /navigator/companies/{brn}` | - | 공개 정보: 상호, 진위확인 결과, 휴·폐업, 특허 |
 | `GET /navigator/companies/{brn}/matches` | - | 공개 정보 기준 추천 공고 (아래 '공개 조회' 참고) |
 | `POST /navigator/companies/{brn}/access-link` | - | 관리 링크 재발송. 등록 이메일로만 보냄 |
-| `GET /navigator/manage/profile` | 관리 링크 | 전체 프로필 (신용등급, 매출, 인증, R&D 이력, 값 출처) |
-| `PATCH /navigator/manage/profile` | 관리 링크 | 수정. 보낸 필드만 반영, 출처는 SELF. 목록은 자가입력 행만 교체 |
+| `GET /navigator/manage/profile` | 관리 링크 | 전체 프로필 (신용등급, 매출, 인증, R&D 이력, 제품, 보유 기술, 지원사업 이력, 증빙, 값 출처) |
+| `PATCH /navigator/manage/profile` | 관리 링크 | 수정. 보낸 필드만 반영, 출처는 SELF. 목록(`products`·`technologies`·`support_history` 포함)은 자가입력 행만 교체 |
+| `POST /navigator/manage/evidence` | 관리 링크 | 증빙 파일(PDF·HWP·HWPX) → 종류·번호·날짜·등급을 뽑아 반환. 같은 파일은 한 번만 |
+| `DELETE /navigator/manage/evidence/{id}` | 관리 링크 | 증빙 삭제 (연결된 인증·등급은 증빙 없음으로) |
 | `POST /navigator/manage/matches?include_closed=&refresh=` | 관리 링크 | 내 추천 공고. 당일 결과가 있고 이후 변경이 없으면 재사용 |
 | `GET /navigator/manage/questions` | 관리 링크 | 보완질문 (부적격 공고 제외, 요건당 1회). `answer_type`: `integer` / `boolean` |
 | `POST /navigator/manage/answers` | 관리 링크 | `{"answers":[{"requirement_id":1,"value":7}]}` 저장 후 재판정 결과 반환 |
@@ -140,6 +142,15 @@
 - 기관 DB 에 이미 있는 기업(이메일 없음)은 진위확인 일치일 때만 이어서 등록.
 - 이메일 필수.
 - 비로그인 API 는 IP 당 분당 `NAVIGATOR_RATE_LIMIT_PER_MINUTE` 회 (프로세스 메모리 기준).
+
+## 기업 입력 항목
+
+- 제품(`company_product`)과 보유 기술(`company_technology`, TRL 1~9)은 매칭에서 요구 기술과 비교하는 TECH 벡터로 들어간다. 근거 표시는 "제품"·"보유기술".
+- 지원사업 참여 이력(`company_support_history`)은 컨설팅·수출·시험평가처럼 R&D 과제가 아닌 지원사업. R&D 수행 경험 판정에는 넣지 않는다.
+- 증빙(`company_evidence`): 원본 파일은 저장하지 않고 뽑은 글자와 값만 둔다. 서버에 OCR 이 없어 사진·스캔본은 UNSUPPORTED, 값은 직접 입력.
+  - 알아보는 것: 벤처기업확인서, 기업부설연구소·연구개발전담부서 인정서, 이노비즈·메인비즈, ISO 9001, AS9100, 국방품질경영, 방산업체 지정, 중소기업 확인서, 신용평가 등급확인서(NICE·KED).
+  - 뽑은 값은 입력란을 채우기만 한다. 기업이 확인하고 저장하면 인증·등급 행에 `company_evidence_id` 로 연결된다. 다른 회사 증빙 번호는 연결되지 않는다.
+  - 신용평가서가 섞이므로 기업 본인과 기관 담당자만 본다.
 
 관리 링크: 256비트 랜덤, DB 에는 SHA-256 만 저장, 기본 30일, 재발송 시 이전 링크 폐기.
 화면에서는 열자마자 주소창에서 지우고 sessionStorage 에만 둔다.
@@ -322,5 +333,5 @@ curl -s -X POST localhost:8000/navigator/announcements -H 'X-User-Id: 1' -H 'Con
 - 나라장터·방사청 공고, NICE·KED 신용등급, NTIS 과제 연결 부품
 - 실제 메일 발송 (SMTP 등, `mailer.send` 만 바꾸면 됨). 지금은 mock
 - 알림 발송을 큐로 분리 (지금은 공고 등록 요청 안에서 처리)
-- 증빙 PDF 업로드 연결 (`evidence_document_id` 컬럼만 있음)
+- 사진·스캔 증빙 OCR (지금은 PDF·한글 파일 글자만 읽음)
 - 운영 임베딩 모델(bge-m3) 기준 순위 재측정·가중치 조정
