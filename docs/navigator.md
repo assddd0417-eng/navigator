@@ -38,6 +38,7 @@
 | `POST /navigator/manage/evidence` | 관리 링크 | 증빙 파일(PDF·HWP·HWPX) → 종류·번호·날짜·등급을 뽑아 반환. 같은 파일은 한 번만 |
 | `DELETE /navigator/manage/evidence/{id}` | 관리 링크 | 증빙 삭제 (연결된 인증·등급은 증빙 없음으로) |
 | `POST /navigator/manage/matches?include_closed=&refresh=` | 관리 링크 | 내 추천 공고. 당일 결과가 있고 이후 변경이 없으면 재사용 |
+| `POST /navigator/manage/past-matches?refresh=` | 관리 링크 | 참여할 수 있었던 사업: 최근 마감 공고 중 적합·확인 필요. 공고마다 `next_round`(같은 사업의 지금 열린 공고), `participated` |
 | `GET /navigator/manage/questions` | 관리 링크 | 보완질문 (부적격 공고 제외, 요건당 1회). `answer_type`: `integer` / `boolean` |
 | `POST /navigator/manage/answers` | 관리 링크 | `{"answers":[{"requirement_id":1,"value":7}]}` 저장 후 재판정 결과 반환 |
 
@@ -69,7 +70,7 @@
 |-------------|------|
 | `POST /navigator/matching/announcements/{id}?verdict=` | 공고 → 기업 매칭 실행 |
 | `GET /navigator/matching/announcements/{id}` | 해당 공고의 마지막 실행 결과 (없으면 `run: null`) |
-| `POST /navigator/matching/companies/{org_id}?include_closed=` | 기업 → 공고 매칭 |
+| `POST /navigator/matching/companies/{org_id}?include_closed=&past=` | 기업 → 공고 매칭. `past=true` 면 최근 마감 공고만 |
 | `GET /navigator/matching/companies/{org_id}/profile` | 기업 프로필 (이메일 마스킹) |
 | `GET /navigator/matching/runs/{run_id}` | 저장된 실행 조회 |
 
@@ -240,6 +241,15 @@ weighted 모드는 비교 대상이 없으면 0.5. 정렬 방식·가중치·규
 - 메일은 커밋 후 보낸다. 실패하면 FAILED 로 남기고 공고 등록은 그대로 성공. 화면 알림은 남는다.
 - 메일에는 판정·총점·연계이유만 넣고 신용등급 값은 넣지 않는다.
 
+### 참여할 수 있었던 사업
+
+- 대상: 마감일이 오늘부터 `NAVIGATOR_PAST_YEARS`년(기본 2년) 안인 마감 공고. 회사 개업일 전에 마감된 공고는 뺀다.
+- 판정은 각 공고 마감일 기준(업력·인증 유효기간 등)이지만 회사 정보는 지금 값이다. 화면에 "마감 당시와 다를 수 있음"을 적는다.
+- 기업에게는 적합(지원할 수 있었음)과 확인 필요만 보여 준다. 순서는 현재 공고와 같은 A안.
+- 같은 `series_key`(차수·재공고 묶음)의 접수중·접수 예정 공고가 있으면 "다음 회차"로 붙인다. 국기원 수집 공고는 제목으로 키를 만든다.
+- 기업이 지원사업 이력에 그 공고를 연결해 두었으면 "참여함"으로 표시한다.
+- 실제 선정 여부는 모른다. 국기원 내부 선정 목록은 받지 않으므로, 확인하려면 공개된 선정결과 글로만 본다.
+
 ### 공개 조회
 
 `GET /navigator/companies/{brn}/matches` 는 신용등급·매출 요건의 결과를 `null` 로 가리고, 그 요건을 빼고 판정과 연계이유를 다시 계산한다 (가린 요건 때문에 부적격이라는 사실이 드러나지 않도록). 보완질문은 주지 않는다.
@@ -250,7 +260,7 @@ weighted 모드는 비교 대상이 없으면 0.5. 정렬 방식·가중치·규
 |------|------|------|
 | `/navigator` | 기업 | 사업자번호 조회 → 공개 정보, 추천 공고, 관리 링크 받기 |
 | `/navigator/register` | 기업 | 신규 등록 |
-| `/navigator/manage#t=…` | 기업 (관리 링크) | 탭: 추천 공고 / 보완질문 / 알림 / 내 정보. 저장하면 재판정 |
+| `/navigator/manage#t=…` | 기업 (관리 링크) | 탭: 지원 가능 공고 / 참여할 수 있었던 사업 / 알림 / 회사 정보(맨 위 역량 레이더). 저장하면 재판정 |
 | `/navigator/subscriptions/confirm#t=…`, `/navigator/unsubscribe#t=…` | 메일 수신자 | 수신 확인, 수신 거부 |
 | `/staff/announcements` | 담당자 (메뉴 "공고 등록·조건 확인") | 확인 전 / 확인 완료 공고 → 왼쪽 원문(본문·첨부 글자), 오른쪽 조건 뽑기 → 접수기간·지원 한도·조건·요구기술 고치기 → 확인 저장 또는 공개. 공고문 붙여넣기 등록 |
 | `/staff/navigator` | 담당자 (메뉴 "공고별 적합 기업") | 공고 목록 → 마지막 매칭 결과(적합 / 정보부족 / 부적격 목록을 따로 총점 순, 부적격은 접힘) → 다시 매칭, 기업 프로필, 구독 기업 알림 현황 |
@@ -278,6 +288,8 @@ weighted 모드는 비교 대상이 없으면 0.5. 정렬 방식·가중치·규
 | 104 강원 국방벤처 (접수전) | 부적격 | 부적격 | 부적격 |
 | 105 하반기 국방 R&D (마감) | 정보부족 (보안측정) | 정보부족 (보안측정) | 정보부족 (주관 이력·휴폐업·보안측정) |
 
+`seeds/navigator_past_announcements.sql` 은 시연용으로 106(101 의 이전 회차, 2025-12-15 마감, 요건 같음)을 넣고 101 과 같은 `series_key` 로 묶는다. 한빛의 "참여할 수 있었던 사업"에 106 이 적합으로, 다음 회차로 101 이 나온다.
+
 ## 설정
 
 | 이름 | 기본값 | 설명 |
@@ -290,6 +302,7 @@ weighted 모드는 비교 대상이 없으면 0.5. 정렬 방식·가중치·규
 | `SOURCE_KRIT` | `mock` | `live` 면 국기원 공지사항을 직접 읽음 (키 불필요) |
 | `KRIT_MAX_PAGES` | `3` | 한 번에 읽을 쪽 수 (쪽당 10건). 처음 채울 때 61 |
 | `KRIT_REQUEST_DELAY_S` | `0.5` | 국기원 요청 사이 대기 |
+| `NAVIGATOR_PAST_YEARS` | `2` | 참여할 수 있었던 사업에서 볼 마감 공고 기간(년) |
 | `NAVIGATOR_RANKING` | `vector` | 같은 판정 안의 순서. `vector` = 벡터 관련도(A안), `weighted` = 이전 가중합 |
 | `REQUIREMENT_EXTRACTOR` | `auto` | 공고 조건 뽑기. `auto` 는 LLM 키가 있으면 LLM (`LLM_PROVIDER`·`LLM_MODEL` 따름), `rules` 는 규칙만 |
 | `NAVIGATOR_ANNOUNCEMENT_KEYWORDS` | `국방,방산,방위산업,방위사업,무기체계,군수` | 외부 공고 거르기 (쉼표). "방위"만 쓰면 "주방위생" 같은 공고가 걸림 |

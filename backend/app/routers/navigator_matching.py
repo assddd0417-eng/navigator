@@ -12,6 +12,7 @@ from app.services import mailer
 from app.services.bizno import format_bizno
 from app.services.company_profile import find_by_bizno, full_view
 from app.services.navigator_matching import (
+    add_past_context,
     fresh_company_run,
     match_announcement,
     match_company,
@@ -45,12 +46,15 @@ async def run_announcement_matching(ann_id: int, verdict: str | None = Query(Non
 
 
 @router.post("/matching/companies/{org_id}", status_code=201)
-async def run_company_matching(org_id: int, include_closed: bool = False, verdict: str | None = None,
+async def run_company_matching(org_id: int, include_closed: bool = False, past: bool = False,
+                               verdict: str | None = None,
                                user: CurrentUser = Depends(require_roles(*STAFF)), rid: str = Depends(request_id)):
     vs = _verdicts(verdict)
     async with transaction(user.id, rid) as conn:
-        run_id = await match_company(conn, org_id, include_closed=include_closed, requested_by=user.id, via="STAFF")
-        return await run_results(conn, run_id, verdicts=vs)
+        run_id = await match_company(conn, org_id, include_closed=include_closed, past=past,
+                                     requested_by=user.id, via="STAFF")
+        res = await run_results(conn, run_id, verdicts=vs)
+        return await add_past_context(conn, org_id, res) if past else res
 
 
 @router.get("/matching/announcements/{ann_id}")
@@ -88,9 +92,9 @@ async def get_run(run_id: int, verdict: str | None = None, _: CurrentUser = Depe
         return await run_results(conn, run_id, verdicts=_verdicts(verdict))
 
 
-async def _company_run(conn, org_id: int, include_closed: bool, refresh: bool, via: str) -> int:
-    run_id = None if refresh else await fresh_company_run(conn, org_id, include_closed)
-    return run_id or await match_company(conn, org_id, include_closed=include_closed, via=via)
+async def _company_run(conn, org_id: int, include_closed: bool, refresh: bool, via: str, past: bool = False) -> int:
+    run_id = None if refresh else await fresh_company_run(conn, org_id, include_closed, past)
+    return run_id or await match_company(conn, org_id, include_closed=include_closed, past=past, via=via)
 
 
 @router.get("/companies/{business_reg_no}/matches", dependencies=[Depends(public_rate_limit)])
@@ -112,6 +116,15 @@ async def my_matches(include_closed: bool = False, refresh: bool = False, verdic
     async with transaction(None, f"{rid}|company-link:{link['link_id']}") as conn:
         run_id = await _company_run(conn, link["organization_id"], include_closed, refresh, "COMPANY_LINK")
         return await run_results(conn, run_id, verdicts=vs)
+
+
+@router.post("/manage/past-matches", dependencies=[Depends(public_rate_limit)])
+async def my_past_matches(refresh: bool = False, link: dict = Depends(manage_link), rid: str = Depends(request_id)):
+    """참여할 수 있었던 사업: 최근 마감 공고 중 지금 회사 정보로 적합·확인 필요인 것."""
+    async with transaction(None, f"{rid}|company-link:{link['link_id']}") as conn:
+        run_id = await _company_run(conn, link["organization_id"], False, refresh, "COMPANY_LINK", past=True)
+        res = await run_results(conn, run_id, verdicts=("ELIGIBLE", "NEEDS_INFO"))
+        return await add_past_context(conn, link["organization_id"], res)
 
 
 @router.get("/manage/questions", dependencies=[Depends(public_rate_limit)])
