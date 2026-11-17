@@ -144,13 +144,15 @@ def extract_rules(text: str, posted_on: date | None = None) -> Extraction:
         t = ln.text
         in_qualify = ln.section == "QUALIFY"
         if in_qualify and not sizes:
-            if re.search(r"중소\s*[·ㆍ,]?\s*중견", t):
+            if "대기업" in t and not re.search(r"대기업[^\n]{0,6}(?:제외|불가)", t):
+                sizes = ["ANY"]   # "대기업·스타트업·중소기업 모두" 처럼 규모 제한이 없는 경우
+            elif re.search(r"중소\s*[·ㆍ,]?\s*중견", t):
                 sizes = ["MIDSIZE", "SME", "STARTUP", "VENTURE"]
-            elif "중소기업" in t:
+            elif re.search(r"중소\s*기업|중소\s*[·ㆍ,]\s*벤처", t):
                 sizes = ["SME", "STARTUP", "VENTURE"]
             elif "중견기업" in t:
                 sizes = ["MIDSIZE"]
-            if sizes:
+            if sizes and sizes != ["ANY"]:
                 label = "중소·중견기업" if "MIDSIZE" in sizes and "SME" in sizes else (
                     "중견기업" if sizes == ["MIDSIZE"] else "중소기업(창업·벤처 포함)")
                 add("COMPANY_SIZE", {"allowed": sizes}, True, label, t)
@@ -163,16 +165,18 @@ def extract_rules(text: str, posted_on: date | None = None) -> Extraction:
                 checks.setdefault("INSOLVENT", t)
             if re.search(r"참여\s*제한|입찰\s*참가\s*자격\s*제한", t):
                 checks.setdefault("RND_RESTRICTED", t)
-        if ln.section in ("QUALIFY", "PREFER") or _SEC_PREFER.search(t):
+        # "본사, 기업부설연구소 또는 공장이 있는 기업" 은 소재지 설명이지 인증 조건이 아니다
+        if (ln.section in ("QUALIFY", "PREFER") or _SEC_PREFER.search(t)) and not re.search(r"본사|공장|사업장", t):
             for pat, code in _CERTS:
                 if re.search(pat, t) and code not in certs:
                     certs[code] = (not _preferred(ln), t)
         if m := _GRADE.search(t):
             add("MIN_CREDIT_GRADE", {"min_grade": m.group(1)}, not _preferred(ln),
                 f"기업신용등급 {m.group(1)} 이상", t)
-        if in_qualify and (m := _AGE_MAX.search(t)):
+        doc_note = re.search(r"재무제표|회계감사|제출|서류|대체", t)   # "법인 설립 2년 이내 등은 회계감사보고서로 대체"
+        if in_qualify and not doc_note and (m := _AGE_MAX.search(t)):
             add("BUSINESS_AGE", {"max_years": int(m.group(1))}, True, f"업력 {m.group(1)}년 이내", t)
-        elif in_qualify and (m := _AGE_MIN.search(t)):
+        elif in_qualify and not doc_note and (m := _AGE_MIN.search(t)):
             add("BUSINESS_AGE", {"min_years": int(m.group(1))}, True, f"업력 {m.group(1)}년 이상", t)
         if in_qualify and re.search(r"본사|주\s*사무소|소재", t):
             regions = sorted({v for k, v in _REGIONS.items() if k in t})
@@ -271,15 +275,22 @@ def extract_fields(text: str, posted_on: date | None = None) -> dict:
         if 0 < n <= 120:
             fields["support_period_months"] = n
     lines = _lines(text)
+    def _target(desc: str) -> bool:
+        return len(desc) >= 4 and not re.search(r"첨부|붙임|참조|참고", desc)
+
     for i, ln in enumerate(lines):
-        head = _inline_head(ln.text)
+        m = _HEAD.match(ln.text)   # 짧은 줄 "○ 참여대상 : 산·학·연" 도 제목·내용으로 본다
+        head = m.group(1) if m else None
         if head and _SEC_QUALIFY.search(head) and not re.search(r"모집|공고", head):
-            fields["target_desc"] = _inline_body(ln.text)[:500]
-            break
+            desc = re.split(r"[:：]", ln.text, maxsplit=1)[-1].strip()
+            if _target(desc):
+                fields["target_desc"] = desc[:500]
+                break
+            continue
         if (ln.section == "QUALIFY" and _SEC_QUALIFY.search(ln.text) and len(ln.text) <= 30
-                and not re.search(r"모집|공고", ln.text)):
+                and not re.search(r"모집|공고|[:：]", ln.text)):
             nxt = next((x.text for x in lines[i + 1:i + 4] if len(x.text) > 15 and x.section == "QUALIFY"), None)
-            if nxt:
+            if nxt and _target(nxt):
                 fields["target_desc"] = nxt[:500]
                 break
     for i, ln in enumerate(lines):

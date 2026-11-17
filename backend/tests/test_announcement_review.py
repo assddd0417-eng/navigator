@@ -180,3 +180,28 @@ async def test_requirement_types(client, database):
     assert {"COMPANY_SIZE", "NO_DISQUALIFICATION", "OTHER"} <= {t["code"] for t in body["types"]}
     assert any(c["code"] == "RND_LAB" for c in body["certifications"])
     assert (await client.get("/navigator/announcements/requirement-types")).status_code == 401
+
+
+@pytest.mark.parametrize("text,absent,present", [
+    # 국방벤처센터 공고: 연구소는 소재지 설명이지 인증 조건이 아님
+    ("○ 모집대상 : 경기도에 소재(본사, 기업부설연구소, 공장 또는 사업장)한 중소·벤처기업", {"REQUIRED_CERT"},
+     {"COMPANY_SIZE", "REGION"}),
+    # 제출서류 설명의 '설립 2년 이내' 는 업력 조건이 아님
+    ("2. 신청자격\n- 중소기업\n* 재무제표 제출이 제한될 경우(법인 설립 2년 이내 등) 회계감사보고서로 대체 가능",
+     {"BUSINESS_AGE"}, {"COMPANY_SIZE"}),
+    # 대기업까지 모두 되면 규모 조건 없음
+    ("○ 신청자격 : 대기업 · 스타트업 · 중소기업 모두 포함", {"COMPANY_SIZE"}, set()),
+    ("가. 신청자격 : 국내 全 중소ㆍ벤처기업이 개발한 제품(기술)", set(), {"COMPANY_SIZE"}),
+])
+def test_rules_real_notice_lines(text, absent, present):
+    codes = {s.req_type_code for s in rx.extract_rules(text).requirements}
+    assert not (codes & absent) and present <= codes, codes
+
+
+@pytest.mark.parametrize("text,target", [
+    ("다. 지원대상 : 국내 중소ㆍ중견기업\n지원대상 지원항목\n1. 사전 해외 바이어 정보제공, 온라인 상담", "국내 중소ㆍ중견기업"),
+    ("○ 참여대상 : 산·학·연·공공기관 및 군 관련기관\n○ 접수방법 (2가지 중 택1)", "산·학·연·공공기관 및 군 관련기관"),
+    ("○ 신청자격 및 신청서류 : 세부 내용은 첨부 파일 참조\n[첨부: 공고.hwp]\n가. 신청자격 : 중소ㆍ중견기업", "중소ㆍ중견기업"),
+])
+def test_target_desc_real_notices(text, target):
+    assert rx.extract_fields(text)["target_desc"] == target
