@@ -473,4 +473,24 @@ api "공모서 올리기 (과제 지정 없음)" 201 POST /documents "$PLANNER" 
 check "과제번호로 과제 1에 '실린 과제'로 연결" 'any(.linked_projects[]; .project_id == 1 and .link_role == "LISTED" and .match_method == "PROJECT_NO")'
 api "과제 1 자료 사슬" 200 GET /planning/projects/1/chain "$PLANNER"
 check "공모서 단계에 문서 있음" 'any(.chain[]; .code == "PROGRAM_NOTICE" and (.documents | length) >= 1)'
+
+section "⑯ 통합기획 검토 (후보 검토표 → 자료 초안 → 회의 결정)"
+api "검토표 만들기는 기획자만 (검수자)" 403 POST /review-sheets "$REVIEWER" '{"sheet_scope":"CUSTOM"}'
+api "통합기획 회의 만들기" 201 POST /meetings "$PLANNER" '{"title":"스모크 통합기획 회의 '"$RUN_TAG"'","department_ids":[1,3]}'
+MEET_ID=$(pick '.id')
+api "검토표 만들기 (전체 후보)" 201 POST /review-sheets "$PLANNER" '{"sheet_scope":"CUSTOM","per_target":3,"meeting_id":'"${MEET_ID:-null}"'}'
+SHEET_ID=$(pick '.id')
+[[ -n "$SHEET_ID" ]] || abort "검토표 id 를 받지 못함"
+api "검토표 보기 (검수자)" 200 GET "/review-sheets/$SHEET_ID" "$REVIEWER"
+check "후보·근거·담당부서·검토율" '(.items | length) >= 1 and (.items[0].snapshot | has("evidence") and has("owner_departments")) and (.summary | has("final_review_rate_pct"))'
+REC_IN_SHEET=$(pick '.items[0].recommendation_id')
+api "회의 결정 기록" 201 POST "/meetings/$MEET_ID/decisions" "$PLANNER" \
+    '{"decision":"후속 과제 기획 착수","recommendation_id":'"$REC_IN_SHEET"',"follow_up_action":"기획서 초안 작성","owner_dept_id":3}'
+api "통합기획 자료 초안 만들기" 201 POST "/review-sheets/$SHEET_ID/drafts" "$PLANNER"
+DRAFT_ID=$(pick '.id')
+api "초안 보기" 200 GET "/planning-drafts/$DRAFT_ID" "$REVIEWER"
+check "초안 문서·회의 결정 포함" '(.content_md | startswith("# 통합기획 검토자료")) and (.content_md | contains("후속 과제 기획 착수"))'
+api "검토표 확정" 204 POST "/review-sheets/$SHEET_ID/finalize" "$PLANNER"
+api "확정 후 후보 빼기 거부" 422 DELETE "/review-sheets/$SHEET_ID/items/$REC_IN_SHEET" "$PLANNER"
+api "검토표는 관리자만 (전문가)" 403 GET /review-sheets "$EXPERT"
 summary

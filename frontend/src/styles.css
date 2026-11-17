@@ -520,3 +520,23 @@ label.check input { width: auto; }
 /* 참여할 수 있었던 사업 */
 .past-tag { margin-left: 6px; }
 .past-next { display: block; margin-top: 4px; }
+
+/* 통합기획 검토 (검토표 · 초안 · 회의 결정) */
+.inline-checks { border: none; padding: 0; margin: 0; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.inline-checks legend { font-size: 13px; color: var(--muted, #667085); padding: 0; margin-bottom: 4px; width: 100%; }
+.inline-checks .check { display: inline-flex; gap: 4px; align-items: center; flex: none; }
+.form-end { display: flex; align-items: flex-end; }
+.rs-table td { vertical-align: top; }
+.rs-why { min-width: 280px; max-width: 460px; }
+.rs-why > div + div { margin-top: 4px; }
+.rs-draft-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.rs-draft-head .grow { flex: 1; }
+.rs-draft { word-break: break-word; background: #f7f9fc; border: 1px solid var(--border);
+  border-radius: 8px; padding: 14px 16px; font-size: 13px; line-height: 1.6; max-height: 560px; overflow: auto; }
+.rs-decision-form { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); }
+.md-doc h2 { font-size: 18px; margin: 0 0 10px; }
+.md-doc h3 { font-size: 15px; margin: 18px 0 8px; }
+.md-doc h4 { font-size: 14px; margin: 14px 0 6px; }
+.md-doc p { margin: 6px 0; }
+.md-doc ul { margin: 4px 0 8px; padding-left: 20px; }
+.md-doc .table { background: #fff; margin: 6px 0; }

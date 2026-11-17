@@ -19,6 +19,8 @@ import { GapDetailPage } from './pages/gaps/GapDetailPage'
 import { GapListPage } from './pages/gaps/GapListPage'
 import { PlanningPage } from './pages/planning/PlanningPage'
 import { PortfolioPage } from './pages/portfolio/PortfolioPage'
+import { ReviewSheetDetailPage } from './pages/review/ReviewSheetDetailPage'
+import { ReviewSheetsPage } from './pages/review/ReviewSheetsPage'
 import { RecommendationPage } from './pages/shared/RecommendationPage'
 import { DocumentUploadPage } from './pages/worker/DocumentUploadPage'
 import { MyTasksPage } from './pages/worker/MyTasksPage'
@@ -48,6 +50,8 @@ export default function App() {
               <Route path="/dashboard" element={<RequireRole roles={ADMIN_ROLES}><DashboardPage /></RequireRole>} />
               <Route path="/projects" element={<RequireRole roles={ADMIN_ROLES}><ProjectsPage /></RequireRole>} />
               <Route path="/reviews" element={<RequireRole roles={ADMIN_ROLES}><ReviewQueuePage /></RequireRole>} />
+              <Route path="/review-sheets" element={<RequireRole roles={ADMIN_ROLES}><ReviewSheetsPage /></RequireRole>} />
+              <Route path="/review-sheets/:id" element={<RequireRole roles={ADMIN_ROLES}><ReviewSheetDetailPage /></RequireRole>} />
               <Route path="/staff/announcements" element={<RequireRole roles={ADMIN_ROLES}><AnnouncementReviewPage /></RequireRole>} />
               <Route path="/staff/navigator" element={<RequireRole roles={ADMIN_ROLES}><NavigatorStaffPage /></RequireRole>} />
               <Route path="/staff/sources" element={<RequireRole roles={ADMIN_ROLES}><NavigatorSourcesPage /></RequireRole>} />
