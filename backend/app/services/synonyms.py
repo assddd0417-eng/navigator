@@ -33,10 +33,12 @@ async def load_groups(conn: AsyncConnection) -> list[Group]:
 
 def _pattern(term: str) -> re.Pattern:
     esc = re.escape(term)
-    # 영문·숫자 약어는 낱말 경계로만 (예: 'AI' 가 'MAIN' 안에서 잡히지 않게). 한글은 조사가 붙으므로 그대로.
+    # 영문·숫자 약어는 낱말 경계로만 (예: 'AI' 가 'MAIN' 안에서 잡히지 않게).
     if re.fullmatch(r"[A-Za-z0-9/\-\. ]+", term):
         return re.compile(rf"(?<![A-Za-z0-9]){esc}(?![A-Za-z0-9])", re.IGNORECASE)
-    return re.compile(esc, re.IGNORECASE)
+    # 한글은 뒤에 조사가 붙으므로 앞쪽만 막는다. '대드론'(드론을 막는 것)이 '드론'으로 잡히면
+    # 무인기 성과가 생존성 요구로 끌려온다 (2026-11-17 갭 측정에서 확인).
+    return re.compile(rf"(?<![A-Za-z0-9가-힣]){esc}", re.IGNORECASE)
 
 
 def matches(text: str, groups: list[Group]) -> list[tuple[Group, str]]:

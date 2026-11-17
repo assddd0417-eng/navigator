@@ -25,6 +25,9 @@ def test_ascii_terms_need_word_boundary():
     assert matches("MAIN 배터리 팩", G) == []                 # 'AI' 가 'MAIN' 안에서 잡히지 않음
     assert [g.canonical for g, _ in matches("AI 기반 표적 탐지", G)] == ["인공지능"]
     assert [g.canonical for g, _ in matches("인공지능을 쓴 탐지", G)] == ["인공지능"]  # 한글은 조사가 붙어도
+    drone = [Group("무인항공기", ("무인항공기", "드론", "UAV"))]
+    assert matches("능동방호·대드론 체계", drone) == []         # 앞에 다른 글자가 붙은 합성어는 다른 뜻
+    assert [t for _, t in matches("(드론) 탐지", drone)] == ["드론"]
 
 
 def test_empty_dictionary_keeps_text():
