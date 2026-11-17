@@ -189,7 +189,7 @@ function MatchDetail({ rec, audience }: { rec: MatchRec; audience: Audience }) {
               </td>
               <td className="nowrap">
                 <span className={`badge badge-${RESULT_MARK[c.result!][1]}`}>{RESULT_MARK[c.result!][0]}</span>
-                {c.self_declared && <div className="small muted">직접 입력값</div>}
+                {c.self_declared && <div className="small muted">직접 입력</div>}
               </td>
               <td>{c.reason}</td>
             </tr>
@@ -272,7 +272,7 @@ function InlineQuestions({ questions, onAnswer }: {
         </div>
       ))}
       <div className="iq-foot">
-        <span className="small muted">답한 내용은 직접 입력값으로 기록되고, 바로 다시 판정합니다.</span>
+        <span className="small muted">답한 내용은 ‘직접 입력’으로 남고, 바로 다시 판정합니다.</span>
         <button className="btn btn-sm btn-primary" disabled={busy || ready.length === 0} onClick={() => void submit()}>
           {busy ? '확인 중…' : '답하고 다시 판정'}
         </button>

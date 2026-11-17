@@ -13,13 +13,13 @@ from app.errors import Conflict, NotFound
 from app.services import mailer
 from app.services.access_link import hash_token
 from app.services.bizno import format_bizno
+from app.services.eligibility import COMPANY_VERDICT_KO, VERDICT_KO
 from app.services.navigator_matching import match_announcement
 
 log = logging.getLogger("app.navigator_alerts")
 
 MAX_SUBSCRIPTIONS = 5
 CONFIRM_TTL_DAYS = 3
-VERDICT_KO = {"ELIGIBLE": "적합", "NEEDS_INFO": "정보부족"}
 SUB_COLUMNS = ("id, email, keywords, min_score::float AS min_score, include_needs_info, channels, is_active, "
                "email_confirmed_at, unsubscribed_at, confirm_expires_at, created_at")
 
@@ -163,7 +163,7 @@ async def list_alerts(conn: AsyncConnection, org_id: int, limit: int = 50) -> di
               ORDER BY n.announcement_id, n.created_at) x
            ORDER BY created_at DESC LIMIT %s""", (org_id, limit))).fetchall()
     for r in rows:
-        r["verdict_label"] = VERDICT_KO[r["verdict"]]
+        r["verdict_label"] = COMPANY_VERDICT_KO[r["verdict"]]
     return {"unread": sum(not r["is_read"] for r in rows), "alerts": rows}
 
 
@@ -190,7 +190,7 @@ def _keyword_hit(keywords: list[str], text: str) -> bool:
 
 
 def _mail(ann: dict, rec: dict, token: str) -> tuple[str, str]:
-    verdict = VERDICT_KO[rec["verdict"]]
+    verdict = COMPANY_VERDICT_KO[rec["verdict"]]
     subject = f"[Navigator] 새 공고 ({verdict}): {ann['title']}"
     deadline = ann["receipt_end"].isoformat() if ann["receipt_end"] else "미정"
     body = (f"{rec['name']}에 맞는 새 공고가 등록되었습니다.\n\n"
