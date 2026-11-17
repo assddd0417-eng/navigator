@@ -107,6 +107,11 @@ app/
 | POST·GET·PATCH | `/meetings`·`/meetings/{id}` | 만들기 PLANNER, 보기 PLANNER·DEPT_REVIEWER | 통합기획 회의 (참석 부서, 올린 검토표, 결정) |
 | POST | `/meetings/{id}/decisions` | PLANNER | 회의 결정·후속조치 (추천에 대한 결정은 회의에 올린 검토표의 후보만) |
 | PATCH | `/meeting-decisions/{id}` | PLANNER 또는 담당 부서 DEPT_REVIEWER | 후속조치 상태 (진행·완료·취소) |
+| GET | `/executions/candidates` | PLANNER, DEPT_REVIEWER | 담당부서가 채택한 추천 (실행 기록 수 포함) |
+| POST | `/executions` | PLANNER 또는 그 추천의 담당부서 DEPT_REVIEWER | 연계 실행 기록 (채택 추천만, 이어진 과제 지정·새 과제번호 등록 → 실제 이어달리기 과제 관계 자동) (0037) |
+| PATCH | `/executions/{id}` | 같음 | 상태·결과 갱신. 완료(COMPLETED)면 실제 연계 사례 검증 케이스(eval_case HISTORICAL_RELAY) 자동 생성 |
+| GET | `/executions`·`/executions/kpi` | PLANNER, DEPT_REVIEWER (보안등급별) | 실행 목록, 순환 지표(채택→실행 전환율·AX 발굴·이어진 과제·새 성과·검증 사례) |
+| GET | `/executions/lineage/cards/{카드id}` | PLANNER, DEPT_REVIEWER | 이어달리기 계보: 앞 과제(실제 이어달리기 관계) ↔ 이 성과 → 실행 → 이어진 과제 → 새 성과 |
 | POST | `/planning/trends` | PLANNER, CURATOR | 동향 직접 입력 (해외 3종 + 국내 계획·성능개량·국산화/단종 대응). 출처 메모 필수, 저장 즉시 갭 분석 |
 | GET | `/planning/trends` | PLANNER, DEPT_REVIEWER, CURATOR | 동향 목록 (해외 수요 + 직접 입력), 만든 기획수요 번호 |
 | GET | `/planning/brief/{동향id}` | PLANNER, DEPT_REVIEWER, CURATOR | 기획 참고서: 관련 과거 과제(결과 구분·한계·평가 의견)·요구 성능 비교·새 기획에 넣을 것 (`k`, `min_sim`) |

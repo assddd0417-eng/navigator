@@ -91,6 +91,7 @@ export const MENU: MenuItem[] = [
   { path: '/portfolio', label: '기관 포트폴리오', icon: '🗺️', roles: PORTFOLIO_ROLES },
   { path: '/reviews', label: '검토할 추천', icon: '📥', roles: ADMIN_ROLES },
   { path: '/review-sheets', label: '통합기획 검토', icon: '🗂️', roles: ADMIN_ROLES },
+  { path: '/executions', label: '연계 실행 결과', icon: '🔁', roles: ADMIN_ROLES },
   { path: '/projects', label: '연계 후보 찾기', icon: '🔎', roles: ADMIN_ROLES },
   { path: '/my-tasks', label: '내 할 일', icon: '✅', roles: WORKER_ROLES },
   { path: '/documents/upload', label: '문서 올리기', icon: '📤', roles: WORKER_ROLES },
@@ -105,7 +106,7 @@ export const MENU: MenuItem[] = [
  * 로그인 직후 원래 가려던 화면으로 돌려보낼지, 역할을 바꾼 뒤 지금 화면에 머물지 정할 때 쓴다.
  */
 const PATH_ROLES: [RegExp, RoleCode[]][] = [
-  [/^\/(dashboard|projects|reviews|review-sheets|staff\/navigator|staff\/sources|staff\/announcements)(\/|$)/, ADMIN_ROLES],
+  [/^\/(dashboard|projects|reviews|review-sheets|executions|staff\/navigator|staff\/sources|staff\/announcements)(\/|$)/, ADMIN_ROLES],
   [/^\/(my-tasks|documents\/upload)(\/|$)/, WORKER_ROLES],
   [/^\/portfolio(\/|$)/, PORTFOLIO_ROLES],
   [/^\/planning(\/|$)/, PLANNING_ROLES],
