@@ -334,6 +334,7 @@ weighted 모드는 비교 대상이 없으면 0.5. 정렬 방식·가중치·규
 | `KRIT_MAX_PAGES` | `3` | 한 번에 읽을 쪽 수 (쪽당 10건). 처음 채울 때 61 |
 | `KRIT_REQUEST_DELAY_S` | `0.5` | 국기원 요청 사이 대기 |
 | `NAVIGATOR_PAST_YEARS` | `2` | 참여할 수 있었던 사업에서 볼 마감 공고 기간(년) |
+| `NAVIGATOR_FIT_HIGH`, `NAVIGATOR_FIT_MID` | 임베더별 (hash .45/.25, bge-m3 .60/.53) | 관련도 높음·보통 경계. 화면은 `GET /navigator/fit-levels` 로 받음 |
 | `NAVIGATOR_RANKING` | `vector` | 같은 판정 안의 순서. `vector` = 벡터 관련도(A안), `weighted` = 이전 가중합 |
 | `REQUIREMENT_EXTRACTOR` | `auto` | 공고 조건 뽑기. `auto` 는 LLM 키가 있으면 LLM (`LLM_PROVIDER`·`LLM_MODEL` 따름), `rules` 는 규칙만 |
 | `NAVIGATOR_ANNOUNCEMENT_KEYWORDS` | `국방,방산,방위산업,방위사업,무기체계,군수` | 외부 공고 거르기 (쉼표). "방위"만 쓰면 "주방위생" 같은 공고가 걸림 |
@@ -402,4 +403,4 @@ curl -s -X POST localhost:8000/navigator/announcements -H 'X-User-Id: 1' -H 'Con
 - 등록할 때 이메일 소유 확인 (지금은 등록한 사람이 넣은 주소를 그대로 믿음. 국세청 진위확인으로만 거름)
 - 알림 발송을 큐로 분리 (지금은 공고 등록 요청 안에서 처리)
 - 사진·스캔 증빙 OCR (지금은 PDF·한글 파일 글자만 읽음)
-- 운영 임베딩 모델(bge-m3) 기준 순위 재측정·가중치 조정
+- 실제 공고·기업 데이터로 관련도 경계와 TECH·PURPOSE 비율 다시 맞추기 (bge-m3 경계는 합성 100쌍 기준)

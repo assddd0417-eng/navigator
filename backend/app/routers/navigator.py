@@ -18,7 +18,7 @@ from app.services.company_profile import (
     insert_list_items, public_view, record_field, replace_self_items)
 from app.services.external import BizVerifyResult, ConnectorUnavailable, get_nts_connector, record_fetch
 from app.services.external.nts import SOURCE_CODE as NTS
-from app.services.navigator_embedding import sync_company_embeddings
+from app.services.navigator_embedding import fit_levels, sync_company_embeddings
 from app.services.ratelimit import public_rate_limit
 
 router = APIRouter(prefix="/navigator", tags=["Navigator 기업 프로필 (로그인 없음)"])
@@ -148,6 +148,12 @@ async def register_company(body: CompanyRegister, rid: str = Depends(request_id)
         biz_verify_status=result.verify_status, biz_verify_label=VERIFY_LABEL[result.verify_status],
         business_status=BUSINESS_STATUS_LABEL[result.business_status], message=result.message,
         manage_token=link.token, **sent.model_dump())
+
+
+@router.get("/fit-levels")
+async def get_fit_levels():
+    """관련도 높음·보통 경계. 화면 표시와 알림 조건에 쓴다 (임베더마다 다름)."""
+    return fit_levels()
 
 
 @router.get("/companies/{business_reg_no}", dependencies=[Depends(public_rate_limit)])

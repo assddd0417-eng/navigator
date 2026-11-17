@@ -287,6 +287,8 @@ const anon = { anonymous: true } as const
 const manage = (token: string) => ({ anonymous: true, headers: { 'X-Manage-Token': token } })
 const bizno = (v: string) => encodeURIComponent(v.replace(/[^0-9]/g, ''))
 
+export const getFitLevels = () =>
+  api<{ embedder: string; high: number; mid: number }>('/navigator/fit-levels', { ...anon, silent: true })
 export const getPublicCompany = (brn: string) =>
   api<PublicProfile>(`/navigator/companies/${bizno(brn)}`, { ...anon, silent: true })
 export const getPublicMatches = (brn: string) =>

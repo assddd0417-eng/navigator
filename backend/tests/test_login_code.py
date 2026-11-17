@@ -105,3 +105,12 @@ async def test_rules(client, fresh, monkeypatch):
     monkeypatch.setattr(get_settings(), "navigator_dev_expose_link", True)
     r = await client.post(f"/navigator/companies/{BRN}/login-code")
     assert r.json()["dev_code"] == _last_code()
+
+
+async def test_fit_levels(client, monkeypatch):
+    r = (await client.get("/navigator/fit-levels")).json()
+    assert r == {"embedder": "hash", "high": 0.45, "mid": 0.25}
+    monkeypatch.setattr(get_settings(), "embedder", "bge_m3")
+    assert (await client.get("/navigator/fit-levels")).json()["high"] == 0.60
+    monkeypatch.setattr(get_settings(), "navigator_fit_high", 0.7)
+    assert (await client.get("/navigator/fit-levels")).json()["high"] == 0.7
