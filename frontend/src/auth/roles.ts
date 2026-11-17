@@ -92,10 +92,12 @@ export const MENU: MenuItem[] = [
   { path: '/reviews', label: '검토할 추천', icon: '📥', roles: ADMIN_ROLES },
   { path: '/review-sheets', label: '통합기획 검토', icon: '🗂️', roles: ADMIN_ROLES },
   { path: '/executions', label: '연계 실행 결과', icon: '🔁', roles: ADMIN_ROLES },
+  { path: '/measurements', label: '효과 측정', icon: '⏱️', roles: [...ADMIN_ROLES, ...WORKER_ROLES] },
   { path: '/projects', label: '연계 후보 찾기', icon: '🔎', roles: ADMIN_ROLES },
   { path: '/my-tasks', label: '내 할 일', icon: '✅', roles: WORKER_ROLES },
   { path: '/documents/upload', label: '문서 올리기', icon: '📤', roles: WORKER_ROLES },
   { path: '/gaps', label: '해외 수요 갭 분석', icon: '🌍', roles: ALL_ROLES },
+  { path: '/synonyms', label: '용어 사전', icon: '📖', roles: ALL_ROLES },
   { path: '/staff/announcements', label: '공고 등록·조건 확인', icon: '📋', roles: ADMIN_ROLES },
   { path: '/staff/navigator', label: '공고별 적합 기업', icon: '🧭', roles: ADMIN_ROLES },
   { path: '/staff/sources', label: '외부 수집', icon: '🔄', roles: ADMIN_ROLES },
@@ -108,9 +110,10 @@ export const MENU: MenuItem[] = [
 const PATH_ROLES: [RegExp, RoleCode[]][] = [
   [/^\/(dashboard|projects|reviews|review-sheets|executions|staff\/navigator|staff\/sources|staff\/announcements)(\/|$)/, ADMIN_ROLES],
   [/^\/(my-tasks|documents\/upload)(\/|$)/, WORKER_ROLES],
+  [/^\/measurements(\/|$)/, [...ADMIN_ROLES, ...WORKER_ROLES]],
   [/^\/portfolio(\/|$)/, PORTFOLIO_ROLES],
   [/^\/planning(\/|$)/, PLANNING_ROLES],
-  [/^\/(recommendations|gaps)(\/|$)/, ALL_ROLES],
+  [/^\/(recommendations|gaps|synonyms)(\/|$)/, ALL_ROLES],
 ]
 
 export function canAccessPath(role: RoleCode | null, pathname: string): boolean {

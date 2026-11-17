@@ -112,6 +112,13 @@ app/
 | PATCH | `/executions/{id}` | 같음 | 상태·결과 갱신. 완료(COMPLETED)면 실제 연계 사례 검증 케이스(eval_case HISTORICAL_RELAY) 자동 생성 |
 | GET | `/executions`·`/executions/kpi` | PLANNER, DEPT_REVIEWER (보안등급별) | 실행 목록, 순환 지표(채택→실행 전환율·AX 발굴·이어진 과제·새 성과·검증 사례) |
 | GET | `/executions/lineage/cards/{카드id}` | PLANNER, DEPT_REVIEWER | 이어달리기 계보: 앞 과제(실제 이어달리기 관계) ↔ 이 성과 → 실행 → 이어진 과제 → 새 성과 |
+| POST·GET·DELETE | `/measurements/work-time` | 입력 PLANNER·DEPT_REVIEWER·EXPERT·CURATOR (본인 것만 삭제), 전체 보기 PLANNER·DEPT_REVIEWER (`mine=false`) | 업무시간 측정: 같은 업무를 수작업·AX 로 한 시간(분)·찾은 후보 수 |
+| POST | `/measurements/surveys` | 같음 | 만족도 1~5 (쓸모·근거·쓰기 쉬움·시간 단축 항목별 선택) |
+| GET | `/measurements/summary`·`/measurements/export.xlsx` | PLANNER, DEPT_REVIEWER | 업무별 평균·단축률·제안서 목표(조사 70%, 검토자료 60%) 달성, 후보 수, 역할별 만족도, 엑셀 |
+| GET | `/synonyms`·`/synonyms/expand?text=` | 모두 | 국방기술 용어 사전 보기, 이 글이 사전으로 어떻게 넓혀지는지 미리 보기 |
+| POST·PATCH·DELETE | `/synonyms`·`/synonyms/{id}` | PLANNER, CURATOR | 용어 넣기·끄기·지우기 (관계: 동의어·약어·영문·한글은 매칭에 씀, 넓은 말·좁은 말·관련어는 참고만) |
+| POST | `/synonyms/import` | PLANNER, CURATOR | 엑셀 올리기 (머리글 `표준 용어·동의어·관계·분야·출처`, `dry_run=true` 면 검사만) |
+| POST | `/synonyms/apply` | PLANNER, CURATOR | 사전을 성과카드·기획수요·해외 수요 임베딩에 반영 (글이 바뀐 패싯만 다시 계산). 문서 검색 질의는 바로 반영 |
 | POST | `/planning/trends` | PLANNER, CURATOR | 동향 직접 입력 (해외 3종 + 국내 계획·성능개량·국산화/단종 대응). 출처 메모 필수, 저장 즉시 갭 분석 |
 | GET | `/planning/trends` | PLANNER, DEPT_REVIEWER, CURATOR | 동향 목록 (해외 수요 + 직접 입력), 만든 기획수요 번호 |
 | GET | `/planning/brief/{동향id}` | PLANNER, DEPT_REVIEWER, CURATOR | 기획 참고서: 관련 과거 과제(결과 구분·한계·평가 의견)·요구 성능 비교·새 기획에 넣을 것 (`k`, `min_sim`) |

@@ -513,4 +513,30 @@ if [[ -n "$ADOPTED" ]]; then
 else
     skip "채택된 추천이 없어 실행 기록 건너뜀"
 fi
+section "⑱ PoC 효과 측정 (업무시간·만족도)"
+api "업무시간 기록 (수작업)" 201 POST /measurements/work-time "$PLANNER" '{"task_type":"RESEARCH","method":"MANUAL","minutes":240,"candidates_found":2,"note":"스모크"}'
+MW1=$(pick '.id')
+api "업무시간 기록 (AX)" 201 POST /measurements/work-time "$PLANNER" '{"task_type":"RESEARCH","method":"AX","minutes":50,"candidates_found":5,"note":"스모크"}'
+MW2=$(pick '.id')
+api "0분은 거부" 422 POST /measurements/work-time "$PLANNER" '{"task_type":"RESEARCH","method":"AX","minutes":0}'
+api "만족도 응답" 201 POST /measurements/surveys "$EXPERT" '{"score":4,"aspects":{"usefulness":4,"evidence":5}}'
+api "집계 (검수자)" 200 GET /measurements/summary "$REVIEWER"
+check "조사 업무 단축률·목표" 'any(.tasks[]; .task_type == "RESEARCH" and .reduction_pct != null and .target_pct == 70) and .survey.n >= 1'
+api "집계는 기획자·검수자만 (전문가)" 403 GET /measurements/summary "$EXPERT"
+api "남의 기록 삭제 거부" 404 DELETE "/measurements/work-time/$MW1" "$EXPERT"
+api "내 기록 삭제" 204 DELETE "/measurements/work-time/$MW1" "$PLANNER"
+api "내 기록 삭제" 204 DELETE "/measurements/work-time/$MW2" "$PLANNER"
+
+section "⑲ 국방기술 용어 사전 (동의어로 매칭 보정)"
+SYN_A="스모크표준어$RUN_TAG"; SYN_B="SMKTERM$RUN_TAG"
+api "용어 넣기 (자료 담당)" 201 POST /synonyms "$CURATOR" '{"canonical_term":"'"$SYN_A"'","synonym":"'"$SYN_B"'","relation":"ABBREVIATION"}'
+SYN_ID=$(pick '.id')
+api "용어 넣기는 기획자·자료 담당만 (전문가)" 403 POST /synonyms "$EXPERT" '{"canonical_term":"가","synonym":"나"}'
+api "사전 보기 (열람자)" 200 GET "/synonyms?q=$SYN_B" "$VIEWER"
+check "약어로 들어감" 'length == 1 and .[0].relation_name == "약어" and .[0].used_in_matching'
+api "넓혀 보기" 200 GET "/synonyms/expand?text=$SYN_B%20%EC%8B%9C%ED%97%98" "$VIEWER"
+check "다른 말이 덧붙음" '.expanded | contains("관련 용어: '"$SYN_A"'")'
+api "적용은 기획자·자료 담당만 (전문가)" 403 POST /synonyms/apply "$EXPERT"
+api "용어 끄기" 204 PATCH "/synonyms/$SYN_ID" "$CURATOR" '{"is_active":false}'
+api "스모크 용어 지우기" 204 DELETE "/synonyms/$SYN_ID" "$CURATOR"
 summary

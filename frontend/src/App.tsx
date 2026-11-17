@@ -19,6 +19,8 @@ import { GapDetailPage } from './pages/gaps/GapDetailPage'
 import { GapListPage } from './pages/gaps/GapListPage'
 import { PlanningPage } from './pages/planning/PlanningPage'
 import { PortfolioPage } from './pages/portfolio/PortfolioPage'
+import { MeasurementsPage } from './pages/review/MeasurementsPage'
+import { SynonymsPage } from './pages/review/SynonymsPage'
 import { ExecutionsPage } from './pages/review/ExecutionsPage'
 import { ReviewSheetDetailPage } from './pages/review/ReviewSheetDetailPage'
 import { ReviewSheetsPage } from './pages/review/ReviewSheetsPage'
@@ -53,6 +55,7 @@ export default function App() {
               <Route path="/reviews" element={<RequireRole roles={ADMIN_ROLES}><ReviewQueuePage /></RequireRole>} />
               <Route path="/review-sheets" element={<RequireRole roles={ADMIN_ROLES}><ReviewSheetsPage /></RequireRole>} />
               <Route path="/review-sheets/:id" element={<RequireRole roles={ADMIN_ROLES}><ReviewSheetDetailPage /></RequireRole>} />
+              <Route path="/measurements" element={<RequireRole roles={[...ADMIN_ROLES, ...WORKER_ROLES]}><MeasurementsPage /></RequireRole>} />
               <Route path="/executions" element={<RequireRole roles={ADMIN_ROLES}><ExecutionsPage /></RequireRole>} />
               <Route path="/staff/announcements" element={<RequireRole roles={ADMIN_ROLES}><AnnouncementReviewPage /></RequireRole>} />
               <Route path="/staff/navigator" element={<RequireRole roles={ADMIN_ROLES}><NavigatorStaffPage /></RequireRole>} />
@@ -67,6 +70,7 @@ export default function App() {
               <Route path="/recommendations/:id" element={<RecommendationPage />} />
               {/* 공통: 해외 수요 갭 분석 (재실행 PLANNER·CURATOR, 확정·기각 DEPT_REVIEWER — 서버가 판단) */}
               <Route path="/gaps" element={<GapListPage />} />
+              <Route path="/synonyms" element={<SynonymsPage />} />
               <Route path="/gaps/:id" element={<GapDetailPage />} />
             </Route>
             <Route path="*" element={<Home />} />
