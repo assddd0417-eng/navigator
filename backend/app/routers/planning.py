@@ -22,6 +22,7 @@ from app.services.embedding import active_model_id, sync_demand_embeddings, sync
 from app.services.gap_analysis import auto_run, near_cards
 from app.services.gap_rules import DEFAULT_RULES
 from app.services.planning_brief import DEMAND_KIND_KO, brief_min_sim, build_brief, render_markdown
+from app.services.project_linker import add_identifier, link_document
 
 router = APIRouter(prefix="/planning", tags=["신규 과제 기획"])
 READERS = ("PLANNER", "DEPT_REVIEWER", "CURATOR")
@@ -121,6 +122,83 @@ async def list_trends(kind: str | None = None, user: CurrentUser = Depends(requi
 
 
 # ---------------------------------------------------------------------------
+# 자료 사슬: 사업 기획서 → 공모서 → 연구개발계획서 → 결과보고서 → 평가서 (과제번호로 연결, 0032)
+# ---------------------------------------------------------------------------
+CHAIN_STEPS = [("PROGRAM_PLAN", "사업 기획서"), ("PROGRAM_NOTICE", "공모서"), ("RND_PLAN", "연구개발계획서"),
+               ("FINAL_REPORT", "결과보고서"), ("EVALUATION", "평가서")]
+
+
+async def _chains(conn, project_ids: list[int], uid: int) -> dict[int, list[dict]]:
+    """과제마다 자료 사슬. 문서는 내가 열람할 수 있는 것만.
+
+    연결 경로: 문서의 대상 과제 · 본문에서 찾은 과제번호/과제명(document_project_link) ·
+    같은 사업에 붙은 사업 기획서·공모서(과제가 따로 적혀 있지 않은 사업 단위 문서).
+    """
+    if not project_ids:
+        return {}
+    rows = await (await conn.execute(
+        """WITH p AS (SELECT id, program_id FROM ax.project WHERE id = ANY(%(ids)s))
+           SELECT p.id AS project_id, d.id AS document_id, d.doc_type_code, d.title, d.authored_at::text AS authored_at,
+                  CASE WHEN d.project_id = p.id THEN 'SUBJECT' WHEN l.document_id IS NOT NULL THEN l.link_role
+                       ELSE 'PROGRAM' END AS via,
+                  l.match_method
+             FROM p
+             JOIN ax.source_document d
+               ON d.is_latest AND (d.project_id = p.id
+                  OR EXISTS (SELECT 1 FROM ax.document_project_link x WHERE x.document_id = d.id AND x.project_id = p.id)
+                  OR (d.program_id = p.program_id AND d.doc_type_code IN ('PROGRAM_PLAN','PROGRAM_NOTICE')
+                      AND NOT EXISTS (SELECT 1 FROM ax.document_project_link y WHERE y.document_id = d.id)))
+             LEFT JOIN ax.document_project_link l ON l.document_id = d.id AND l.project_id = p.id
+            WHERE ax.can_read_document(%(uid)s, d.id)
+            ORDER BY d.authored_at NULLS LAST, d.id""", {"ids": project_ids, "uid": uid})).fetchall()
+    out: dict[int, list[dict]] = {pid: [{"code": c, "name": n, "documents": []} for c, n in CHAIN_STEPS]
+                                  for pid in project_ids}
+    for r in rows:
+        step = next((x for x in out[r["project_id"]] if x["code"] == r["doc_type_code"]), None)
+        if step is not None:
+            step["documents"].append({k: r[k] for k in ("document_id", "title", "authored_at", "via", "match_method")})
+    return out
+
+
+class IdentifierIn(BaseModel):
+    identifier: str = Field(min_length=2, description="다른 시스템의 과제번호 (예: DTiMS 번호)")
+    source_system_code: str = Field("DTIMS", description="PMS · DTIMS 등")
+    note: str | None = None
+
+
+@router.get("/projects/{project_id}/chain")
+async def project_chain(project_id: int, user: CurrentUser = Depends(require_roles(*READERS))):
+    """과제 하나의 자료 사슬과 다른 번호."""
+    async with transaction(user.id) as conn:
+        await _visible_project(conn, project_id, user.id)
+        chain = (await _chains(conn, [project_id], user.id))[project_id]
+        idents = await (await conn.execute(
+            "SELECT identifier, source_system_code, note FROM ax.project_identifier WHERE project_id = %s ORDER BY id",
+            (project_id,))).fetchall()
+    return {"project_id": project_id, "chain": chain, "identifiers": idents}
+
+
+@router.post("/projects/{project_id}/identifiers", response_model=Created, status_code=201)
+async def add_project_identifier(project_id: int, body: IdentifierIn,
+                                 user: CurrentUser = Depends(require_roles(*EDITORS)), rid: str = Depends(request_id)):
+    """과제의 다른 번호를 등록한다 (시스템마다 번호가 다를 때). 이미 올린 문서는 /documents/{id}/relink 로 다시 연결."""
+    async with transaction(user.id, rid) as conn:
+        await _visible_project(conn, project_id, user.id)
+        return Created(id=await add_identifier(conn, project_id, body.identifier, body.source_system_code, body.note))
+
+
+@router.post("/documents/{document_id}/relink")
+async def relink_document(document_id: int, user: CurrentUser = Depends(require_roles(*EDITORS)),
+                          rid: str = Depends(request_id)):
+    """문서를 과제번호·과제명으로 다시 연결한다 (다른 번호를 새로 등록한 뒤 등)."""
+    async with transaction(user.id, rid) as conn:
+        ok = await (await conn.execute("SELECT ax.can_read_document(%s, %s) AS ok", (user.id, document_id))).fetchone()
+        if not ok or not ok["ok"]:
+            raise NotFound("문서", document_id)
+        return {"document_id": document_id, "linked_projects": await link_document(conn, document_id)}
+
+
+# ---------------------------------------------------------------------------
 # 기획 참고서
 # ---------------------------------------------------------------------------
 async def _brief(conn, trend_id: int, uid: int, k: int, min_sim: float) -> dict:
@@ -183,6 +261,9 @@ async def _brief(conn, trend_id: int, uid: int, k: int, min_sim: float) -> dict:
 
     brief = build_brief(trend, reqs, cards, projects, card_project, evals,
                         float(DEFAULT_RULES["issue_threshold"]))
+    chains = await _chains(conn, [p["project_id"] for p in brief["projects"]], uid)
+    for p in brief["projects"]:
+        p["chain"] = chains.get(p["project_id"], [])
     brief["card_security"] = sorted({info[c.card_id]["security_code"] for c in cards})
     # 이 동향의 갭 분석 결과 (검수 전·확정만)
     brief["gaps"] = await (await conn.execute(

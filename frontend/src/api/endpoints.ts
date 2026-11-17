@@ -47,10 +47,21 @@ export interface DocumentCreate {
   chunks: { content: string; section_key?: string; page_start?: number | null; page_end?: number | null }[]
 }
 
+export interface LinkedProject {
+  project_id: number
+  project_no: string
+  title: string
+  /** SUBJECT 이 과제의 문서 · LISTED 공모서·기획서 등에 실린(언급된) 과제 */
+  link_role: 'SUBJECT' | 'LISTED'
+  match_method: 'PROJECT_NO' | 'IDENTIFIER' | 'TITLE' | 'MANUAL'
+}
+
 export interface DocumentCreated {
   id: number
   chunk_ids: number[]
   embedded: number
+  /** 본문의 과제번호·과제명으로 연결한 과제 */
+  linked_projects: LinkedProject[]
 }
 
 export const listDocuments = (query: { project_id?: number; parse_status?: string } = {}) =>

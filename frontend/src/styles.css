@@ -483,6 +483,10 @@ label.check input { width: auto; }
 }
 .pl-check { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; }
 .pl-perfs > .btn { align-self: flex-start; }
+.pl-chain { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.pl-step { color: var(--muted); }
+.pl-step-on { color: var(--ok); font-weight: 600; }
+.pl-arrow { margin: 0 6px 0 2px; color: var(--muted); font-weight: 400; }
 
 /* 공고 조건 확인 */
 .source-text { white-space: pre-wrap; word-break: break-word; font-family: inherit; font-size: 12.5px; line-height: 1.6; background: var(--bg); border-radius: 8px; padding: 10px 12px; max-height: 560px; overflow-y: auto; margin: 6px 0 0; }

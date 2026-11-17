@@ -124,6 +124,16 @@ function ProjectBlock({ p }: { p: BriefProject }) {
             title={p.outcome_note ?? undefined}>{p.outcome_name ?? '결과 미확인'}</span>
         </span>
       </div>
+      {p.chain.length > 0 && (
+        <div className="pl-chain small" title="과제번호로 이어 붙인 자료 (내가 볼 수 있는 것만)">
+          {p.chain.map((st, i) => (
+            <span key={st.code} className={`pl-step ${st.documents.length ? 'pl-step-on' : ''}`}
+              title={st.documents.length ? st.documents.map((d) => d.title).join('\n') : '아직 연결된 자료 없음'}>
+              {i > 0 && <span className="pl-arrow">→</span>}{st.documents.length ? '✓' : '–'} {st.name}
+            </span>
+          ))}
+        </div>
+      )}
       {p.outcome_note && <p className="small">{p.outcome_is_failure ? '⚠ 실패 원인: ' : '결과: '}{p.outcome_note}</p>}
       {p.cards.map((c) => (
         <div key={c.card_id} className="pl-card">

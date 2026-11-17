@@ -253,6 +253,8 @@ def render_markdown(brief: dict) -> str:
         meta = " · ".join(x for x in (p.get("program_name"), p.get("period"), p.get("department")) if x)
         if meta:
             lines.append(f"- {meta}")
+        if p.get("chain"):
+            lines.append("- 자료: " + " · ".join(f"{st['name']} {'있음' if st['documents'] else '없음'}" for st in p["chain"]))
         for c in p["cards"]:
             lines.append(f"- 성과: {c['title']}" + (f" (기술성숙도 {c['trl']}단계)" if c["trl"] else ""))
             for lim in c["limits"]:
