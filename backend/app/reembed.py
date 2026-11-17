@@ -1,6 +1,6 @@
 """전체 재임베딩 (재색인).
 
-EMBEDDER 를 바꾼 뒤(예: hash → bge_m3) 기존 문서 청크·성과카드·기획수요를 활성 모델로 다시 임베딩한다.
+EMBEDDER 를 바꾼 뒤(예: hash → bge_m3) 기존 공고문 청크·기업·공고를 활성 모델로 다시 임베딩한다.
 같은 모델에서 이미 만든 벡터는 건너뛰므로 중간에 멈춰도 다시 실행하면 이어서 한다.
 끝나면 다른 모델의 벡터를 지운다 (HNSW 인덱스를 활성 모델 벡터만으로 유지).
 
@@ -35,10 +35,6 @@ async def reembed_all(keep_other_models: bool = False, conn: AsyncConnection | N
     model 은 모델 행 이름 (기본: EMBEDDER 설정에 해당하는 이름)."""
     jobs = [
         ("chunks", "SELECT id FROM ax.source_document ORDER BY id", emb.sync_chunk_embeddings),
-        ("cards", "SELECT id FROM ax.achievement_card ORDER BY id", emb.sync_card_embeddings),
-        ("demands", "SELECT id FROM ax.planning_demand ORDER BY id", emb.sync_demand_embeddings),
-        ("overseas_demands", "SELECT id FROM ax.overseas_demand ORDER BY id", emb.sync_overseas_demand_embeddings),
-        # Navigator (기업 대상 서비스) 매칭용
         ("companies", "SELECT organization_id AS id FROM ax.company_profile ORDER BY 1", nav.sync_company_embeddings),
         ("announcements", "SELECT id FROM ax.announcement ORDER BY id", nav.sync_announcement_embeddings),
     ]
@@ -80,10 +76,8 @@ def main() -> None:
             done = await reembed_all(args.keep_other_models)
         finally:
             await close_pool()
-        log.info("완료: 청크 %s · 카드 패싯 %s · 수요 패싯 %s · 해외 수요 패싯 %s · 기업 %s · 공고 %s 벡터 생성, "
-                 "다른 모델 벡터 %s개 삭제",
-                 done["chunks"], done["cards"], done["demands"], done["overseas_demands"], done["companies"], done["announcements"],
-                 done.get("purged", 0))
+        log.info("완료: 청크 %s · 기업 %s · 공고 %s 벡터 생성, 다른 모델 벡터 %s개 삭제",
+                 done["chunks"], done["companies"], done["announcements"], done.get("purged", 0))
 
     asyncio.run(run())
 

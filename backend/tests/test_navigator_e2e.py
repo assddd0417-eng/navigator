@@ -10,7 +10,7 @@ from app.services.ratelimit import limiter
 from tests.conftest import TEST_URL, as_user, manage_token
 from tests.test_navigator_matching import _seed
 
-PLANNER = 1
+STAFF = 1
 BRN, EMAIL = "999-84-00001", "ops@danbi.example"
 
 
@@ -51,7 +51,7 @@ def fresh(database):
 
 
 async def test_company_to_outreach_flow(client, fresh):
-    staff = as_user(PLANNER)
+    staff = as_user(STAFF)
 
     # 1. 기업 등록: 등록 이메일은 바로 알림 수신자가 된다
     n = len(mailer.OUTBOX)

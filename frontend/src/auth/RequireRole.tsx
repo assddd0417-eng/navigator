@@ -18,8 +18,6 @@ export function RequireRole({ roles, children }: { roles: RoleCode[]; children: 
         <h2>이 화면은 {roles.map((r) => ROLES[r].label).join('·')}만 볼 수 있습니다</h2>
         <p>
           지금 역할은 <strong>{role ? ROLES[role].label : '역할 없음'}</strong>입니다.
-          <br />
-          다른 역할로 보려면 위쪽의 ‘사용자 바꾸기’에서 바꿔 주세요.
         </p>
         {role && <Link className="btn btn-primary" to={homePath(role)}>내 첫 화면으로</Link>}
       </div>

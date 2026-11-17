@@ -20,7 +20,7 @@ from app.services.eligibility import (
 from app.services.ratelimit import limiter
 from tests.conftest import ROOT, TEST_URL, _psql_url, as_user
 
-PLANNER, VIEWER = 1, 5
+STAFF, VIEWER = 1, 2
 HANBIT, NURI, SAEBOM = 101, 102, 103            # 가상 기업 (seeds/navigator_companies.sql)
 SEED_ANNS = {101, 102, 103, 104, 105}            # 가상 공고 (seeds/navigator_announcements.sql)
 AS_OF = date(2026, 12, 15)
@@ -122,7 +122,7 @@ async def _token(client, bizno: str, email: str) -> dict[str, str]:
 async def test_announcement_to_company_matrix(client):
     _seed()
     for ann_id, want in EXPECTED.items():
-        r = await client.post(f"/navigator/matching/announcements/{ann_id}", headers=as_user(PLANNER))
+        r = await client.post(f"/navigator/matching/announcements/{ann_id}", headers=as_user(STAFF))
         assert r.status_code == 201, r.text
         body = r.json()
         got = {x["organization_id"]: x["verdict"] for x in body["recommendations"] if x["organization_id"] in want}
@@ -134,21 +134,21 @@ async def test_announcement_to_company_matrix(client):
         assert order == sorted(order, key=["ELIGIBLE", "NEEDS_INFO", "INELIGIBLE"].index)   # 판정 순
 
     # 101 1순위는 한빛
-    body = (await client.post("/navigator/matching/announcements/101", headers=as_user(PLANNER))).json()
+    body = (await client.post("/navigator/matching/announcements/101", headers=as_user(STAFF))).json()
     top = body["recommendations"][0]
     assert top["organization_id"] == HANBIT and top["verdict_label"] == "적합"
     assert set(top["scores"]) == {"TECH", "IPC", "PURPOSE", "PREFERENCE"}
     assert abs(sum(s["weight"] for s in top["scores"].values()) - 1) < 1e-6
     assert top["scores"]["IPC"]["score"] == 1.0
     assert any(e["kind"] == "TECH_MATCH" and e["tech_name"] for e in top["evidence"])
-    assert "필수 요건 5/5개 충족" in top["rationale"]  # 0027 결격사유 요건 추가
+    assert "필수 요건 5/5개 충족" in top["rationale"]
     assert top["business_reg_no"] == "9998100015"        # 담당자에게는 보임
     credit = next(c for c in top["checks"] if c["req_type_code"] == "MIN_CREDIT_GRADE")
     assert credit["result"] == "MET" and "detail" in credit and "grade" not in credit["detail"]
 
     # 저장된 실행을 다시 읽기 + 판정 거르기
     run = (await client.get(f"/navigator/matching/runs/{body['run']['id']}", params={"verdict": "ELIGIBLE"},
-                            headers=as_user(PLANNER))).json()
+                            headers=as_user(STAFF))).json()
     assert {x["verdict"] for x in run["recommendations"]} == {"ELIGIBLE"}
 
     # 부적격 이유에 미충족 요건과 공고 원문 근거가 붙는다
@@ -161,22 +161,22 @@ async def test_matching_staff_only(client):
     assert (await client.post("/navigator/matching/announcements/101")).status_code == 401
     assert (await client.post("/navigator/matching/announcements/101", headers=as_user(VIEWER))).status_code == 403
     assert (await client.post("/navigator/matching/announcements/999999",
-                              headers=as_user(PLANNER))).status_code == 404
+                              headers=as_user(STAFF))).status_code == 404
     assert (await client.post("/navigator/matching/announcements/101", params={"verdict": "GOOD"},
-                              headers=as_user(PLANNER))).status_code == 422
+                              headers=as_user(STAFF))).status_code == 422
 
 
 async def test_company_to_announcement(client):
     _seed()
     for org, col in ((HANBIT, HANBIT), (NURI, NURI), (SAEBOM, SAEBOM)):
         r = await client.post(f"/navigator/matching/companies/{org}", params={"include_closed": True},
-                              headers=as_user(PLANNER))
+                              headers=as_user(STAFF))
         assert r.status_code == 201, r.text
         got = {x["announcement_id"]: x["verdict"] for x in r.json()["recommendations"]
                if x["announcement_id"] in SEED_ANNS}
         assert got == {a: EXPECTED[a][col] for a in SEED_ANNS}, (org, got)
     # 기본은 마감 공고 빼고
-    r = await client.post(f"/navigator/matching/companies/{HANBIT}", headers=as_user(PLANNER))
+    r = await client.post(f"/navigator/matching/companies/{HANBIT}", headers=as_user(STAFF))
     assert 105 not in {x["announcement_id"] for x in r.json()["recommendations"]}
 
 
@@ -252,39 +252,16 @@ async def test_public_verdict_ignores_hidden_credit(client):
                 conn.execute("UPDATE ax.company_credit_rating SET grade = %s WHERE id = %s", (grade, rid))
 
 
-async def test_internal_project_counts_as_rnd(client):
-    # card_company(CONFIRMED) 로 연결된 내부 과제도 R&D 이력에 포함
-    from psycopg import AsyncConnection
-    from psycopg.rows import dict_row
-
-    from app.services.navigator_embedding import rnd_facts
-
-    with psycopg.connect(TEST_URL, autocommit=True) as conn:
-        card = conn.execute("SELECT id, project_id FROM ax.achievement_card WHERE project_id IS NOT NULL LIMIT 1").fetchone()
-    if card is None:
-        pytest.skip("성과카드 없음")
-    with psycopg.connect(TEST_URL, autocommit=True) as conn:
-        conn.execute("""INSERT INTO ax.card_company (card_id, organization_id, relation_type, relation_status)
-                        VALUES (%s, 103, 'DEVELOPER', 'CONFIRMED') ON CONFLICT DO NOTHING""", (card[0],))
-    try:
-        async with await AsyncConnection.connect(TEST_URL, row_factory=dict_row) as conn:
-            facts = await rnd_facts(conn, SAEBOM)
-        assert any(f["source_table"] == "project" and f["source_id"] == card[1] for f in facts)
-    finally:
-        with psycopg.connect(TEST_URL, autocommit=True) as conn:
-            conn.execute("DELETE FROM ax.card_company WHERE card_id = %s AND organization_id = 103", (card[0],))
-
-
 async def test_staff_latest_run_and_profile(client):
     _seed()
-    r = await client.get("/navigator/matching/announcements/104", headers=as_user(PLANNER))
+    r = await client.get("/navigator/matching/announcements/104", headers=as_user(STAFF))
     assert r.status_code == 200
-    await client.post("/navigator/matching/announcements/104", headers=as_user(PLANNER))
-    latest = (await client.get("/navigator/matching/announcements/104", headers=as_user(PLANNER))).json()
+    await client.post("/navigator/matching/announcements/104", headers=as_user(STAFF))
+    latest = (await client.get("/navigator/matching/announcements/104", headers=as_user(STAFF))).json()
     assert latest["run"]["announcement_id"] == 104 and latest["recommendations"]
     assert (await client.get("/navigator/matching/announcements/104")).status_code == 401
 
-    p = await client.get(f"/navigator/matching/companies/{HANBIT}/profile", headers=as_user(PLANNER))
+    p = await client.get(f"/navigator/matching/companies/{HANBIT}/profile", headers=as_user(STAFF))
     assert p.status_code == 200
     body = p.json()
     assert body["visibility"] == "STAFF" and body["credit_ratings"] and "***" in body["registered_email"]

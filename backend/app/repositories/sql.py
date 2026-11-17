@@ -49,9 +49,3 @@ async def evidence_from_chunk(conn: AsyncConnection, chunk_id: int, quote: str |
     if row is None:
         raise NotFound("청크", chunk_id)
     return row["id"]
-
-
-# 사용자 등급으로 열람 가능한 보안등급인지 (카드·수요 등 문서 외 객체용)
-CLEARANCE_OK = """(SELECT ul.level_rank FROM ax.app_user u JOIN ax.code_security_level ul ON ul.code = u.clearance_code
-                    WHERE u.id = %(uid)s)
-                  >= (SELECT level_rank FROM ax.code_security_level WHERE code = {col})"""

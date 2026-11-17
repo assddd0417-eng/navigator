@@ -39,15 +39,15 @@ jobs:
 
       - name: 마이그레이션 적용 + 재실행 멱등성 확인
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/relay_ax_ci
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/navigator_ci
         run: |
-          psql "$ADMIN_URL" -c "CREATE DATABASE relay_ax_ci"
+          psql "$ADMIN_URL" -c "CREATE DATABASE navigator_ci"
           ./scripts/migrate.sh
           ./scripts/migrate.sh | tee rerun.log
           ! grep -q "적용:" rerun.log
 
       - name: SQL 스모크 테스트
-        run: psql "postgresql://postgres:postgres@localhost:5432/relay_ax_ci" -X -v ON_ERROR_STOP=1 -f db/tests/smoke_test.sql
+        run: psql "postgresql://postgres:postgres@localhost:5432/navigator_ci" -X -v ON_ERROR_STOP=1 -f db/tests/smoke_test.sql
 
       - name: 백엔드 의존성 설치
         run: pip install -e "backend[dev,llm]"
@@ -60,10 +60,10 @@ jobs:
 
       - name: 시드 적용 (2회, 재실행 안전 확인) + API 스모크 테스트 (curl)
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/relay_ax_ci
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/navigator_ci
         run: |
-          psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -f seeds/init_test_data.sql
-          psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -f seeds/init_test_data.sql
+          psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -f seeds/base.sql
+          psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -f seeds/base.sql
           psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -f seeds/navigator_companies.sql
           psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -f seeds/navigator_companies.sql
           psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -f seeds/navigator_announcements.sql

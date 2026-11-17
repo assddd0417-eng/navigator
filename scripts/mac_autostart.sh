@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # 맥에서 화면을 빌드하고, 로그인할 때마다 API+화면(127.0.0.1:8000)이 자동으로 뜨게 등록한다.
 # 이후에는 브라우저에서 http://127.0.0.1:8000/navigator 만 열면 된다. 코드를 받은 뒤 다시 실행하면 재빌드·재시작.
-# 해제: launchctl bootout gui/$(id -u)/kr.kdax42.navigator; rm ~/Library/LaunchAgents/kr.kdax42.navigator.plist
+# 해제: launchctl bootout gui/$(id -u)/kr.navigator; rm ~/Library/LaunchAgents/kr.navigator.plist
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-LABEL=kr.kdax42.navigator
+LABEL=kr.navigator
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
-LOG="$HOME/kd-ax-42-logs"; mkdir -p "$LOG"
+LOG="$HOME/navigator-logs"; mkdir -p "$LOG"
 
 (cd "$ROOT/frontend" && npm install --silent && npm run build)
 (cd "$ROOT/backend" && .venv/bin/pip install -q -e .)
@@ -35,4 +35,4 @@ lsof -tiTCP:8000 -sTCP:LISTEN | xargs kill 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "$PLIST" || { sleep 3; launchctl bootstrap "gui/$(id -u)" "$PLIST"; }
 until curl -sf 127.0.0.1:8000/api/health >/dev/null; do sleep 2; done
 echo "기업 화면:   http://127.0.0.1:8000/navigator"
-echo "담당자 화면: http://127.0.0.1:8000/login (기획자) -> /staff/navigator"
+echo "담당자 화면: http://127.0.0.1:8000/login (기관 담당자) -> /staff/navigator"

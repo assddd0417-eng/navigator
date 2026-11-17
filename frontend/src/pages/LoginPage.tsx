@@ -4,7 +4,7 @@ import { useAuth } from '../auth/AuthContext'
 import { canAccessPath, homePath, ROLES, SEED_USERS, type RoleCode } from '../auth/roles'
 import { useToast } from '../components/Toast'
 
-/** 역할 선택형 로그인 (시연: 시드 사용자 1~4·6 중 하나를 고른다. 운영 시 기관 통합로그인으로 교체) */
+/** 기관 담당자 로그인 (시연용 계정 선택. 운영 시 기관 통합로그인으로 교체) */
 export function LoginPage() {
   const { user, role, login } = useAuth()
   const navigate = useNavigate()
@@ -40,38 +40,34 @@ export function LoginPage() {
     <div className="login">
       <div className="login-head">
         <span className="brand-mark brand-mark-lg">AX</span>
-        <h1>국방 R&amp;D 성과연계 · 이어달리기</h1>
-        <p>끝난 R&amp;D 과제의 성과를 새로 필요한 기술과 이어 주고, 해외 수요와 비교해 부족한 부분을 찾습니다.</p>
+        <h1>Navigator</h1>
+        <p>기관 담당자 화면입니다. 공고를 등록하고, 공고마다 지원할 수 있는 기업을 찾습니다.</p>
         {from && from !== '/login' && <p className="notice small">로그인하면 보려던 화면으로 바로 이동합니다.</p>}
       </div>
 
-      {(['ADMIN', 'WORKER', 'VIEW'] as const).map((group) => (
-        <div key={group} className="login-group">
-          <h2>{group === 'ADMIN' ? '기획·검수 담당' : group === 'WORKER' ? '실무 담당' : '기관 열람 (조회 전용)'}</h2>
-          <div className="login-grid">
-            {SEED_USERS.filter((u) => ROLES[u.role].group === group).map((u) => {
-              const meta = ROLES[u.role]
-              return (
-                <button key={u.id} className={`role-card role-card-${group.toLowerCase()}`}
-                  disabled={pending != null} onClick={() => void choose(u.id)}>
-                  <div className="role-card-top">
-                    <span className="role-card-label">{meta.label}</span>
-                  </div>
-                  <div className="role-card-user">{u.name} · {u.department}</div>
-                  <p>{meta.description}</p>
-                  <ul>{meta.can.map((c) => <li key={c}>{c}</li>)}</ul>
-                  <div className="role-card-foot">
-                    {pending === u.id ? '확인 중…' : `${meta.label}(으)로 시작하기 →`}
-                  </div>
-                </button>
-              )
-            })}
-          </div>
+      <div className="login-group">
+        <h2>기관 담당자</h2>
+        <div className="login-grid">
+          {SEED_USERS.map((u) => {
+            const meta = ROLES[u.role]
+            return (
+              <button key={u.id} className="role-card role-card-admin"
+                disabled={pending != null} onClick={() => void choose(u.id)}>
+                <div className="role-card-top">
+                  <span className="role-card-label">{meta.label}</span>
+                </div>
+                <div className="role-card-user">{u.name} · {u.department}</div>
+                <p>{meta.description}</p>
+                <ul>{meta.can.map((c) => <li key={c}>{c}</li>)}</ul>
+                <div className="role-card-foot">{pending === u.id ? '확인 중…' : '시작하기 →'}</div>
+              </button>
+            )
+          })}
         </div>
-      ))}
+      </div>
       <p className="login-note">
-        시연용 화면입니다. 실제 운영에서는 기관 통합로그인으로 들어오고, 역할은 계정에 따라 정해집니다.
-        <br /><Link to="/navigator">기업 사용자 화면(Navigator)으로 가기</Link>
+        시연용 화면입니다. 실제 운영에서는 기관 통합로그인으로 들어옵니다.
+        <br /><Link to="/navigator">기업 화면으로 가기</Link>
       </p>
     </div>
   )

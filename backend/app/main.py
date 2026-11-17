@@ -9,11 +9,9 @@ from app.auth import CurrentUser, get_current_user
 from app.config import get_settings
 from app.db import close_pool, open_pool, transaction
 from app.errors import install_error_handlers
-from app.routers import (announcements, cards, demands, documents, gaps, kpi, navigator, navigator_alerts,
-                         navigator_matching, navigator_sources, overseas, planning, portfolio, recommendations,
-                         review_sheets, executions, measurements, synonyms)
+from app.routers import announcements, navigator, navigator_alerts, navigator_matching, navigator_sources
 from app.services.embedding import activate_model, embedding_status, get_embedder
-from app.services.rationale import get_llm_writer
+from app.services.requirement_extract import wants_llm
 
 log = logging.getLogger("app")
 
@@ -27,16 +25,16 @@ async def lifespan(app: FastAPI):
         await activate_model(conn)
         st = await embedding_status(conn)
     if st["reindex_needed"]:
-        log.warning("활성 모델 %s 의 벡터가 없는 항목: 청크 %s · 카드 %s · 수요 %s → `python -m app.reembed` 실행 필요",
-                    st["model"], st["chunks_missing"], st["cards_missing"], st["demands_missing"])
+        log.warning("활성 모델 %s 의 벡터가 없는 항목: 청크 %s · 기업 %s · 공고 %s → `python -m app.reembed` 실행 필요",
+                    st["model"], st["chunks_missing"], st["companies_missing"], st["announcements_missing"])
     yield
     await close_pool()
 
 
 app = FastAPI(
-    title="국방 R&D 성과연계·이어달리기 AX API",
+    title="Navigator API",
     version="0.1.0",
-    description="성과 활용카드 · 신규 기획수요 · 6대 연계유형 추천 · RAG 근거 · Human-in-the-Loop 검토",
+    description="기업 정보 · 공고 · 기업↔공고 판정과 추천 · 알림 · 외부 수집",
     lifespan=lifespan,
 )
 install_error_handlers(app)
@@ -58,11 +56,9 @@ async def health():
             "FROM ax.schema_migrations")).fetchone()
         embedding = await embedding_status(conn)
     s = get_settings()
-    writer = get_llm_writer(s)
-    # 외부 전송 여부를 한눈에: LLM 연계이유가 켜져 있으면 external=true (전송 대상 제공자 표시)
-    rationale = {"generator": writer.name if writer else "template", "external": writer is not None,
-                 "max_security_sent": s.llm_evidence_max_security if writer else None}
-    return {"status": "ok", **row, "embedding": embedding, "rationale": rationale}
+    # 공고 조건 뽑기에 외부 LLM 을 쓰는지 (공개 공고문 글자만 보냄)
+    extractor = {"mode": "llm" if wants_llm(s) else "rules", "provider": s.llm_provider if wants_llm(s) else None}
+    return {"status": "ok", **row, "embedding": embedding, "requirement_extractor": extractor}
 
 
 @app.get("/me", tags=["시스템"])
@@ -72,8 +68,6 @@ async def me(user: CurrentUser = Depends(get_current_user)):
             "clearance_code": user.clearance_code, "roles": sorted(user.roles)}
 
 
-for r in (documents.router, cards.router, demands.router, recommendations.router, kpi.router, navigator.router,
-          announcements.router, navigator_matching.router, overseas.router, navigator_alerts.router,
-          navigator_sources.router, gaps.router, portfolio.router, planning.router, review_sheets.router,
-          executions.router, measurements.router, synonyms.router):
+for r in (navigator.router, announcements.router, navigator_matching.router, navigator_alerts.router,
+          navigator_sources.router):
     app.include_router(r)

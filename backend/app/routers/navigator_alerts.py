@@ -17,7 +17,7 @@ from app.services import navigator_alerts as alerts
 from app.services.ratelimit import public_rate_limit
 
 router = APIRouter(prefix="/navigator", tags=["Navigator 알림"])
-STAFF = ("PLANNER",)
+STAFF = ("STAFF",)
 Channel = Literal["SCREEN", "EMAIL"]
 
 

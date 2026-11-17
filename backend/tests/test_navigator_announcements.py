@@ -8,9 +8,9 @@ import pytest
 from app.schemas.announcements import normalize_rule
 from app.services.ratelimit import limiter
 from tests.conftest import ROOT, TEST_URL, _psql_url, as_user
-from tests.test_document_upload import make_pdf
+from tests.test_document_parser import make_pdf
 
-PLANNER, REVIEWER, VIEWER = 1, 2, 5
+STAFF, VIEWER = 1, 2
 state: dict = {}
 
 
@@ -37,7 +37,7 @@ def test_rule_formats():
 
 
 async def test_create_announcement_manual(client):
-    r = await client.post("/navigator/announcements", headers=as_user(PLANNER), json={
+    r = await client.post("/navigator/announcements", headers=as_user(STAFF), json={
         "announcement_no": "T-2026-001", "title": "테스트 부품국산화 공고", "agency_name": "(가상)진흥원",
         "program_id": 1, "receipt_start": "2026-01-01", "receipt_end": "2099-12-31",
         "support_amount_krw": 1_000_000_000,
@@ -76,40 +76,40 @@ async def test_invalid_requirements_rejected(client):
         ({"req_type_code": "TRL", "rule": {"min": 10}, "description": "x"}, "TRL"),
         ({"req_type_code": "UNKNOWN", "rule": {}, "description": "x"}, "알 수 없는"),
     ]:
-        r = await client.post("/navigator/announcements", headers=as_user(PLANNER), json={**base, "requirements": [req]})
+        r = await client.post("/navigator/announcements", headers=as_user(STAFF), json={**base, "requirements": [req]})
         assert r.status_code == 422 and msg in r.json()["detail"], r.text
     # 하나라도 틀리면 공고 자체가 저장되지 않음 (한 트랜잭션)
     with psycopg.connect(TEST_URL) as conn:
         assert conn.execute("SELECT count(*) FROM ax.announcement WHERE announcement_no = 'T-BAD'").fetchone()[0] == 0
-    r = await client.post("/navigator/announcements", headers=as_user(PLANNER),
+    r = await client.post("/navigator/announcements", headers=as_user(STAFF),
                           json={**base, "receipt_start": "2026-12-01", "receipt_end": "2026-11-01"})
     assert r.status_code == 422
 
 
 async def test_requirement_line_edit(client):
     ann = state["ann"]
-    r = await client.post(f"/navigator/announcements/{ann}/requirements", headers=as_user(PLANNER), json={
+    r = await client.post(f"/navigator/announcements/{ann}/requirements", headers=as_user(STAFF), json={
         "req_type_code": "REGION", "rule": {"allowed": ["대전", "충남"]}, "is_mandatory": False,
         "description": "대전·충남 소재 우대"})
     assert r.status_code == 201, r.text
     rid = r.json()["id"]
-    r = await client.patch(f"/navigator/announcements/{ann}/requirements/{rid}", headers=as_user(PLANNER),
+    r = await client.patch(f"/navigator/announcements/{ann}/requirements/{rid}", headers=as_user(STAFF),
                            json={"rule": {"allowed": ["대전"]}, "is_mandatory": True})
     assert r.status_code == 204, r.text
-    r = await client.patch(f"/navigator/announcements/{ann}/requirements/{rid}", headers=as_user(PLANNER),
+    r = await client.patch(f"/navigator/announcements/{ann}/requirements/{rid}", headers=as_user(STAFF),
                            json={"rule": {"allowed": ["서울시"]}})
     assert r.status_code == 422
     reqs = (await client.get(f"/navigator/announcements/{ann}")).json()["requirements"]
     region = next(x for x in reqs if x["id"] == rid)
     assert region["rule"] == {"allowed": ["대전"]} and region["is_mandatory"] and region["sort_order"] == 3
     assert (await client.delete(f"/navigator/announcements/{ann}/requirements/{rid}",
-                                headers=as_user(PLANNER))).status_code == 204
+                                headers=as_user(STAFF))).status_code == 204
     assert (await client.delete(f"/navigator/announcements/{ann}/requirements/{rid}",
-                                headers=as_user(PLANNER))).status_code == 404
+                                headers=as_user(STAFF))).status_code == 404
     with psycopg.connect(TEST_URL) as conn:   # 바꾼 사람이 감사 로그에 남는다
         actor = conn.execute("""SELECT actor_user_id FROM ax.audit_log WHERE table_name = 'announcement_requirement'
                                 ORDER BY id DESC LIMIT 1""").fetchone()[0]
-    assert actor == PLANNER
+    assert actor == STAFF
 
 
 async def test_pdf_upload_draft_then_publish(client):
@@ -117,7 +117,7 @@ async def test_pdf_upload_draft_then_publish(client):
         ["2027년 무인체계 통신 부품 국산화 지원 공고(가상)", "1. 사업 목적", "수입 통신 부품 국산화 개발 지원"],
         ["2. 신청자격", "가. 중소기업기본법에 따른 중소기업", "나. 신용평가등급 B 이상인 기업"],
     ])
-    r = await client.post("/navigator/announcements/upload", headers=as_user(PLANNER),
+    r = await client.post("/navigator/announcements/upload", headers=as_user(STAFF),
                           files={"file": ("공고문.pdf", pdf, "application/pdf")},
                           data={"announcement_no": "T-PDF-001", "agency_name": "(가상)진흥원",
                                 "receipt_end": "2099-01-31"})
@@ -128,14 +128,14 @@ async def test_pdf_upload_draft_then_publish(client):
 
     # 작성중(DRAFT) 공고는 로그인 없이 안 보이고, 담당자에게는 보인다
     assert (await client.get(f"/navigator/announcements/{ann}")).status_code == 404
-    d = (await client.get(f"/navigator/announcements/{ann}", headers=as_user(PLANNER))).json()
+    d = (await client.get(f"/navigator/announcements/{ann}", headers=as_user(STAFF))).json()
     assert d["status"] == "DRAFT" and d["source_kind"] == "PDF" and d["title"] == "공고문"
     assert d["document"]["filename"] == "공고문.pdf"
 
     chunks = (await client.get(f"/navigator/announcements/{ann}/chunks", params={"q": "신용평가등급"},
-                               headers=as_user(PLANNER))).json()
+                               headers=as_user(STAFF))).json()
     assert chunks and chunks[0]["page_start"] == 2
-    r = await client.post(f"/navigator/announcements/{ann}/requirements", headers=as_user(PLANNER), json={
+    r = await client.post(f"/navigator/announcements/{ann}/requirements", headers=as_user(STAFF), json={
         "req_type_code": "MIN_CREDIT_GRADE", "rule": {"min_grade": "B"}, "description": "신용등급 B 이상",
         "evidence": {"chunk_id": chunks[0]["chunk_id"], "quote": "신용평가등급 B 이상인 기업"}})
     assert r.status_code == 201, r.text
@@ -143,11 +143,11 @@ async def test_pdf_upload_draft_then_publish(client):
     with psycopg.connect(TEST_URL) as conn:
         other = conn.execute("SELECT id FROM ax.document_chunk WHERE document_id <> %s LIMIT 1", (doc_id,)).fetchone()
     if other:
-        r = await client.post(f"/navigator/announcements/{ann}/requirements", headers=as_user(PLANNER), json={
+        r = await client.post(f"/navigator/announcements/{ann}/requirements", headers=as_user(STAFF), json={
             "req_type_code": "OTHER", "description": "x", "evidence": {"chunk_id": other[0]}})
         assert r.status_code == 422
 
-    assert (await client.patch(f"/navigator/announcements/{ann}", headers=as_user(PLANNER),
+    assert (await client.patch(f"/navigator/announcements/{ann}", headers=as_user(STAFF),
                                json={"status": "PUBLISHED", "title": "무인체계 통신 부품 국산화(가상)"})).status_code == 204
     d = (await client.get(f"/navigator/announcements/{ann}")).json()
     req = d["requirements"][0]
@@ -157,10 +157,10 @@ async def test_pdf_upload_draft_then_publish(client):
 
 
 async def test_update_announcement_dates_checked(client):
-    r = await client.patch(f"/navigator/announcements/{state['ann']}", headers=as_user(PLANNER),
+    r = await client.patch(f"/navigator/announcements/{state['ann']}", headers=as_user(STAFF),
                            json={"receipt_end": "2025-12-31"})        # 시작일(2026-01-01)보다 빠름
     assert r.status_code == 422
-    assert (await client.patch("/navigator/announcements/999999", headers=as_user(PLANNER),
+    assert (await client.patch("/navigator/announcements/999999", headers=as_user(STAFF),
                                json={"title": "x"})).status_code == 404
 
 

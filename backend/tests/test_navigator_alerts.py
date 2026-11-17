@@ -11,7 +11,7 @@ from app.services.ratelimit import limiter
 from tests.conftest import TEST_URL, as_user
 from tests.test_navigator_matching import _seed, _token
 
-PLANNER = 1
+STAFF = 1
 HANBIT, NURI, SAEBOM = 101, 102, 103
 
 
@@ -120,17 +120,17 @@ async def test_publish_alerts_subscribed_companies_only(client):
                       json={"email": "hello@saebom.example", "keywords": ["복합소재"]})
 
     # 작성중 공고는 알림 없음, 공개로 바꾸면 알림
-    r = await client.post("/navigator/announcements", headers=as_user(PLANNER), json=_announcement("DRAFT"))
+    r = await client.post("/navigator/announcements", headers=as_user(STAFF), json=_announcement("DRAFT"))
     assert r.status_code == 201, r.text
     ann_id = r.json()["id"]
     n = len(mailer.OUTBOX)
     assert (await client.get(f"/navigator/alerts/announcements/{ann_id}",
-                             headers=as_user(PLANNER))).json()["notifications"] == []
-    r = await client.patch(f"/navigator/announcements/{ann_id}", headers=as_user(PLANNER),
+                             headers=as_user(STAFF))).json()["notifications"] == []
+    r = await client.patch(f"/navigator/announcements/{ann_id}", headers=as_user(STAFF),
                            json={"status": "PUBLISHED"})
     assert r.status_code == 204, r.text
 
-    staff = (await client.get(f"/navigator/alerts/announcements/{ann_id}", headers=as_user(PLANNER))).json()
+    staff = (await client.get(f"/navigator/alerts/announcements/{ann_id}", headers=as_user(STAFF))).json()
     got = {(x["company_name"], x["status"]) for x in staff["notifications"]}
     assert got == {("(가상)한빛전자통신", "SENT")}, got       # 누리 부적격, 새봄 관심 분야 불일치, late 미확인
     assert len(staff["notifications"]) == 2                   # 한빛 수신자 2명
@@ -142,7 +142,7 @@ async def test_publish_alerts_subscribed_companies_only(client):
     assert not re.search(r"\b(A|B|C)+[+-]?\b", mail.body)      # 신용등급 값 없음
 
     # 구독 기업만 판정한 실행은 담당자 화면의 마지막 결과로 쓰지 않는다
-    latest = (await client.get(f"/navigator/matching/announcements/{ann_id}", headers=as_user(PLANNER))).json()
+    latest = (await client.get(f"/navigator/matching/announcements/{ann_id}", headers=as_user(STAFF))).json()
     assert latest["run"] is None
 
     # 화면 알림: 공고당 하나
@@ -154,7 +154,7 @@ async def test_publish_alerts_subscribed_companies_only(client):
     assert (await client.get("/navigator/manage/alerts", headers=nuri)).json()["alerts"] == []
 
     # 다시 보내도 중복 없음
-    r = await client.post(f"/navigator/alerts/announcements/{ann_id}", headers=as_user(PLANNER))
+    r = await client.post(f"/navigator/alerts/announcements/{ann_id}", headers=as_user(STAFF))
     assert r.status_code == 200 and r.json()["notifications"] == 0
 
     # 메일의 해지 링크 → 다음 공고부터 안 감
@@ -162,7 +162,7 @@ async def test_publish_alerts_subscribed_companies_only(client):
     r = await client.post("/navigator/subscriptions/unsubscribe", json={"token": unsub})
     assert r.status_code == 200, r.text
     n = len(mailer.OUTBOX)
-    r = await client.post("/navigator/announcements", headers=as_user(PLANNER), json=_announcement())
+    r = await client.post("/navigator/announcements", headers=as_user(STAFF), json=_announcement())
     assert r.status_code == 201
     assert len(_mails_to("contact@hanbit.example", n)) == 1 and not _mails_to("team@hanbit.example", n)
 
@@ -181,14 +181,14 @@ async def test_alert_filters_and_channels(client):
                           json={"email": "hello@saebom.example", "min_score": 0.99})
     sub = r.json()
     n = len(mailer.OUTBOX)
-    r = await client.post("/navigator/announcements", headers=as_user(PLANNER), json=_announcement())
+    r = await client.post("/navigator/announcements", headers=as_user(STAFF), json=_announcement())
     assert r.status_code == 201
     assert not _mails_to("hello@saebom.example", n)                 # 최소 점수 미달
 
     r = await client.patch(f"/navigator/manage/subscriptions/{sub['id']}", headers=saebom,
                            json={"min_score": 0, "channels": ["SCREEN"]})
     assert r.status_code == 200 and r.json()["channels"] == ["SCREEN"]
-    ann_id = (await client.post("/navigator/announcements", headers=as_user(PLANNER),
+    ann_id = (await client.post("/navigator/announcements", headers=as_user(STAFF),
                                 json=_announcement())).json()["id"]
     assert not _mails_to("hello@saebom.example", n)                 # 화면만
     alerts = (await client.get("/navigator/manage/alerts", headers=saebom)).json()["alerts"]
@@ -196,7 +196,7 @@ async def test_alert_filters_and_channels(client):
 
     # 끄면 안 감
     await client.patch(f"/navigator/manage/subscriptions/{sub['id']}", headers=saebom, json={"is_active": False})
-    ann2 = (await client.post("/navigator/announcements", headers=as_user(PLANNER),
+    ann2 = (await client.post("/navigator/announcements", headers=as_user(STAFF),
                               json=_announcement())).json()["id"]
     assert ann2 not in {x["announcement_id"] for x in
                         (await client.get("/navigator/manage/alerts", headers=saebom)).json()["alerts"]}
@@ -204,7 +204,7 @@ async def test_alert_filters_and_channels(client):
     # 마감 공고는 알림 안 함
     await client.patch(f"/navigator/manage/subscriptions/{sub['id']}", headers=saebom, json={"is_active": True})
     past = date.today() - timedelta(days=10)
-    r = await client.post("/navigator/announcements", headers=as_user(PLANNER),
+    r = await client.post("/navigator/announcements", headers=as_user(STAFF),
                           json=_announcement(receipt_start=(past - timedelta(days=10)).isoformat(),
                                              receipt_end=past.isoformat()))
     closed = r.json()["id"]
@@ -216,9 +216,9 @@ async def test_alert_filters_and_channels(client):
 
 async def test_alert_staff_endpoints_need_role(client):
     assert (await client.get("/navigator/alerts/announcements/101")).status_code == 401
-    assert (await client.post("/navigator/alerts/announcements/101", headers=as_user(5))).status_code == 403
+    assert (await client.post("/navigator/alerts/announcements/101", headers=as_user(2))).status_code == 403
     assert (await client.post("/navigator/alerts/announcements/999999",
-                              headers=as_user(PLANNER))).status_code == 404
+                              headers=as_user(STAFF))).status_code == 404
 
 
 async def test_mail_failure_is_recorded(client, monkeypatch):
@@ -229,8 +229,8 @@ async def test_mail_failure_is_recorded(client, monkeypatch):
     def broken(*_a, **_k):
         raise RuntimeError("smtp down")
     monkeypatch.setattr(mailer, "send", broken)
-    r = await client.post("/navigator/announcements", headers=as_user(PLANNER), json=_announcement())
+    r = await client.post("/navigator/announcements", headers=as_user(STAFF), json=_announcement())
     assert r.status_code == 201                                   # 공고 등록은 성공
-    staff = (await client.get(f"/navigator/alerts/announcements/{r.json()['id']}", headers=as_user(PLANNER))).json()
+    staff = (await client.get(f"/navigator/alerts/announcements/{r.json()['id']}", headers=as_user(STAFF))).json()
     assert [x["status"] for x in staff["notifications"]] == ["FAILED"]
     assert (await client.get("/navigator/manage/alerts", headers=h)).json()["unread"] == 1   # 화면 알림은 남음

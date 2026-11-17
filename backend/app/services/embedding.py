@@ -1,10 +1,10 @@
 """임베딩 생성과 패싯 임베딩 동기화.
 
 - Embedder 는 교체 가능하다: 개발·테스트는 결정적 HashEmbedder, 실제 PoC 는 BGE-M3.
-- 임베더마다 ax.embedding_model 행이 따로 있고(0016), 백엔드가 EMBEDDER 설정에 맞는 행을 활성으로 만든다.
+- 임베더마다 ax.embedding_model 행이 따로 있고, 백엔드가 EMBEDDER 설정에 맞는 행을 활성으로 만든다.
   모든 벡터 조회는 활성 모델의 벡터만 보므로 hash 벡터와 BGE-M3 벡터가 섞이지 않는다.
-  임베더를 바꾼 뒤에는 `python -m app.reembed` 로 기존 문서·카드·수요를 다시 임베딩한다.
-- 카드·수요를 관점(facet)별 텍스트로 나눠 임베딩한다 (스키마 0010 참조).
+  임베더를 바꾼 뒤에는 `python -m app.reembed` 로 기존 공고·기업을 다시 임베딩한다.
+- 기업·공고를 관점(facet)별 텍스트로 나눠 임베딩한다 (services/navigator_embedding.py).
 - 원문 텍스트의 sha256 이 같으면 (같은 모델 안에서) 다시 임베딩하지 않는다.
 """
 from __future__ import annotations
@@ -23,11 +23,10 @@ import numpy as np
 from psycopg import AsyncConnection
 
 from app.config import Settings, get_settings
-from app.services.synonyms import expand, load_groups
 
 log = logging.getLogger(__name__)
 
-HASH_MODEL_NAME = "relay-ax/hash-ngram"  # 0016 에서 등록
+HASH_MODEL_NAME = "navigator/hash-ngram"
 
 
 class Embedder(Protocol):
@@ -166,7 +165,7 @@ async def activate_model(conn: AsyncConnection, name: str | None = None) -> int:
     if not row["is_active"]:
         await conn.execute("UPDATE ax.embedding_model SET is_active = false WHERE is_active")
         await conn.execute("UPDATE ax.embedding_model SET is_active = true WHERE id = %s", (row["id"],))
-        log.warning("활성 임베딩 모델을 %s 로 바꿨습니다. 기존 문서·카드·수요는 `python -m app.reembed` 로 "
+        log.warning("활성 임베딩 모델을 %s 로 바꿨습니다. 기존 공고·기업은 `python -m app.reembed` 로 "
                     "다시 임베딩해야 매칭·검색에 나옵니다.", name)
     _activated = row["id"]
     return row["id"]
@@ -192,21 +191,19 @@ async def embedding_status(conn: AsyncConnection) -> dict[str, object]:
         """SELECT m.name AS model,
                   (SELECT count(*) FROM ax.document_chunk c WHERE NOT EXISTS
                       (SELECT 1 FROM ax.chunk_embedding e WHERE e.chunk_id = c.id AND e.model_id = m.id)) AS chunks_missing,
-                  (SELECT count(*) FROM ax.achievement_card a WHERE NOT EXISTS
-                      (SELECT 1 FROM ax.card_embedding e WHERE e.card_id = a.id AND e.model_id = m.id)) AS cards_missing,
-                  (SELECT count(*) FROM ax.planning_demand d WHERE NOT EXISTS
-                      (SELECT 1 FROM ax.demand_embedding e WHERE e.demand_id = d.id AND e.model_id = m.id)) AS demands_missing,
-                  (SELECT count(*) FROM ax.overseas_demand o WHERE NOT EXISTS
-                      (SELECT 1 FROM ax.overseas_demand_embedding e
-                        WHERE e.overseas_demand_id = o.id AND e.model_id = m.id)) AS overseas_demands_missing,
+                  (SELECT count(*) FROM ax.company_profile p WHERE NOT EXISTS
+                      (SELECT 1 FROM ax.company_embedding e
+                        WHERE e.organization_id = p.organization_id AND e.model_id = m.id)) AS companies_missing,
+                  (SELECT count(*) FROM ax.announcement a WHERE NOT EXISTS
+                      (SELECT 1 FROM ax.announcement_embedding e
+                        WHERE e.announcement_id = a.id AND e.model_id = m.id)) AS announcements_missing,
                   (SELECT count(*) FROM ax.chunk_embedding WHERE model_id <> m.id)
-                + (SELECT count(*) FROM ax.card_embedding WHERE model_id <> m.id)
-                + (SELECT count(*) FROM ax.demand_embedding WHERE model_id <> m.id) AS other_model_vectors
+                + (SELECT count(*) FROM ax.company_embedding WHERE model_id <> m.id)
+                + (SELECT count(*) FROM ax.announcement_embedding WHERE model_id <> m.id) AS other_model_vectors
              FROM ax.embedding_model m WHERE m.id = %s""", (model_id,))).fetchone()
     s = get_settings()
     return {"embedder": s.embedder, **row,
-            "reindex_needed": bool(row["chunks_missing"] or row["cards_missing"] or row["demands_missing"]
-                                     or row["overseas_demands_missing"])}
+            "reindex_needed": bool(row["chunks_missing"] or row["companies_missing"] or row["announcements_missing"])}
 
 
 def _join(*parts: str | None) -> str:
@@ -216,88 +213,6 @@ def _join(*parts: str | None) -> str:
 # ---------------------------------------------------------------------------
 # 패싯 텍스트 구성
 # ---------------------------------------------------------------------------
-async def card_facets(conn: AsyncConnection, card_id: int) -> tuple[int, list[FacetText]]:
-    card = await (await conn.execute(
-        "SELECT title, core_achievement, summary, test_conditions, application_env, revision "
-        "FROM ax.achievement_card WHERE id = %s", (card_id,))).fetchone()
-    techs = await (await conn.execute(
-        "SELECT id, tech_name, principle FROM ax.card_technology WHERE card_id = %s ORDER BY sort_order, id",
-        (card_id,))).fetchall()
-    perfs = await (await conn.execute(
-        "SELECT metric_name, achieved_value, achieved_text, unit, test_condition "
-        "FROM ax.card_performance WHERE card_id = %s ORDER BY sort_order, id", (card_id,))).fetchall()
-    issues = await (await conn.execute(
-        "SELECT id, description FROM ax.card_open_issue WHERE card_id = %s AND NOT is_resolved "
-        "ORDER BY sort_order, id", (card_id,))).fetchall()
-
-    g = await load_groups(conn)
-    facets = [FacetText("SUMMARY", expand(_join(card["title"], card["core_achievement"], card["summary"]), g))]
-    for t in techs:
-        facets.append(FacetText("CORE_TECH", expand(t["tech_name"], g), "card_technology", t["id"]))
-        if t["principle"]:
-            facets.append(FacetText("PRINCIPLE", expand(_join(t["tech_name"], t["principle"]), g),
-                                    "card_technology", t["id"]))
-    for i in issues:
-        facets.append(FacetText("OPEN_ISSUE", expand(i["description"], g), "card_open_issue", i["id"]))
-    if perfs:
-        facets.append(FacetText("PERFORMANCE", "\n".join(
-            f"{p['metric_name']} {p['achieved_value'] if p['achieved_value'] is not None else (p['achieved_text'] or '')}"
-            f"{p['unit'] or ''} {p['test_condition'] or ''}".strip() for p in perfs)))
-    env = _join(card["application_env"], card["test_conditions"])
-    if env:
-        facets.append(FacetText("APPLICATION_ENV", env))
-    return card["revision"], facets
-
-
-async def demand_facets(conn: AsyncConnection, demand_id: int) -> list[FacetText]:
-    d = await (await conn.execute(
-        "SELECT title, tech_need, business_purpose, application_env FROM ax.planning_demand WHERE id = %s",
-        (demand_id,))).fetchone()
-    techs = await (await conn.execute(
-        "SELECT id, tech_name, description FROM ax.demand_technology WHERE demand_id = %s ORDER BY id",
-        (demand_id,))).fetchall()
-    reqs = await (await conn.execute(
-        "SELECT metric_name, required_value, required_text, unit FROM ax.demand_performance_req "
-        "WHERE demand_id = %s ORDER BY sort_order, id", (demand_id,))).fetchall()
-
-    g = await load_groups(conn)
-    facets = [FacetText("SUMMARY", expand(_join(d["title"], d["tech_need"]), g)),
-              FacetText("TECH_NEED", expand(d["tech_need"], g))]
-    for t in techs:
-        facets.append(FacetText("TECH_NEED", expand(_join(t["tech_name"], t["description"]), g),
-                                "demand_technology", t["id"]))
-    if reqs:
-        facets.append(FacetText("PERFORMANCE", "\n".join(
-            f"{r['metric_name']} {r['required_value'] if r['required_value'] is not None else (r['required_text'] or '')}"
-            f"{r['unit'] or ''}".strip() for r in reqs)))
-    if d["application_env"]:
-        facets.append(FacetText("APPLICATION_ENV", d["application_env"]))
-    if d["business_purpose"]:
-        facets.append(FacetText("PURPOSE", d["business_purpose"]))
-    return facets
-
-
-async def overseas_demand_facets(conn: AsyncConnection, overseas_demand_id: int) -> list[FacetText]:
-    """해외 수요를 국내 기획수요와 같은 관점으로 나눈다 (카드 패싯과 같은 공간에서 비교)."""
-    d = await (await conn.execute(
-        "SELECT title, requirement, tech_area, target_system, region FROM ax.overseas_demand WHERE id = %s",
-        (overseas_demand_id,))).fetchone()
-    perfs = await (await conn.execute(
-        "SELECT metric_name, required_value, required_text, unit FROM ax.overseas_demand_performance "
-        "WHERE overseas_demand_id = %s ORDER BY sort_order, id", (overseas_demand_id,))).fetchall()
-    g = await load_groups(conn)
-    facets = [FacetText("SUMMARY", expand(_join(d["title"], d["requirement"]), g)),
-              FacetText("TECH_NEED", expand(_join(d["tech_area"], d["title"], d["requirement"]), g))]
-    if perfs:
-        facets.append(FacetText("PERFORMANCE", "\n".join(
-            f"{p['metric_name']} {p['required_value'] if p['required_value'] is not None else (p['required_text'] or '')}"
-            f"{p['unit'] or ''}".strip() for p in perfs)))
-    env = _join(d["target_system"], d["region"])
-    if env:
-        facets.append(FacetText("APPLICATION_ENV", env))
-    return facets
-
-
 # ---------------------------------------------------------------------------
 # 동기화
 # ---------------------------------------------------------------------------
@@ -339,20 +254,6 @@ async def _sync(conn: AsyncConnection, table: str, owner_col: str, owner_id: int
     return len(todo)
 
 
-async def sync_card_embeddings(conn: AsyncConnection, card_id: int) -> int:
-    revision, facets = await card_facets(conn, card_id)
-    return await _sync(conn, "card_embedding", "card_id", card_id, facets, {"card_revision": revision})
-
-
-async def sync_demand_embeddings(conn: AsyncConnection, demand_id: int) -> int:
-    return await _sync(conn, "demand_embedding", "demand_id", demand_id, await demand_facets(conn, demand_id), {})
-
-
-async def sync_overseas_demand_embeddings(conn: AsyncConnection, overseas_demand_id: int) -> int:
-    return await _sync(conn, "overseas_demand_embedding", "overseas_demand_id", overseas_demand_id,
-                       await overseas_demand_facets(conn, overseas_demand_id), {})
-
-
 async def sync_chunk_embeddings(conn: AsyncConnection, document_id: int) -> int:
     model_id = await active_model_id(conn)
     rows = await (await conn.execute(
@@ -375,10 +276,9 @@ async def embed_query(text: str) -> np.ndarray:
 
 async def purge_other_models(conn: AsyncConnection) -> int:
     """활성 모델이 아닌 벡터를 지운다. HNSW 인덱스는 모델 구분 없이 하나라서, 남겨 두면 근접 후보 자리를 차지한다.
-    (match_run.model_id 이력은 그대로 둔다)"""
+    (company_match_run.model_id 이력은 그대로 둔다)"""
     model_id = await active_model_id(conn)
     n = 0
-    for t in ("chunk_embedding", "card_embedding", "demand_embedding", "company_tech_embedding", "program_embedding",
-              "company_embedding", "announcement_embedding", "overseas_demand_embedding"):
+    for t in ("chunk_embedding", "company_embedding", "announcement_embedding"):
         n += (await conn.execute(f"DELETE FROM ax.{t} WHERE model_id <> %s", (model_id,))).rowcount
     return n
