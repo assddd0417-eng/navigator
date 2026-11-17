@@ -30,9 +30,10 @@ export function VerdictBadge({ verdict, audience = 'staff', text }: { verdict: V
 // 관련도 구성 중 내용 유사도로 매기는 기준 (나머지는 충족 비율)
 const SIM_CRITERIA = new Set(['TECH', 'PURPOSE'])
 
-export function FitBadge({ score, bare = false }: { score: number; bare?: boolean }) {
+// value: 기관 화면에서만 원래 값(0.61)을 붙인다
+export function FitBadge({ score, bare = false, value = false }: { score: number; bare?: boolean; value?: boolean }) {
   const l = fitLevel(score)
-  return <span className={`badge badge-${l.tone}`} title={`회사 기술·실적과 공고 내용이 얼마나 가까운지 (${Math.round(score * 100)}점)`}>{bare ? '' : '관련도 '}{l.label}</span>
+  return <span className={`badge badge-${l.tone}`} title="회사 기술·실적과 공고 내용이 얼마나 가까운지">{bare ? '' : '관련도 '}{l.label}{value && ` · ${score.toFixed(2)}`}</span>
 }
 
 export function VerdictSummary({ run, audience = 'staff' }: { run: MatchRun; audience?: Audience }) {
@@ -142,7 +143,7 @@ export function MatchCard({ rec, audience, title, meta, onTitle, rank, questions
         </div>
         <div className="match-badges">
           <VerdictBadge verdict={rec.verdict} audience={audience} text={verdictText} />
-          <FitBadge score={rec.total_score} />
+          <FitBadge score={rec.total_score} value={audience === 'staff'} />
         </div>
       </div>
       <Summary rec={rec} audience={audience} />
@@ -211,10 +212,10 @@ function MatchDetail({ rec, audience }: { rec: MatchRec; audience: Audience }) {
           <h4>관련도 구성</h4>
           <div className="bars">
             {Object.entries(rec.scores).map(([k, s]) => (
-              <div key={k} className="bar-row" title={`${Math.round(s.score * 100)}점 · 반영 비율 ${Math.round(s.weight * 100)}%`}>
+              <div key={k} className="bar-row" title={`반영 비율 ${s.weight.toFixed(2)}`}>
                 <span>{CRITERION_LABELS[k] ?? k}</span>
                 <div className="bar"><div style={{ width: `${Math.round(s.score * 100)}%` }} /></div>
-                <span className="num">{(SIM_CRITERIA.has(k) ? simLevel : scoreLevel)(s.score).label}</span>
+                <span className="num">{(SIM_CRITERIA.has(k) ? simLevel : scoreLevel)(s.score).label} · {s.score.toFixed(2)}</span>
               </div>
             ))}
           </div>

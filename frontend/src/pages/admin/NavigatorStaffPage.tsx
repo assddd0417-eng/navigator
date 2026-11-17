@@ -239,7 +239,7 @@ function OutreachCard({ annId, canSend }: { annId: number; canSend: boolean }) {
                     checked={picked.has(c.organization_id)} onChange={() => toggle(c.organization_id)} /></td>
                   <td>{c.company_name}</td>
                   <td><VerdictBadge verdict={c.verdict} /></td>
-                  <td><FitBadge score={c.total_score} bare /></td>
+                  <td><FitBadge score={c.total_score} bare value /></td>
                   <td>{c.consent ? <span className="badge badge-ok">동의</span> : <span className="muted small">안 함</span>}</td>
                   <td className="nowrap">
                     {c.sent_status ? <>
@@ -305,7 +305,7 @@ function AlertsCard({ ann }: { ann: AnnouncementRow }) {
                 <td>{n.company_name}</td>
                 <td className="small">{n.email}</td>
                 <td><VerdictBadge verdict={n.verdict} /></td>
-                <td><FitBadge score={n.total_score} bare /></td>
+                <td><FitBadge score={n.total_score} bare value /></td>
                 <td><span className={`badge badge-${ALERT_STATUS[n.status][1]}`}>{ALERT_STATUS[n.status][0]}</span></td>
                 <td className="nowrap">{fmtDate(n.sent_at ?? n.created_at)}</td>
               </tr>

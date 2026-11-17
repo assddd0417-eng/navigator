@@ -51,17 +51,20 @@ export const score = (v: Num | null | undefined) => (v == null ? '–' : Number(
 /** 0~1 점수를 사람이 읽는 백분율로 (0.823 → 82%) */
 export const pct100 = (v: Num | null | undefined) => (v == null ? '–' : `${Math.round(Number(v) * 100)}%`)
 
+/** 기관 화면에서 라벨 옆에 붙이는 원래 값 (0.61). 기업 화면·메일에는 쓰지 않는다 */
+export const dec = (v: Num | null | undefined) => (v == null ? '' : Number(v).toFixed(2))
+
 /** 적합도 등급 (화면 표시용 눈금, 판정 규칙 아님). 0.70 이상 높음 · 0.50 이상 보통 · 그 아래 낮음 */
 export function fitLevel(v: Num | null | undefined): { label: string; tone: string } {
   return scoreLevel(v == null ? 0 : Number(v))
 }
 
-/** 적합도: 높음/보통/낮음 배지. 값은 마우스를 올리면 */
+/** 적합도: 높음/보통/낮음 배지 + 값 */
 export function Fit({ value, big = false }: { value: Num | null | undefined; big?: boolean }) {
   const lv = fitLevel(value)
   return (
-    <span className={`fit ${big ? 'fit-big' : ''}`} title={`적합도 ${pct100(value)}`}>
-      <span className={`badge badge-${lv.tone}`}>{lv.label}</span>
+    <span className={`fit ${big ? 'fit-big' : ''}`} title="적합도 (1에 가까울수록 잘 맞음)">
+      <span className={`badge badge-${lv.tone}`}>{lv.label} · {dec(value)}</span>
     </span>
   )
 }
@@ -70,13 +73,13 @@ export function Fit({ value, big = false }: { value: Num | null | undefined; big
 export function SimBadge({ value, title = '내용이 비슷한 정도', bare = false }: { value: Num | null | undefined; title?: string; bare?: boolean }) {
   if (value == null) return <span className="muted">–</span>
   const lv = simLevel(Number(value))
-  return <span className={`badge badge-${lv.tone}`} title={`${title} ${pct100(value)}`}>{bare ? '' : '관련도 '}{lv.label}</span>
+  return <span className={`badge badge-${lv.tone}`} title={title}>{bare ? '' : '관련도 '}{lv.label} · {dec(value)}</span>
 }
 
 /** 추천 기준 점수 한 칸: 내용 유사도로 매기는 기준은 유사도 눈금, 나머지는 적합도 눈금 */
 const SIM_CRITERIA = new Set(['TECH', 'ENVIRONMENT', 'PURPOSE'])
 export const scoreText = (criterion: string, v: Num | null | undefined) =>
-  v == null ? '–' : (SIM_CRITERIA.has(criterion) ? simLevel : scoreLevel)(Number(v)).label
+  v == null ? '–' : `${(SIM_CRITERIA.has(criterion) ? simLevel : scoreLevel)(Number(v)).label} · ${dec(v)}`
 
 /** 0~1 점수 막대 한 줄. sim = 내용 유사도 기준, unknown = 비교 자료가 없어 중간값으로 둔 것 */
 export function ScoreBar({ label, value, help, sim = false, unknown = false }: {
@@ -84,10 +87,10 @@ export function ScoreBar({ label, value, help, sim = false, unknown = false }: {
 }) {
   const n = value == null ? 0 : Number(value)
   return (
-    <div className="bar-row" title={[help, pct100(value)].filter(Boolean).join(' · ')}>
+    <div className="bar-row" title={help}>
       <span>{label}</span>
       <div className="bar"><div style={{ width: `${Math.round(n * 100)}%` }} /></div>
-      <span className="num">{unknown ? '자료 없음' : value == null ? '–' : (sim ? simLevel : scoreLevel)(n).label}</span>
+      <span className="num">{unknown ? '자료 없음' : value == null ? '–' : `${(sim ? simLevel : scoreLevel)(n).label} · ${dec(value)}`}</span>
     </div>
   )
 }

@@ -6,7 +6,7 @@ import {
 } from '../../api/endpoints'
 import { useToast } from '../../components/Toast'
 import {
-  Card, CRITERIA_LABELS, Empty, Fit, fmtDate, LINKAGE_HELP, More, PageHeader, pct100, RoleHint, scoreText, SimBadge, StatusBadge, Steps,
+  Card, CRITERIA_LABELS, Empty, Fit, fmtDate, LINKAGE_HELP, More, PageHeader, RoleHint, scoreText, SimBadge, StatusBadge, Steps,
   trlText, useAction, useAsync,
 } from '../../components/ui'
 
@@ -102,7 +102,7 @@ function TopThree({ recs }: { recs: RecommendationOverview[] }) {
             {r.scores && (
               <div className="top3-scores">
                 {Object.entries(CRITERIA_LABELS).map(([k, label]) => (
-                  <span key={k} title={pct100(r.scores?.[k] ?? null)}>{label} <b>{scoreText(k, r.scores?.[k])}</b></span>
+                  <span key={k}>{label} <b>{scoreText(k, r.scores?.[k])}</b></span>
                 ))}
               </div>
             )}
