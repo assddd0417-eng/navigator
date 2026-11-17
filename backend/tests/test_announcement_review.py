@@ -48,6 +48,23 @@ def test_rules_extract_common_requirements():
     assert all(s.source_quote and s.source_quote in NOTICE for s in ex.requirements)
 
 
+def test_rules_extract_inline_headings():
+    """'2. 지원대상: 중소기업 ...' 처럼 제목과 내용이 한 줄인 공고문."""
+    text = ("1. 사업목적: 수입에 의존하는 전술 데이터링크 모뎀과 RF 모듈의 국산화\n"
+            "2. 지원대상: 중소기업 (기업부설연구소 또는 연구개발전담부서 보유)\n"
+            "3. 지원내용: 과제당 최대 5억원, 지원기간 24개월\n"
+            "4. 요구기술: 항재밍 데이터링크 모뎀, 전술 무전기 RF 모듈\n"
+            "5. 문의처: 연구소 기업부설연구소 담당 042-000-0000\n")
+    ex = rx.extract_rules(text)
+    got = {s.req_type_code: s for s in ex.requirements}
+    assert got["COMPANY_SIZE"].rule == {"allowed": ["SME", "STARTUP", "VENTURE"]}
+    assert got["REQUIRED_CERT"].rule == {"any_of": ["RND_LAB", "RND_DEPT"]} and got["REQUIRED_CERT"].is_mandatory
+    assert ex.fields["target_desc"] == "중소기업 (기업부설연구소 또는 연구개발전담부서 보유)"
+    assert ex.fields["summary"].startswith("수입에 의존하는")
+    assert [t["tech_name"] for t in ex.tech_needs] == ["항재밍 데이터링크 모뎀", "전술 무전기 RF 모듈"]
+    assert ex.tech_needs[0]["is_core"] and not ex.tech_needs[1]["is_core"]
+
+
 @pytest.mark.parametrize("s,expected", [("최대 5,000만원", [50_000_000]), ("3천만 원 한도", [30_000_000]),
                                         ("1.5억원", [150_000_000]), ("757,000원", [])])
 def test_parse_krw(s, expected):

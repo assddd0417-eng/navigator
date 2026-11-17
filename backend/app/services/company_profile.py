@@ -106,7 +106,7 @@ async def public_view(conn: AsyncConnection, org_id: int) -> dict:
         "business_status": p["business_status"],
         "business_status_label": BUSINESS_STATUS_LABEL[p["business_status"]],
         "patents": [{k: v for k, v in pt.items() if k not in ("id", "abstract", "origin")} for pt in patents],
-        "note": "신용등급·매출·자가입력 내용은 등록 이메일로 받은 관리 링크로만 볼 수 있습니다",
+        "note": "신용등급·매출·자가입력 내용은 '회사 정보 입력·수정'에서만 볼 수 있습니다",
     }
 
 

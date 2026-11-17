@@ -119,7 +119,7 @@ class CompanyRegister(ProfileFields, CompanyLists):
     representative_name: str = Field(min_length=1, max_length=100, description="국세청 진위확인용 대표자명")
     opened_on: date = Field(description="국세청 진위확인용 개업일")
     email: str = Field(pattern=EMAIL_PATTERN, max_length=320,
-                       description="관리 링크를 받을 이메일 (필수). 수정은 이 주소로 받은 링크로만 가능")
+                       description="알림 받을 이메일 (필수). 등록하면 바로 공고 알림 수신자가 됨")
 
 
 class CompanyUpdate(ProfileFields):

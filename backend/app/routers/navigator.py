@@ -10,7 +10,7 @@ from app.config import get_settings
 from app.db import transaction
 from app.errors import Conflict
 from app.schemas.navigator import CompanyRegister, CompanyUpdate, LinkSent, RegisterResult
-from app.services import access_link, collector, company_evidence, mailer
+from app.services import access_link, collector, company_evidence, mailer, navigator_alerts
 from app.services.bizno import InvalidBizNo, format_bizno, normalize
 from app.services.company_profile import (
     BUSINESS_STATUS_LABEL, LIST_TABLES, PROFILE_FIELDS, VERIFY_LABEL, find_by_bizno, full_view,
@@ -139,6 +139,7 @@ async def register_company(body: CompanyRegister, rid: str = Depends(request_id)
             await insert_list_items(conn, org_id, key, getattr(body, key))
         await sync_company_embeddings(conn, org_id)
         link = await access_link.issue(conn, org_id, body.email)
+        await navigator_alerts.subscribe_registered_email(conn, org_id, body.email)
 
     sent = await _send_link(body.email, body.company_name, link, first=True)
     return RegisterResult(

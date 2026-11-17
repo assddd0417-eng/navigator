@@ -574,7 +574,7 @@ def _redact_public(r: dict) -> None:
              hidden_requirements=hidden, questions=[])
     text = f"공개 정보 기준 필수 요건 {r['mandatory_met']}/{r['mandatory_total']}개 충족."
     if hidden:
-        text += f" 신용등급·매출 요건 {hidden}개는 등록 이메일로 받은 링크에서 확인."
+        text += f" 신용등급·매출 요건 {hidden}개는 '회사 정보 입력·수정'에서 확인."
     r["rationale"] = text
     r["evidence"] = [e for e in r["evidence"] if e["kind"] != "REQUIREMENT"
                      or any(c["requirement_id"] == e["requirement_id"] for c in shown)]

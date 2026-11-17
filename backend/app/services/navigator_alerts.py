@@ -76,6 +76,17 @@ async def create_subscription(conn: AsyncConnection, org_id: int, verified_email
     return await get_subscription(conn, org_id, row["id"]), token
 
 
+async def subscribe_registered_email(conn: AsyncConnection, org_id: int, email: str) -> None:
+    """등록 이메일을 기본 설정(관심 분야 없음, 확인 필요 포함, 화면+메일)으로 바로 구독. 이미 있으면 그대로 둔다."""
+    await conn.execute(
+        """INSERT INTO ax.alert_subscription (organization_id, email, keywords, min_score, include_needs_info, channels,
+                                              email_confirmed_at)
+           SELECT %(org)s, %(email)s, '{}', 0, true, ARRAY['SCREEN', 'EMAIL'], now()
+            WHERE NOT EXISTS (SELECT 1 FROM ax.alert_subscription WHERE organization_id = %(org)s AND email = %(email)s)
+              AND (SELECT count(*) FROM ax.alert_subscription WHERE organization_id = %(org)s) < %(max)s""",
+        {"org": org_id, "email": email.strip().lower(), "max": MAX_SUBSCRIPTIONS})
+
+
 async def update_subscription(conn: AsyncConnection, org_id: int, sub_id: int, data: dict) -> dict:
     await get_subscription(conn, org_id, sub_id)
     if data:
@@ -186,7 +197,7 @@ def _mail(ann: dict, rec: dict, token: str) -> tuple[str, str]:
             f"공고: {ann['title']}\n기관: {ann['agency_name']}\n접수 마감: {deadline}\n"
             f"판정: {verdict}\n{rec['rationale']}\n\n"
             f"자세히 보기: {_base()}/navigator?brn={format_bizno(rec['business_reg_no'])}\n"
-            "확인 필요 항목 답변과 신용등급 조건 확인은 등록 이메일로 받은 링크에서 할 수 있습니다.\n\n"
+            "확인 필요 항목 답변과 신용등급 조건은 위 화면의 '회사 정보 입력·수정'에서 확인하세요.\n\n"
             f"알림 그만 받기: {unsubscribe_url(token)}")
     return subject, body
 
@@ -287,7 +298,7 @@ async def safe_dispatch(ann_id: int, request_id: str | None = None) -> dict | No
 
 async def announcement_alerts(conn: AsyncConnection, ann_id: int) -> dict:
     rows = await (await conn.execute(
-        """SELECT n.id, o.name AS company_name, n.verdict, n.total_score::float AS total_score, n.status,
+        """SELECT n.id, o.name AS company_name, s.email, n.verdict, n.total_score::float AS total_score, n.status,
                   n.created_at, n.sent_at, n.read_at, s.channels
              FROM ax.alert_notification n
              JOIN ax.organization o ON o.id = n.organization_id
@@ -295,6 +306,7 @@ async def announcement_alerts(conn: AsyncConnection, ann_id: int) -> dict:
             WHERE n.announcement_id = %s ORDER BY n.created_at, n.id""", (ann_id,))).fetchall()
     for r in rows:
         r["verdict_label"] = VERDICT_KO[r["verdict"]]
+        r["email"] = mailer.mask_email(r["email"])
     live = await (await conn.execute(
         """SELECT count(DISTINCT organization_id) AS n FROM ax.alert_subscription
             WHERE is_active AND email_confirmed_at IS NOT NULL AND unsubscribed_at IS NULL""")).fetchone()

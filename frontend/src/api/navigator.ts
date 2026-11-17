@@ -394,7 +394,7 @@ export interface AlertItem {
 
 export interface AnnouncementAlerts {
   subscribed_companies: number
-  notifications: { id: number; company_name: string; verdict: Verdict; verdict_label: string; total_score: number;
+  notifications: { id: number; company_name: string; email: string; verdict: Verdict; verdict_label: string; total_score: number;
     status: 'PENDING' | 'SENT' | 'FAILED' | 'READ'; created_at: string; sent_at: string | null;
     read_at: string | null; channels: AlertChannel[] }[]
 }

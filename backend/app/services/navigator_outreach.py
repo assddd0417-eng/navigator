@@ -106,7 +106,7 @@ def _mail(ann: dict, rec: dict, sender: dict, note: str | None, token: str) -> t
     lines += [
         "",
         f"자세히 보기: {_base()}/navigator?brn={format_bizno(rec['business_reg_no'])}",
-        "확인 필요 항목 답변은 등록 이메일로 받은 관리 링크에서 할 수 있습니다.",
+        "확인 필요 항목 답변은 위 화면의 '회사 정보 입력·수정'에서 할 수 있습니다.",
         "",
         f"보낸 사람: {sender['name']}{' (' + sender['department'] + ')' if sender.get('department') else ''}",
     ]

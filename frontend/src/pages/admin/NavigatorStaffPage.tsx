@@ -298,11 +298,12 @@ function AlertsCard({ ann }: { ann: AnnouncementRow }) {
         <Empty>보낸 알림이 없습니다.</Empty>
       ) : (
         <table className="table">
-          <thead><tr><th>기업</th><th>판정</th><th>관련도</th><th>상태</th><th>보낸 시각</th></tr></thead>
+          <thead><tr><th>기업</th><th>받는 사람</th><th>판정</th><th>관련도</th><th>상태</th><th>보낸 시각</th></tr></thead>
           <tbody>
             {data.notifications.map((n) => (
               <tr key={n.id}>
                 <td>{n.company_name}</td>
+                <td className="small">{n.email}</td>
                 <td><VerdictBadge verdict={n.verdict} /></td>
                 <td className="num">{Math.round(n.total_score * 100)}</td>
                 <td><span className={`badge badge-${ALERT_STATUS[n.status][1]}`}>{ALERT_STATUS[n.status][0]}</span></td>
