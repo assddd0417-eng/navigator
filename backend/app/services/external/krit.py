@@ -107,6 +107,11 @@ def receipt_period(text: str, posted_on: date | None) -> tuple[date | None, date
         start, end = dates[0], dates[1]
         if end < start:
             return None, None
+        first = _DATE.search(seg)
+        line = seg[first.start():].split("\n")[0] if first else seg
+        if not re.search(r"[~∼〜～–]|부터|\s-\s", line):
+            # "11. 30.(월) 15:00 한 ⇨ 11. 26.(목)까지 권장" 처럼 범위가 아니면 앞 날짜가 마감
+            return None, start
         return start, end
     return None, None
 
