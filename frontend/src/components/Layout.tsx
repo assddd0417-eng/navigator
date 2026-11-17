@@ -10,6 +10,10 @@ export function Layout() {
 
   const meta = ROLES[role]
   const menu = MENU.filter((m) => m.roles.includes(role))
+  const sections = [
+    { key: 'work', title: '업무', items: menu.filter((m) => m.section === 'work') },
+    { key: 'manage', title: '관리', items: menu.filter((m) => m.section === 'manage') },
+  ].filter((s) => s.items.length > 0)
 
   return (
     <div className="app-shell">
@@ -29,11 +33,16 @@ export function Layout() {
             <div className="whoami-name">{user.name}</div>
             <div className="whoami-role">{meta.label}</div>
           </div>
-          {menu.map((m) => (
-            <NavLink key={m.path} to={m.path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-              <span className="nav-icon">{m.icon}</span>
-              {m.label}
-            </NavLink>
+          {sections.map((sec) => (
+            <div key={sec.key} className="nav-section">
+              <div className="nav-section-title">{sec.title}</div>
+              {sec.items.map((m) => (
+                <NavLink key={m.path} to={m.path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                  <span className="nav-icon">{m.icon}</span>
+                  {m.label}
+                </NavLink>
+              ))}
+            </div>
           ))}
           <div className="sidebar-can">
             <div className="sidebar-can-title">할 수 있는 일</div>

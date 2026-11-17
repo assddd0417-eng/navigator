@@ -40,12 +40,14 @@ export interface MenuItem {
   label: string
   icon: string
   roles: RoleCode[]
+  /** 사이드바 묶음: 업무 / 관리 */
+  section: 'work' | 'manage'
 }
 
 export const MENU: MenuItem[] = [
-  { path: '/staff/navigator', label: '공고별 적합 기업', icon: '🧭', roles: STAFF_ROLES },
-  { path: '/staff/announcements', label: '공고 등록·조건 확인', icon: '📋', roles: STAFF_ROLES },
-  { path: '/staff/sources', label: '외부 수집', icon: '🔄', roles: STAFF_ROLES },
+  { path: '/staff/navigator', label: '공고별 적합 기업', icon: '🧭', roles: STAFF_ROLES, section: 'work' },
+  { path: '/staff/announcements', label: '공고 등록·조건 확인', icon: '📋', roles: STAFF_ROLES, section: 'manage' },
+  { path: '/staff/sources', label: '외부 수집', icon: '🔄', roles: STAFF_ROLES, section: 'manage' },
 ]
 
 /** 경로별 허용 역할 (App.tsx 라우트와 같은 규칙). 로그인 뒤 원래 화면으로 돌려보낼지 정할 때 쓴다 */
