@@ -154,3 +154,98 @@ export const addMeetingDecision = (id: number, body: { decision: string; recomme
   api<{ id: number }>(`/meetings/${id}/decisions`, { method: 'POST', body })
 export const setDecisionStatus = (id: number, status: MeetingDecision['status']) =>
   api<void>(`/meeting-decisions/${id}`, { method: 'PATCH', body: { status } })
+
+// ---------------------------------------------------------------------------
+// 연계 실행 결과·순환 (backend/app/routers/executions.py)
+// ---------------------------------------------------------------------------
+export type ExecType = 'NEW_PROJECT' | 'PROGRAM_APPLICATION' | 'TECH_TRANSFER' | 'COMMERCIALIZATION' | 'EXPORT'
+  | 'LOCALIZATION' | 'PILOT_TEST' | 'OTHER'
+export type ExecStatus = 'PLANNED' | 'IN_PROGRESS' | 'COMPLETED' | 'DROPPED'
+
+export const EXEC_TYPES: Record<ExecType, string> = {
+  NEW_PROJECT: '신규 과제', PROGRAM_APPLICATION: '타 사업 신청', TECH_TRANSFER: '기술이전', COMMERCIALIZATION: '사업화',
+  EXPORT: '수출', LOCALIZATION: '부품 국산화', PILOT_TEST: '시험·실증', OTHER: '기타',
+}
+export const EXEC_STATUS: Record<ExecStatus, string> = { PLANNED: '계획', IN_PROGRESS: '진행 중', COMPLETED: '완료', DROPPED: '중단' }
+
+export interface AdoptedCandidate {
+  recommendation_id: number
+  demand_title: string | null
+  target_program_name: string | null
+  linkage_type_name: string
+  source_cards: { card_id: number; title: string; project_no: string }[]
+  owner_department: string | null
+  final_decided_at: string | null
+  execution_count: number
+}
+
+export interface Execution {
+  id: number
+  recommendation_id: number | null
+  source_card_id: number
+  card_title: string
+  source_project_no: string
+  source_project_title: string
+  linkage_type_name: string
+  execution_type: ExecType
+  execution_type_name: string
+  status: ExecStatus
+  status_name: string
+  resulting_project_id: number | null
+  resulting_project_no: string | null
+  resulting_project_title: string | null
+  organization_name: string | null
+  executed_on: string | null
+  discovered_by_ax: boolean
+  note: string | null
+  result_note: string | null
+  demand_title: string | null
+  eval_case_id: number | null
+  resulting_cards: number
+  created_by_name: string | null
+  updated_at: string
+}
+
+export interface ExecutionKpi {
+  adopted: number
+  adopted_executed: number
+  conversion_pct: number
+  executions: number
+  completed: number
+  ongoing: number
+  dropped: number
+  discovered_by_ax: number
+  resulting_projects: number
+  resulting_cards: number
+  eval_cases: number
+  by_type: Record<string, number>
+}
+
+export interface Lineage {
+  card: { id: number; title: string; project_no: string; project_title: string }
+  ancestors: { lvl: number; project_no: string; project_title: string; linkage_type_name: string | null;
+    cards: { card_id: number; title: string }[] }[]
+  descendants: (Execution & { level: number; next_cards: { card_id: number; title: string }[] })[]
+}
+
+export interface ExecutionBody {
+  recommendation_id?: number | null
+  source_card_id?: number | null
+  linkage_type_code?: string | null
+  execution_type: ExecType
+  status: ExecStatus
+  resulting_project_id?: number | null
+  new_project?: { project_no: string; title: string } | null
+  executed_on?: string | null
+  note?: string
+  result_note?: string
+}
+
+export const listAdoptedCandidates = () => api<AdoptedCandidate[]>('/executions/candidates')
+export const listExecutions = () => api<Execution[]>('/executions')
+export const getExecutionKpi = () => api<ExecutionKpi>('/executions/kpi')
+export const getLineage = (cardId: number) => api<Lineage>(`/executions/lineage/cards/${cardId}`)
+export const createExecution = (body: ExecutionBody) =>
+  api<{ id: number; project_relation_id: number | null; eval_case_id: number | null }>('/executions', { method: 'POST', body })
+export const patchExecution = (id: number, body: Partial<Pick<ExecutionBody, 'status' | 'result_note' | 'executed_on'>>) =>
+  api<{ id: number; eval_case_id: number | null }>(`/executions/${id}`, { method: 'PATCH', body })

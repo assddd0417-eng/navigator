@@ -19,6 +19,7 @@ import { GapDetailPage } from './pages/gaps/GapDetailPage'
 import { GapListPage } from './pages/gaps/GapListPage'
 import { PlanningPage } from './pages/planning/PlanningPage'
 import { PortfolioPage } from './pages/portfolio/PortfolioPage'
+import { ExecutionsPage } from './pages/review/ExecutionsPage'
 import { ReviewSheetDetailPage } from './pages/review/ReviewSheetDetailPage'
 import { ReviewSheetsPage } from './pages/review/ReviewSheetsPage'
 import { RecommendationPage } from './pages/shared/RecommendationPage'
@@ -52,6 +53,7 @@ export default function App() {
               <Route path="/reviews" element={<RequireRole roles={ADMIN_ROLES}><ReviewQueuePage /></RequireRole>} />
               <Route path="/review-sheets" element={<RequireRole roles={ADMIN_ROLES}><ReviewSheetsPage /></RequireRole>} />
               <Route path="/review-sheets/:id" element={<RequireRole roles={ADMIN_ROLES}><ReviewSheetDetailPage /></RequireRole>} />
+              <Route path="/executions" element={<RequireRole roles={ADMIN_ROLES}><ExecutionsPage /></RequireRole>} />
               <Route path="/staff/announcements" element={<RequireRole roles={ADMIN_ROLES}><AnnouncementReviewPage /></RequireRole>} />
               <Route path="/staff/navigator" element={<RequireRole roles={ADMIN_ROLES}><NavigatorStaffPage /></RequireRole>} />
               <Route path="/staff/sources" element={<RequireRole roles={ADMIN_ROLES}><NavigatorSourcesPage /></RequireRole>} />

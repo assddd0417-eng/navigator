@@ -493,4 +493,24 @@ check "초안 문서·회의 결정 포함" '(.content_md | startswith("# 통합
 api "검토표 확정" 204 POST "/review-sheets/$SHEET_ID/finalize" "$PLANNER"
 api "확정 후 후보 빼기 거부" 422 DELETE "/review-sheets/$SHEET_ID/items/$REC_IN_SHEET" "$PLANNER"
 api "검토표는 관리자만 (전문가)" 403 GET /review-sheets "$EXPERT"
+
+section "⑰ 연계 실행 결과·순환 (채택 → 실행 → 이어진 과제 → 검증 사례)"
+api "채택 후보 (검수자)" 200 GET /executions/candidates "$REVIEWER"
+ADOPTED=$(pick '.[0].recommendation_id')
+api "실행 기록은 기획자·담당부서 검수자만 (전문가)" 403 POST /executions "$EXPERT" '{"execution_type":"NEW_PROJECT"}'
+if [[ -n "$ADOPTED" ]]; then
+    api "연계 실행 기록 (이어진 새 과제)" 201 POST /executions "$PLANNER" \
+        '{"recommendation_id":'"$ADOPTED"',"execution_type":"NEW_PROJECT","status":"IN_PROGRESS","new_project":{"project_no":"PRJ-SMK-'"$RUN_TAG"'","title":"스모크 후속 과제"}}'
+    check "과제 관계 남김" '.project_relation_id != null'
+    EX_ID=$(pick '.id')
+    api "완료로 바꾸기" 200 PATCH "/executions/$EX_ID" "$PLANNER" '{"status":"COMPLETED","result_note":"후속 과제 선정"}'
+    check "실제 연계 사례 검증 케이스" '.eval_case_id != null'
+    api "순환 지표" 200 GET /executions/kpi "$REVIEWER"
+    check "채택·실행·검증 사례" '.adopted >= 1 and .executions >= 1 and .eval_cases >= 1'
+    CARD_OF_EX=$(curl -sS -H "X-User-Id: $PLANNER" "$BASE_URL/executions" | jq -r ".[] | select(.id == $EX_ID) | .source_card_id")
+    api "이어달리기 계보" 200 GET "/executions/lineage/cards/$CARD_OF_EX" "$PLANNER"
+    check "이어진 과제" 'any(.descendants[]; .resulting_project_no | startswith("PRJ-SMK-"))'
+else
+    skip "채택된 추천이 없어 실행 기록 건너뜀"
+fi
 summary
