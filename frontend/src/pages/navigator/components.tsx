@@ -104,7 +104,7 @@ function Summary({ rec, audience }: { rec: MatchRec; audience: Audience }) {
         </div>
       )}
       {!!rec.hidden_requirements && (
-        <div className="small muted">신용등급·매출 조건 {rec.hidden_requirements}개는 이메일 링크로 들어오면 확인됩니다.</div>
+        <div className="small muted">신용등급·매출 조건 {rec.hidden_requirements}개는 ‘회사 정보 입력·수정’에서 확인됩니다.</div>
       )}
     </div>
   )

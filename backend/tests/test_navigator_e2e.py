@@ -7,7 +7,7 @@ import pytest
 
 from app.services import mailer
 from app.services.ratelimit import limiter
-from tests.conftest import TEST_URL, as_user
+from tests.conftest import TEST_URL, as_user, manage_token
 from tests.test_navigator_matching import _seed
 
 PLANNER = 1
@@ -61,7 +61,7 @@ async def test_company_to_outreach_flow(client, fresh):
         "main_business": "전술 데이터링크 모뎀"})
     assert r.status_code == 201, r.text
     assert "등록 완료" in _mails(EMAIL, n)[0].subject
-    h = {"X-Manage-Token": (await client.post(f"/navigator/companies/{BRN}/open")).json()["token"]}
+    h = {"X-Manage-Token": await manage_token(client, BRN)}
     subs = (await client.get("/navigator/manage/subscriptions", headers=h)).json()["subscriptions"]
     assert [(s["email"], s["is_active"], bool(s["email_confirmed_at"])) for s in subs] == [(EMAIL, True, True)]
 

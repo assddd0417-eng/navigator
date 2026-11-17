@@ -7,7 +7,7 @@ import pytest
 
 from app.services import company_evidence as ev
 from app.services.ratelimit import limiter
-from tests.conftest import TEST_URL
+from tests.conftest import TEST_URL, manage_token
 
 BRN_A, BRN_B = "9998700002", "9998700017"
 
@@ -76,7 +76,7 @@ async def _open(client, brn: str, name: str) -> dict:
         "business_reg_no": brn, "company_name": name, "representative_name": "김가상", "opened_on": "2018-05-01",
         "email": f"{brn}@example.com", "main_business": "전술 통신 장비용 RF 부품"})
     assert r.status_code == 201, r.text
-    token = (await client.post(f"/navigator/companies/{brn}/open")).json()["token"]
+    token = await manage_token(client, brn)
     return {"X-Manage-Token": token}
 
 
