@@ -347,7 +347,7 @@ def parse_llm_answer(raw: str, text: str, cert_codes: set[str], extractor: str) 
     squashed = _squash(text)
     for r in data.get("requirements") or []:
         code = str(r.get("req_type_code") or "OTHER").upper()
-        desc = str(r.get("description") or "").strip()[:1000]
+        desc = str(r.get("description") or "").strip().rstrip(". ")[:1000]   # 목록으로 이어 붙이므로 끝 마침표 뺌
         if not desc:
             continue
         rule = r.get("rule") if isinstance(r.get("rule"), dict) else {}

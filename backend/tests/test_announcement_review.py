@@ -75,7 +75,7 @@ def test_llm_answer_checked_against_rule_models():
     answer = {"fields": {"receipt_end": "2026-11-27", "support_amount_krw": 50000000, "summary": "부품 시험평가 지원"},
               "requirements": [
                   {"req_type_code": "COMPANY_SIZE", "rule": {"allowed": ["SME"]}, "is_mandatory": True,
-                   "description": "중소기업", "source_quote": "생산하는 중소기업으로서"},
+                   "description": "중소기업이어야 한다.", "source_quote": "생산하는 중소기업으로서"},
                   {"req_type_code": "MIN_CREDIT_GRADE", "rule": {"grade": "B"}, "is_mandatory": True,
                    "description": "신용등급 B 이상", "source_quote": "기업신용등급 B 이상"},
                   {"req_type_code": "REQUIRED_CERT", "rule": {"any_of": ["NOPE"]}, "is_mandatory": True,
@@ -86,6 +86,7 @@ def test_llm_answer_checked_against_rule_models():
     ex = rx.parse_llm_answer(raw, NOTICE, {"RND_LAB", "RND_DEPT"}, "llm:test")
     assert [(s.req_type_code, s.quote_found) for s in ex.requirements] == [
         ("COMPANY_SIZE", True), ("OTHER", True), ("OTHER", False)]
+    assert ex.requirements[0].description == "중소기업이어야 한다"     # 목록으로 이을 때 "한다., " 안 생기게
     assert ex.fields == {"receipt_end": "2026-11-27", "support_amount_krw": 50000000, "summary": "부품 시험평가 지원"}
     assert ex.tech_needs[0]["tech_name"] == "환경시험"
     assert len(ex.warnings) == 3     # 형식 2건 + 근거 못 찾음 1건

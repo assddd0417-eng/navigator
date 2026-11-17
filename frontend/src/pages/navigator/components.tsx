@@ -88,6 +88,9 @@ function topEvidence(rec: MatchRec) {
   return tech[0] ?? null
 }
 
+/** 조건 설명을 한 줄로. 문장으로 끝나는 설명은 끝 마침표를 빼고 잇는다 */
+const clauses = (cs: { description: string }[]) => cs.map((c) => c.description.trim().replace(/[.。]+$/, '')).join(', ')
+
 /** 판정 이유 한두 줄. 서버 rationale 대신 판정 결과에서 직접 만든다 */
 function Summary({ rec, audience }: { rec: MatchRec; audience: Audience }) {
   const mand = rec.checks.filter((c) => c.is_mandatory && c.result)
@@ -98,9 +101,9 @@ function Summary({ rec, audience }: { rec: MatchRec; audience: Audience }) {
   if (rec.verdict === 'ELIGIBLE') {
     line = <>필수 조건 {rec.mandatory_total}개를 모두 충족합니다.{rec.preferred_total > 0 && ` 우대 조건 ${rec.preferred_met}/${rec.preferred_total}개.`}</>
   } else if (rec.verdict === 'INELIGIBLE') {
-    line = <>충족하지 못한 조건: <strong>{unmet.map((c) => c.description).join(', ')}</strong></>
+    line = <>충족하지 못한 조건: <strong>{clauses(unmet)}</strong></>
   } else {
-    line = <>확인이 필요한 조건: <strong>{unknown.map((c) => c.description).join(', ')}</strong></>
+    line = <>확인이 필요한 조건: <strong>{clauses(unknown)}</strong></>
   }
   return (
     <div className="match-summary">
