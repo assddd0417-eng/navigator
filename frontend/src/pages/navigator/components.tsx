@@ -1,7 +1,7 @@
 import { Fragment, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  CRITERION_LABELS, VERDICT_TONES,
+  CRITERION_LABELS, getFitLevels, VERDICT_TONES,
   type CheckResult, type MatchEvidence, type MatchRec, type MatchRun, type Question, type Verdict,
 } from '../../api/navigator'
 
@@ -14,12 +14,20 @@ export const VERDICT_TEXT: Record<Audience, Record<Verdict, string>> = {
 }
 export const VERDICTS: Verdict[] = ['ELIGIBLE', 'NEEDS_INFO', 'INELIGIBLE']
 
-// 총점(0~1)을 사용자가 읽을 수 있는 말로. 알림 조건(min_score)도 같은 경계를 쓴다
+// 총점(0~1)을 사용자가 읽을 수 있는 말로. 알림 조건(min_score)도 같은 경계를 쓴다.
+// 경계는 임베더마다 달라 서버(/navigator/fit-levels)에서 받는다. 받기 전에는 hash 기준
 export const FIT_LEVELS = [
   { min: 0.45, label: '높음', tone: 'ok' },
   { min: 0.25, label: '보통', tone: 'info' },
   { min: 0, label: '낮음', tone: 'muted' },
-] as const
+] as { min: number; label: string; tone: string }[]
+export async function loadFitLevels() {
+  try {
+    const r = await getFitLevels()
+    FIT_LEVELS[0].min = r.high
+    FIT_LEVELS[1].min = r.mid
+  } catch { /* 기본값 유지 */ }
+}
 export const fitLevel = (score: number) => FIT_LEVELS.find((l) => score >= l.min) ?? FIT_LEVELS[2]
 
 // 마감 공고(참여할 수 있었던 사업)에서 쓰는 말

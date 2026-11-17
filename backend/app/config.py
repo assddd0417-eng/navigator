@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     navigator_match_candidate_k: int = 50
     navigator_ranking: str = "vector"   # vector = 판정 후 벡터 유사도 순 (A안) / weighted = 이전 가중합
     navigator_past_years: int = 2          # 참여할 수 있었던 사업: 마감 후 몇 년까지 볼지
+    # 관련도 높음·보통 경계 (총점). 임베더마다 점수 폭이 달라 따로 둔다. 비우면 아래 기본값
+    navigator_fit_high: float | None = None
+    navigator_fit_mid: float | None = None
     mailer: str = "mock"                   # mock = 보내지 않고 OUTBOX 에만 / smtp = 실제 발송
     smtp_host: str = ""
     smtp_port: int = 587
