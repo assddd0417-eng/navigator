@@ -1,7 +1,7 @@
 import { Fragment, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  CRITERION_LABELS, VERDICT_TONES,
+  CRITERION_LABELS, getFitLevels, VERDICT_TONES,
   type CheckResult, type MatchEvidence, type MatchRec, type MatchRun, type Question, type Verdict,
 } from '../../api/navigator'
 
@@ -14,16 +14,27 @@ export const VERDICT_TEXT: Record<Audience, Record<Verdict, string>> = {
 }
 export const VERDICTS: Verdict[] = ['ELIGIBLE', 'NEEDS_INFO', 'INELIGIBLE']
 
-// 총점(0~1)을 사용자가 읽을 수 있는 말로. 알림 조건(min_score)도 같은 경계를 쓴다
+// 총점(0~1)을 사용자가 읽을 수 있는 말로. 알림 조건(min_score)도 같은 경계를 쓴다.
+// 경계는 임베더마다 달라 서버(/navigator/fit-levels)에서 받는다. 받기 전에는 hash 기준
 export const FIT_LEVELS = [
   { min: 0.45, label: '높음', tone: 'ok' },
   { min: 0.25, label: '보통', tone: 'info' },
   { min: 0, label: '낮음', tone: 'muted' },
-] as const
+] as { min: number; label: string; tone: string }[]
+export async function loadFitLevels() {
+  try {
+    const r = await getFitLevels()
+    FIT_LEVELS[0].min = r.high
+    FIT_LEVELS[1].min = r.mid
+  } catch { /* 기본값 유지 */ }
+}
 export const fitLevel = (score: number) => FIT_LEVELS.find((l) => score >= l.min) ?? FIT_LEVELS[2]
 
-export function VerdictBadge({ verdict, audience = 'staff' }: { verdict: Verdict; audience?: Audience }) {
-  return <span className={`badge badge-${VERDICT_TONES[verdict]}`}>{VERDICT_TEXT[audience][verdict]}</span>
+// 마감 공고(참여할 수 있었던 사업)에서 쓰는 말
+export const PAST_VERDICT_TEXT: Record<Verdict, string> = { ELIGIBLE: '지원할 수 있었음', NEEDS_INFO: '확인 필요', INELIGIBLE: '지원 어려움' }
+
+export function VerdictBadge({ verdict, audience = 'staff', text }: { verdict: Verdict; audience?: Audience; text?: Record<Verdict, string> }) {
+  return <span className={`badge badge-${VERDICT_TONES[verdict]}`}>{(text ?? VERDICT_TEXT[audience])[verdict]}</span>
 }
 
 export function FitBadge({ score }: { score: number }) {
@@ -77,6 +88,9 @@ function topEvidence(rec: MatchRec) {
   return tech[0] ?? null
 }
 
+/** 조건 설명을 한 줄로. 문장으로 끝나는 설명은 끝 마침표를 빼고 잇는다 */
+const clauses = (cs: { description: string }[]) => cs.map((c) => c.description.trim().replace(/[.。]+$/, '')).join(', ')
+
 /** 판정 이유 한두 줄. 서버 rationale 대신 판정 결과에서 직접 만든다 */
 function Summary({ rec, audience }: { rec: MatchRec; audience: Audience }) {
   const mand = rec.checks.filter((c) => c.is_mandatory && c.result)
@@ -87,9 +101,9 @@ function Summary({ rec, audience }: { rec: MatchRec; audience: Audience }) {
   if (rec.verdict === 'ELIGIBLE') {
     line = <>필수 조건 {rec.mandatory_total}개를 모두 충족합니다.{rec.preferred_total > 0 && ` 우대 조건 ${rec.preferred_met}/${rec.preferred_total}개.`}</>
   } else if (rec.verdict === 'INELIGIBLE') {
-    line = <>충족하지 못한 조건: <strong>{unmet.map((c) => c.description).join(', ')}</strong></>
+    line = <>충족하지 못한 조건: <strong>{clauses(unmet)}</strong></>
   } else {
-    line = <>확인이 필요한 조건: <strong>{unknown.map((c) => c.description).join(', ')}</strong></>
+    line = <>확인이 필요한 조건: <strong>{clauses(unknown)}</strong></>
   }
   return (
     <div className="match-summary">
@@ -101,15 +115,16 @@ function Summary({ rec, audience }: { rec: MatchRec; audience: Audience }) {
         </div>
       )}
       {!!rec.hidden_requirements && (
-        <div className="small muted">신용등급·매출 조건 {rec.hidden_requirements}개는 이메일 링크로 들어오면 확인됩니다.</div>
+        <div className="small muted">신용등급·매출 조건 {rec.hidden_requirements}개는 ‘회사 정보 입력·수정’에서 확인됩니다.</div>
       )}
     </div>
   )
 }
 
-export function MatchCard({ rec, audience, title, meta, onTitle, rank, questions, onAnswer, onEditProfile, defaultOpen = false }: {
+export function MatchCard({ rec, audience, title, meta, onTitle, rank, questions, onAnswer, onEditProfile, defaultOpen = false, verdictText }: {
   rec: MatchRec
   audience: Audience
+  verdictText?: Record<Verdict, string>
   title: ReactNode
   meta?: ReactNode
   onTitle?: () => void
@@ -133,7 +148,7 @@ export function MatchCard({ rec, audience, title, meta, onTitle, rank, questions
           {meta && <div className="small muted">{meta}</div>}
         </div>
         <div className="match-badges">
-          <VerdictBadge verdict={rec.verdict} audience={audience} />
+          <VerdictBadge verdict={rec.verdict} audience={audience} text={verdictText} />
           {audience === 'staff'
             ? <span className="match-score" title="회사 기술·실적과 공고의 관련도 (100점 환산)"><strong>{Math.round(rec.total_score * 100)}</strong><span className="small muted">관련도</span></span>
             : <FitBadge score={rec.total_score} />}
@@ -267,9 +282,10 @@ function InlineQuestions({ questions, onAnswer }: {
 }
 
 /** 판정별 목록. '지원 어려움/부적격'은 접어 둔다 */
-export function GroupedMatches({ run, audience, renderCard, hints }: {
+export function GroupedMatches({ run, audience, renderCard, hints, verdictText }: {
   run: MatchRun
   audience: Audience
+  verdictText?: Record<Verdict, string>
   renderCard: (rec: MatchRec, indexInGroup: number) => ReactNode
   hints?: Partial<Record<Verdict, string>>
 }) {
@@ -283,7 +299,7 @@ export function GroupedMatches({ run, audience, renderCard, hints }: {
         return (
           <section key={v}>
             <div className="group-head">
-              <VerdictBadge verdict={v} audience={audience} />
+              <VerdictBadge verdict={v} audience={audience} text={verdictText} />
               <strong>{recs.length}건</strong>
               {hints?.[v] && <span className="small muted">{hints[v]}</span>}
               {v === 'INELIGIBLE' && (

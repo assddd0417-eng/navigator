@@ -21,7 +21,7 @@ from app.schemas.common import Created
 from app.services.embedding import active_model_id, sync_demand_embeddings, sync_overseas_demand_embeddings
 from app.services.gap_analysis import auto_run, near_cards
 from app.services.gap_rules import DEFAULT_RULES
-from app.services.planning_brief import DEMAND_KIND_KO, build_brief, render_markdown
+from app.services.planning_brief import DEMAND_KIND_KO, brief_min_sim, build_brief, render_markdown
 from app.services.project_linker import add_identifier, link_document
 
 router = APIRouter(prefix="/planning", tags=["신규 과제 기획"])
@@ -284,22 +284,24 @@ async def _brief(conn, trend_id: int, uid: int, k: int, min_sim: float) -> dict:
 
 @router.get("/brief/{trend_id}")
 async def get_brief(trend_id: int, k: int = Query(6, ge=1, le=20, description="볼 성과 카드 수"),
-                    min_sim: float = Query(0.45, description="이보다 덜 비슷한 성과는 빼기"),
+                    min_sim: float | None = Query(None, description="이보다 덜 비슷한 성과는 빼기 (비우면 임베더별 기준)"),
+                    wide: bool = Query(False, description="덜 비슷한 과제도 보기"),
                     user: CurrentUser = Depends(require_roles(*READERS))):
     """동향 하나의 기획 참고서: 관련 과거 과제 요약 · 요구 성능 비교 · 새 기획에 넣을 것."""
     async with transaction(user.id) as conn:
-        brief = await _brief(conn, trend_id, user.id, k, min_sim)
+        brief = await _brief(conn, trend_id, user.id, k, brief_min_sim(wide) if min_sim is None else min_sim)
     brief.pop("card_security")
     return brief
 
 
 @router.post("/brief/{trend_id}/to-demand")
 async def brief_to_demand(trend_id: int, response: Response,
-                          k: int = Query(6, ge=1, le=20), min_sim: float = Query(0.45),
+                          k: int = Query(6, ge=1, le=20), min_sim: float | None = Query(None),
+                          wide: bool = Query(False),
                           user: CurrentUser = Depends(require_roles("PLANNER")), rid: str = Depends(request_id)):
     """기획 참고서로 신규 기획수요를 만들고 참고서 사본을 붙여 둔다. 이미 만든 동향이면 그 기획수요를 돌려준다."""
     async with transaction(user.id, rid) as conn:
-        brief = await _brief(conn, trend_id, user.id, k, min_sim)
+        brief = await _brief(conn, trend_id, user.id, k, brief_min_sim(wide) if min_sim is None else min_sim)
         existing = await (await conn.execute(
             "SELECT id, demand_no FROM ax.planning_demand WHERE origin_overseas_demand_id = %s "
             "AND origin_gap_finding_id IS NULL AND status <> 'CLOSED' ORDER BY id DESC LIMIT 1",

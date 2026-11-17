@@ -29,8 +29,10 @@ cat > "$PLIST" <<PL
 </dict></plist>
 PL
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+# bootout 은 바로 끝나지 않는다. 내려가기 전에 bootstrap 하면 "Bootstrap failed: 5"
+for _ in $(seq 20); do launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || break; sleep 0.5; done
 lsof -tiTCP:8000 -sTCP:LISTEN | xargs kill 2>/dev/null || true
-launchctl bootstrap "gui/$(id -u)" "$PLIST"
+launchctl bootstrap "gui/$(id -u)" "$PLIST" || { sleep 3; launchctl bootstrap "gui/$(id -u)" "$PLIST"; }
 until curl -sf 127.0.0.1:8000/api/health >/dev/null; do sleep 2; done
 echo "기업 화면:   http://127.0.0.1:8000/navigator"
 echo "담당자 화면: http://127.0.0.1:8000/login (기획자) -> /staff/navigator"

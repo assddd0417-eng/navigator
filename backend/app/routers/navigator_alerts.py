@@ -12,6 +12,7 @@ from app.db import transaction
 from app.routers.navigator import manage_link
 from app.schemas.navigator import EMAIL_PATTERN
 from app.services import mailer
+from app.services import navigator_outreach as outreach
 from app.services import navigator_alerts as alerts
 from app.services.ratelimit import public_rate_limit
 
@@ -66,9 +67,13 @@ class ReadIn(BaseModel):
     announcement_ids: list[int] | None = None
 
 
-def _with_confirm(sub: dict, token: str | None, email: str, company_name: str) -> dict:
+async def _with_confirm(sub: dict, token: str | None, email: str, company_name: str) -> dict:
     if token:
-        alerts.send_confirm_mail(email, company_name, token)
+        try:
+            await alerts.send_confirm_mail(email, company_name, token)
+        except mailer.MailError:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                                "확인 메일을 보내지 못했습니다. 잠시 후 '확인 메일 다시 보내기'를 눌러 주세요") from None
     sub["confirm_sent"] = token is not None
     sub["dev_confirm_link"] = alerts.confirm_url(token) if token and get_settings().navigator_dev_expose_link else None
     return sub
@@ -92,7 +97,7 @@ async def add_subscription(body: SubscriptionIn, link: dict = Depends(manage_lin
     async with transaction(None, f"{rid}|company-link:{link['link_id']}") as conn:
         sub, token = await alerts.create_subscription(conn, org_id, link["email"], body.model_dump())
         name = await _company_name(conn, org_id)
-    return _with_confirm(sub, token, sub["email"], name)
+    return await _with_confirm(sub, token, sub["email"], name)
 
 
 @router.patch("/manage/subscriptions/{sub_id}", dependencies=[Depends(public_rate_limit)])
@@ -116,7 +121,7 @@ async def resend_confirm(sub_id: int, link: dict = Depends(manage_link), rid: st
     async with transaction(None, f"{rid}|company-link:{link['link_id']}") as conn:
         sub, token = await alerts.renew_confirm_token(conn, org_id, sub_id)
         name = await _company_name(conn, org_id)
-    return _with_confirm(sub, token, sub["email"], name)
+    return await _with_confirm(sub, token, sub["email"], name)
 
 
 @router.get("/manage/alerts", dependencies=[Depends(public_rate_limit)])
@@ -148,6 +153,26 @@ async def unsubscribe(body: TokenIn, rid: str = Depends(request_id)):
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "해지 링크가 잘못되었습니다")
     return {"company_name": row["company_name"], "email": mailer.mask_email(row["email"])}
+
+
+class ConsentIn(BaseModel):
+    consent: bool
+
+
+@router.put("/manage/outreach-consent", dependencies=[Depends(public_rate_limit)])
+async def set_outreach_consent(body: ConsentIn, link: dict = Depends(manage_link), rid: str = Depends(request_id)):
+    """기관 담당자의 참여 권유 메일 받기 (등록 이메일로)."""
+    async with transaction(None, f"{rid}|company-link:{link['link_id']}") as conn:
+        return await outreach.set_consent(conn, link["organization_id"], body.consent)
+
+
+@router.post("/outreach/optout", dependencies=[Depends(public_rate_limit)])
+async def outreach_optout(body: TokenIn, rid: str = Depends(request_id)):
+    async with transaction(None, rid) as conn:
+        row = await outreach.optout(conn, body.token)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "수신 거부 링크가 잘못되었습니다")
+    return row
 
 
 @router.get("/alerts/announcements/{ann_id}")

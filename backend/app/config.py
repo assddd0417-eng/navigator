@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     # LLM(anthropic·openai)은 외부 API 로 수요·카드 정보와 근거 인용문을 보내므로 명시적으로 켤 때만 쓴다.
     # LLM 실패·근거 검증 탈락 시에는 추천별로 템플릿 문장을 쓴다
     rationale_generator: str = "template"
+    # 공고 지원 조건 뽑기: "auto"(기본) = LLM 자격증명이 있으면 LLM, 없으면 규칙 / "llm" / "rules"
+    # 공개 공고문 글자만 보낸다 (기업 정보는 보내지 않음)
+    requirement_extractor: str = "auto"
     llm_provider: str = "anthropic"   # anthropic | openai
     llm_model: str = ""               # 비우면 제공자 기본값 (DEFAULT_LLM_MODELS)
     llm_effort: str = "medium"        # low | medium | high | xhigh | max (비우면 보내지 않음)
@@ -61,7 +64,20 @@ class Settings(BaseSettings):
     navigator_rate_limit_per_minute: int = 60  # 공개 API, IP당
     navigator_dev_expose_link: bool = False    # 응답에 관리 링크 포함 (로컬 전용)
     navigator_match_candidate_k: int = 50
-    mailer: str = "mock"
+    navigator_ranking: str = "vector"   # vector = 판정 후 벡터 유사도 순 (A안) / weighted = 이전 가중합
+    navigator_past_years: int = 2          # 참여할 수 있었던 사업: 마감 후 몇 년까지 볼지
+    # 관련도 높음·보통 경계 (총점). 임베더마다 점수 폭이 달라 따로 둔다. 비우면 아래 기본값
+    navigator_fit_high: float | None = None
+    navigator_fit_mid: float | None = None
+    mailer: str = "mock"                   # mock = 보내지 않고 OUTBOX 에만 / smtp = 실제 발송
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""                    # 비우면 smtp_user
+    smtp_from_name: str = "Navigator"
+    smtp_security: str = "starttls"        # starttls (587) | ssl (465) | none
+    smtp_timeout_s: float = 15
 
     # 외부 수집. SOURCE_<CODE>=mock|live, 키는 live 에서만 필요
     source_nts_biz: str = "mock"

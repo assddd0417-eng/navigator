@@ -9,8 +9,8 @@ import { Deadline, FitBadge, FIT_LEVELS, fmtDay, VerdictBadge } from './componen
 
 const CHANNEL_LABELS: Record<AlertChannel, string> = { SCREEN: '화면', EMAIL: '이메일' }
 // 관련도 조건. 값은 components 의 FIT_LEVELS 경계와 같다
-const MIN_FIT: [number, string][] = [[0, '전체'], [FIT_LEVELS[1].min, '보통 이상'], [FIT_LEVELS[0].min, '높음만']]
-const minFitLabel = (v: number) => [...MIN_FIT].reverse().find(([m]) => v >= m)?.[1] ?? '전체'
+const minFit = (): [number, string][] => [[0, '전체'], [FIT_LEVELS[1].min, '보통 이상'], [FIT_LEVELS[0].min, '높음만']]
+const minFitLabel = (v: number) => [...minFit()].reverse().find(([m]) => v >= m)?.[1] ?? '전체'
 
 function subState(s: Subscription): { label: string; tone: string } {
   if (s.unsubscribed_at) return { label: '수신 거부', tone: 'bad' }
@@ -197,8 +197,8 @@ function SubForm({ initial, withEmail = false, busy, onSave, onCancel }: {
           <input value={keywords} onChange={(e) => setKeywords(e.target.value)} placeholder="예: 데이터링크, 영상" />
         </label>
         <label>관련도
-          <select value={MIN_FIT.find(([m]) => m === minScore) ? minScore : MIN_FIT[0][0]} onChange={(e) => setMinScore(Number(e.target.value))}>
-            {MIN_FIT.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          <select value={minFit().find(([m]) => m === minScore) ? minScore : minFit()[0][0]} onChange={(e) => setMinScore(Number(e.target.value))}>
+            {minFit().map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </label>
       </div>

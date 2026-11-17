@@ -7,10 +7,10 @@
 **기업 담당자** (로그인 없음)
 
 1. `/navigator` 에서 사업자번호 조회 → 공개 정보로 판정한 공고 목록
-2. 등록 이메일로 링크 받기 → `/navigator/manage`
+2. '회사 정보 입력·수정' → 등록 이메일로 온 확인 코드 6자리 → `/navigator/manage`
 3. 지원 가능 공고 탭: 지원 가능 / 확인 필요 / 지원 어려움(접힘). 확인 필요 공고는 카드 안에서 바로 답하고 다시 판정
 4. 회사 정보 탭: 비어 있는 항목을 채우면 저장과 동시에 다시 판정
-5. 알림 탭: 등록 이메일로 알림 받기 (버튼 하나), 관련도·분야 조건
+5. 알림 탭: 등록 이메일은 등록 때부터 받는 중. 끄기·분야 조건, 다른 수신자 추가
 
 **기관 담당자** (로그인)
 
@@ -26,10 +26,10 @@
 | ELIGIBLE | 지원 가능 | 적합 |
 | NEEDS_INFO | 확인 필요 | 확인 필요 |
 | INELIGIBLE | 지원 어려움 | 부적격 |
-| total_score | 관련도 높음(≥0.45) / 보통(≥0.25) / 낮음 | 관련도 0~100 |
+| total_score | 관련도 높음 / 보통 / 낮음 (경계는 아래) | 관련도 0~100 |
 | origin SELF / EXTERNAL / INTERNAL | 직접 입력 / 공공데이터 확인 / 기관 보유 자료 | 직접 입력 / 확인됨 |
 
-알림 조건의 관련도(`min_score`)도 같은 경계(0.25, 0.45)를 쓴다. 경계는 `frontend/src/pages/navigator/components.tsx` 의 `FIT_LEVELS`.
+관련도 경계는 임베더마다 다르다: hash 높음 ≥0.45·보통 ≥0.25, bge-m3 높음 ≥0.60·보통 ≥0.53 (`services/navigator_embedding.py` `FIT_LEVELS`, `NAVIGATOR_FIT_HIGH`·`NAVIGATOR_FIT_MID` 로 덮어씀). 화면은 시작할 때 `GET /navigator/fit-levels` 로 받는다. 알림 조건의 관련도(`min_score`)도 같은 경계를 쓴다. 임베더를 바꾸면 기존 구독의 `min_score` 는 그대로라 다시 골라야 한다.
 
 ## 화면에서 뺀 것
 

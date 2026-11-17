@@ -81,6 +81,10 @@ export interface MatchRec {
   hidden_requirements?: number
 }
 
+export interface NextRound { id: number; title: string; receipt_state: string; receipt_start: string | null; receipt_end: string | null }
+export interface PastMatchRec extends MatchRec { next_round: NextRound | null; participated: boolean }
+export interface PastMatchRun extends Omit<MatchRun, 'recommendations'> { recommendations: PastMatchRec[]; closed_since: string }
+
 export interface MatchRun {
   run: { id: number; direction: string; announcement_id: number | null; organization_id: number | null;
     created_at: string; model: string; candidate_count: number; requested_via: string } | null
@@ -121,6 +125,7 @@ export interface Certification {
   issued_on: string | null
   expires_on: string | null
   is_expired: boolean
+  company_evidence_id: number | null
   origin: string
   is_verified: boolean
 }
@@ -131,6 +136,7 @@ export interface CreditRating {
   grade: string
   rated_on: string | null
   valid_until: string | null
+  company_evidence_id: number | null
   origin: string
   is_verified: boolean
 }
@@ -181,8 +187,39 @@ export interface FullProfile {
   certifications: Certification[]
   credit_ratings: CreditRating[]
   rnd_history: RndHistory[]
+  products: Product[]
+  technologies: Technology[]
+  support_history: SupportHistory[]
+  evidence: Evidence[]
   field_sources: { field_name: string; preferred_value: unknown; any_verified: boolean; differs: boolean }[]
+  radar: Radar
+  outreach_consent_at?: string | null
   access_link?: { expires_at: string }
+}
+
+export type RadarAxis = { code: string; label: string; note: string; value: number | null; average: number | null }
+export type Radar = { axes: RadarAxis[]; company_count: number }
+
+export type ProductCategory = 'WEAPON_SYSTEM' | 'COMPONENT' | 'MATERIAL' | 'SOFTWARE' | 'EQUIPMENT' | 'SERVICE' | 'OTHER'
+export const PRODUCT_CATEGORIES: Record<ProductCategory, string> = {
+  WEAPON_SYSTEM: '무기체계', COMPONENT: '부품·구성품', MATERIAL: '소재', SOFTWARE: '소프트웨어', EQUIPMENT: '장비', SERVICE: '서비스', OTHER: '기타',
+}
+export type SupportResult = 'APPLIED' | 'SELECTED' | 'COMPLETED' | 'SUCCESS' | 'FAILED'
+export const SUPPORT_RESULTS: Record<SupportResult, string> = {
+  APPLIED: '신청', SELECTED: '선정', COMPLETED: '수행 완료', SUCCESS: '성공 판정', FAILED: '탈락·실패',
+}
+export interface Product { id: number; name: string; category: ProductCategory; description: string | null; is_defense: boolean; customers: string | null; origin: string }
+export interface Technology { id: number; tech_name: string; description: string | null; trl: number | null; origin: string }
+export interface SupportHistory { id: number; program_name: string; agency: string | null; year: number | null; result: SupportResult; amount_krw: number | null; summary: string | null; origin: string }
+export interface Evidence {
+  id: number
+  file_name: string
+  parse_status: 'PARSED' | 'UNSUPPORTED' | 'FAILED'
+  parse_note: string | null
+  detected_kind: 'CERTIFICATION' | 'CREDIT_RATING' | 'UNKNOWN' | null
+  detected: Record<string, string>
+  created_at: string
+  text_excerpt?: string | null
 }
 
 export interface ProfileUpdate {
@@ -203,8 +240,11 @@ export interface ProfileUpdate {
   military_supply_krw?: number | null
   export_krw?: number | null
   export_year?: number | null
-  certifications?: { cert_type_code: string; cert_no?: string | null; issued_on?: string | null; expires_on?: string | null }[]
-  credit_ratings?: { agency: string; grade: string; rated_on?: string | null; valid_until?: string | null }[]
+  certifications?: { cert_type_code: string; cert_no?: string | null; issued_on?: string | null; expires_on?: string | null; company_evidence_id?: number | null }[]
+  credit_ratings?: { agency: string; grade: string; rated_on?: string | null; valid_until?: string | null; company_evidence_id?: number | null }[]
+  products?: { name: string; category: ProductCategory; description?: string | null; is_defense: boolean; customers?: string | null }[]
+  technologies?: { tech_name: string; description?: string | null; trl?: number | null }[]
+  support_history?: { program_name: string; agency?: string | null; year?: number | null; result: SupportResult; amount_krw?: number | null; summary?: string | null }[]
   rnd_history?: { title: string; project_no?: string | null; funding_agency?: string | null; start_date?: string | null;
     end_date?: string | null; role: 'LEAD' | 'PARTICIPANT'; summary?: string | null }[]
 }
@@ -225,6 +265,7 @@ export interface LinkSent {
 
 export interface RegisterResult extends LinkSent {
   organization_id: number
+  manage_token: string
   business_reg_no: string
   biz_verify_label: string
   business_status: string
@@ -246,15 +287,28 @@ const anon = { anonymous: true } as const
 const manage = (token: string) => ({ anonymous: true, headers: { 'X-Manage-Token': token } })
 const bizno = (v: string) => encodeURIComponent(v.replace(/[^0-9]/g, ''))
 
+export const getFitLevels = () =>
+  api<{ embedder: string; high: number; mid: number }>('/navigator/fit-levels', { ...anon, silent: true })
 export const getPublicCompany = (brn: string) =>
   api<PublicProfile>(`/navigator/companies/${bizno(brn)}`, { ...anon, silent: true })
 export const getPublicMatches = (brn: string) =>
   api<MatchRun>(`/navigator/companies/${bizno(brn)}/matches`, anon)
 export const requestAccessLink = (brn: string) =>
   api<LinkSent>(`/navigator/companies/${bizno(brn)}/access-link`, { ...anon, method: 'POST' })
-export const openCompany = (brn: string) =>
-  api<{ token: string; expires_at: string }>(`/navigator/companies/${bizno(brn)}/open`, { ...anon, method: 'POST' })
+export const sendLoginCode = (brn: string) =>
+  api<{ sent_to: string; expires_at: string; dev_code?: string }>(`/navigator/companies/${bizno(brn)}/login-code`,
+    { ...anon, method: 'POST', silent: true })
+export const loginWithCode = (brn: string, code: string) =>
+  api<{ token: string; expires_at: string }>(`/navigator/companies/${bizno(brn)}/login`,
+    { ...anon, method: 'POST', body: { code }, silent: true })
 export interface AutofillResult { source: string; label: string; ok: boolean; error: string | null; counts: Record<string, number> }
+export const uploadEvidence = (token: string, file: File) => {
+  const form = new FormData()
+  form.append('file', file)
+  return api<Evidence>('/navigator/manage/evidence', { ...manage(token), method: 'POST', body: form })
+}
+export const deleteEvidence = (token: string, id: number) =>
+  api<void>(`/navigator/manage/evidence/${id}`, { ...manage(token), method: 'DELETE' })
 export const autofillProfile = (token: string) =>
   api<{ results: AutofillResult[]; profile: FullProfile }>('/navigator/manage/autofill', { ...manage(token), method: 'POST' })
 export const registerCompany = (body: CompanyRegister) =>
@@ -266,6 +320,8 @@ export const updateMyProfile = (token: string, body: ProfileUpdate) =>
   api<FullProfile>('/navigator/manage/profile', { ...manage(token), method: 'PATCH', body })
 export const getMyMatches = (token: string, query: { include_closed?: boolean; refresh?: boolean } = {}) =>
   api<MatchRun>('/navigator/manage/matches', { ...manage(token), method: 'POST', query })
+export const getMyPastMatches = (token: string, query: { refresh?: boolean } = {}) =>
+  api<PastMatchRun>('/navigator/manage/past-matches', { ...manage(token), method: 'POST', query })
 export const getMyQuestions = (token: string) =>
   api<{ run_id: number; questions: Question[] }>('/navigator/manage/questions', manage(token))
 export const answerQuestions = (token: string, answers: { requirement_id: number; value: number | boolean }[]) =>
@@ -286,9 +342,13 @@ export interface AnnouncementRow {
   requirement_count: number
   mandatory_count: number
   tech_need_count: number
+  source_kind?: string
+  posted_on?: string | null
+  attachment_count?: number
+  requirements_confirmed_at?: string | null
 }
 
-export const listAnnouncements = (query: { receipt_state?: string; q?: string } = {}) =>
+export const listAnnouncements = (query: { receipt_state?: string; q?: string; review?: 'PENDING' | 'DONE' } = {}) =>
   api<AnnouncementRow[]>('/navigator/announcements', { query: { limit: 200, ...query } })
 export const latestAnnouncementRun = (annId: number) =>
   api<MatchRun>(`/navigator/matching/announcements/${annId}`)
@@ -341,7 +401,7 @@ export interface AlertItem {
 
 export interface AnnouncementAlerts {
   subscribed_companies: number
-  notifications: { id: number; company_name: string; verdict: Verdict; verdict_label: string; total_score: number;
+  notifications: { id: number; company_name: string; email: string; verdict: Verdict; verdict_label: string; total_score: number;
     status: 'PENDING' | 'SENT' | 'FAILED' | 'READ'; created_at: string; sent_at: string | null;
     read_at: string | null; channels: AlertChannel[] }[]
 }
@@ -367,6 +427,40 @@ export const confirmSubscription = (token: string) =>
 export const unsubscribeAlerts = (token: string) =>
   api<{ company_name: string; email: string }>('/navigator/subscriptions/unsubscribe',
     { ...anon, method: 'POST', body: { token }, silent: true })
+export const setOutreachConsent = (token: string, consent: boolean) =>
+  api<{ outreach_consent: boolean; outreach_consent_at: string | null }>('/navigator/manage/outreach-consent',
+    { ...manage(token), method: 'PUT', body: { consent } })
+export const outreachOptout = (token: string) =>
+  api<{ company_name: string; email: string }>('/navigator/outreach/optout', { ...anon, method: 'POST', body: { token }, silent: true })
+
+// 참여 권유 (담당자)
+export interface OutreachCompany {
+  recommendation_id: number
+  organization_id: number
+  company_name: string
+  verdict: Verdict
+  verdict_label: string
+  total_score: number
+  rank: number
+  consent: boolean
+  has_email: boolean
+  sendable: boolean
+  sent_status: 'PENDING' | 'SENT' | 'FAILED' | null
+  sent_at: string | null
+  sent_error: string | null
+}
+export interface OutreachCandidates { announcement_id: number; match_run_id: number | null; open: boolean; companies: OutreachCompany[] }
+export interface OutreachResult {
+  sent: number
+  failed: number
+  skipped: { organization_id: number; company_name: string | null; reason: string; reason_label: string }[]
+  candidates: OutreachCandidates
+}
+export const getOutreach = (annId: number) =>
+  api<OutreachCandidates>(`/navigator/matching/announcements/${annId}/outreach`)
+export const sendOutreach = (annId: number, organization_ids: number[], note: string) =>
+  api<OutreachResult>(`/navigator/matching/announcements/${annId}/outreach`, { method: 'POST', body: { organization_ids, note } })
+
 export const getAnnouncementAlerts = (annId: number) =>
   api<AnnouncementAlerts>(`/navigator/alerts/announcements/${annId}`)
 export const dispatchAnnouncementAlerts = (annId: number) =>
@@ -428,3 +522,58 @@ export const listFetchJobs = (source?: string) =>
   api<FetchJob[]>('/navigator/sources/jobs', { query: { source, limit: 50 } })
 export const runSource = (code: string, organizationId?: number) =>
   api<RunResult>(`/navigator/sources/${code}/run`, { method: 'POST', query: { organization_id: organizationId } })
+
+// 공고 등록·조건 확인
+export interface ReqDraft {
+  req_type_code: string
+  rule: Record<string, unknown>
+  is_mandatory: boolean
+  description: string
+  source_quote: string | null
+  quote_found?: boolean
+  origin?: 'MANUAL' | 'AI_EXTRACTED'
+}
+export interface TechDraft { tech_name: string; description?: string | null; is_core: boolean }
+export interface AnnFields {
+  receipt_start?: string | null
+  receipt_end?: string | null
+  support_amount_krw?: number | null
+  support_period_months?: number | null
+  target_desc?: string | null
+  summary?: string | null
+}
+export interface Extraction {
+  extractor: string
+  fields: AnnFields
+  requirements: ReqDraft[]
+  tech_needs: TechDraft[]
+  warnings: string[]
+}
+export interface AnnSource {
+  announcement_id: number
+  body_text: string | null
+  attachments: { id: number | null; file_name: string; file_ext: string | null; parse_status: string; parse_note: string | null; text_content: string | null; source_url: string | null }[]
+}
+export interface AnnDetail extends AnnouncementRow {
+  support_amount_krw: number | null
+  support_period_months: number | null
+  target_desc: string | null
+  summary: string | null
+  source_url: string | null
+  requirements: (ReqDraft & { id: number; req_type_name: string })[]
+  tech_needs: (TechDraft & { id: number })[]
+}
+export interface RequirementTypes {
+  types: { code: string; name_ko: string; rule_example: Record<string, unknown>; description: string | null }[]
+  certifications: { code: string; name_ko: string }[]
+}
+
+export const getAnnouncement = (id: number) => api<AnnDetail>(`/navigator/announcements/${id}`)
+export const getAnnouncementSource = (id: number) => api<AnnSource>(`/navigator/announcements/${id}/source`)
+export const extractRequirements = (id: number) =>
+  api<Extraction>(`/navigator/announcements/${id}/extract`, { method: 'POST' })
+export const getRequirementTypes = () => api<RequirementTypes>('/navigator/announcements/requirement-types')
+export const saveReview = (id: number, body: { fields: AnnFields; requirements: ReqDraft[]; tech_needs: TechDraft[]; confirm: boolean; publish: boolean }) =>
+  api<void>(`/navigator/announcements/${id}/review`, { method: 'PUT', body })
+export const createAnnouncementFromText = (body: { title: string; agency_name?: string; announcement_no?: string; body_text: string; source_url?: string; posted_on?: string }) =>
+  api<{ id: number }>('/navigator/announcements/text', { method: 'POST', body })

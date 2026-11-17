@@ -282,6 +282,7 @@ blockquote { margin: 4px 0 0; padding: 6px 10px; border-left: 3px solid var(--pr
 .manage-box { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 12px; border-radius: 8px; background: var(--bg); flex-wrap: wrap; }
 .manage-box > div { flex: 1 1 260px; }
 .notice-ok { background: var(--ok-soft); color: var(--ok); margin-top: 10px; }
+.notice-warn { background: var(--warn-soft); color: var(--warn); margin-top: 10px; }
 .notice + .match-list, .notice { margin-bottom: 10px; }
 .link-btn { font: inherit; border: none; background: none; padding: 0; color: var(--primary); cursor: pointer; text-align: left; }
 .link-btn:hover { text-decoration: underline; }
@@ -486,3 +487,36 @@ label.check input { width: auto; }
 .pl-step { color: var(--muted); }
 .pl-step-on { color: var(--ok); font-weight: 600; }
 .pl-arrow { margin: 0 6px 0 2px; color: var(--muted); font-weight: 400; }
+
+/* 공고 조건 확인 */
+.source-text { white-space: pre-wrap; word-break: break-word; font-family: inherit; font-size: 12.5px; line-height: 1.6; background: var(--bg); border-radius: 8px; padding: 10px 12px; max-height: 560px; overflow-y: auto; margin: 6px 0 0; }
+.req-edit { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+.req-edit .form-row > select { flex: 1 1 140px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* 기업 입력: 증빙 */
+.file-btn { cursor: pointer; display: inline-block; }
+.evidence-tag { align-self: flex-end; margin-bottom: 8px; }
+.form-row > label.inline-check { flex: 0 0 auto; flex-direction: row; align-items: center; gap: 6px; align-self: flex-end; padding-bottom: 8px; }
+
+/* 역량 레이더 */
+.radar { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+.radar svg { width: 260px; height: 260px; flex-shrink: 0; overflow: visible; }
+.radar-compact svg { width: 200px; height: 200px; }
+.radar-grid { fill: none; stroke: var(--border); stroke-width: 1; }
+.radar-avg { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.radar-mine { fill: var(--primary); fill-opacity: .18; stroke: var(--primary); stroke-width: 2; }
+.radar-dot { fill: var(--primary); }
+.radar-label { font-size: 12px; fill: var(--text); }
+.radar-side { flex: 0 1 300px; min-width: 200px; display: flex; flex-direction: column; gap: 8px; }
+.radar-legend { display: flex; gap: 14px; flex-wrap: wrap; }
+.radar-legend .sw { display: inline-block; width: 14px; height: 0; vertical-align: middle; margin-right: 5px; border-top: 2px solid var(--primary); }
+.radar-legend .sw-avg { border-top: 2px dashed var(--muted); }
+.radar-table { border-collapse: collapse; }
+.radar-table th { text-align: left; font-weight: 500; padding: 2px 12px 2px 0; }
+.radar-table td { padding: 2px 0 2px 12px; }
+.radar-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* 참여할 수 있었던 사업 */
+.past-tag { margin-left: 6px; }
+.past-next { display: block; margin-top: 4px; }

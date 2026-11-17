@@ -3,13 +3,16 @@ import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from
 import { Link } from 'react-router-dom'
 import { ApiError } from '../../api/client'
 import {
-  answerQuestions, autofillProfile, CERT_TYPES, getMyAlerts, getMyMatches, getMyProfile, getMyQuestions, REGIONS, SIZE_LABELS, updateMyProfile,
-  type FullProfile, type MatchRun, type ProfileUpdate, type Question,
+  answerQuestions, autofillProfile, CERT_TYPES, deleteEvidence, PRODUCT_CATEGORIES, SUPPORT_RESULTS, uploadEvidence, getMyAlerts, getMyMatches, getMyProfile, getMyQuestions, REGIONS, SIZE_LABELS, updateMyProfile,
+  type Evidence, type FullProfile, type MatchRun, type ProductCategory, type ProfileUpdate, type Question, type SupportResult,
 } from '../../api/navigator'
 import { useToast } from '../../components/Toast'
 import { Card, Empty, useAction } from '../../components/ui'
 import { AlertsPanel } from './AlertsPanel'
+import { OutreachConsent } from './OutreachConsent'
+import { PastPanel } from './PastPanel'
 import { AGENCY_LABELS, bizStatus, CompanyShell, Deadline, fmtKrw, GroupedMatches, MatchCard } from './components'
+import { RadarChart } from '../../components/RadarChart'
 
 const TOKEN_KEY = 'navigator.manageToken'
 
@@ -24,7 +27,7 @@ function readToken(): string | null {
   try { return sessionStorage.getItem(TOKEN_KEY) } catch { return null }
 }
 
-type Tab = 'matches' | 'alerts' | 'profile'
+type Tab = 'matches' | 'past' | 'alerts' | 'profile'
 
 export function CompanyManagePage() {
   const [token] = useState(readToken)
@@ -33,15 +36,12 @@ export function CompanyManagePage() {
   const [invalid, setInvalid] = useState<string | null>(token ? null : '회사가 선택되지 않았습니다.')
   const [matches, setMatches] = useState<MatchRun | null>(null)
   const [questions, setQuestions] = useState<Question[] | null>(null)
-  const [includeClosed, setIncludeClosed] = useState(false)
   const [unread, setUnread] = useState(0)
   const [profileKey, setProfileKey] = useState(0)
   const { run } = useAction()
   const toast = useToast()
 
-  const loadMatches = useCallback((closed: boolean) => run(async () => {
-    setMatches(await getMyMatches(token!, { include_closed: closed }))
-  }), [run, token])
+  const loadMatches = useCallback(() => run(async () => setMatches(await getMyMatches(token!))), [run, token])
   const loadQuestions = useCallback(() => run(async () => setQuestions((await getMyQuestions(token!)).questions)),
     [run, token])
 
@@ -49,7 +49,7 @@ export function CompanyManagePage() {
     if (!token) return
     getMyProfile(token)
       .then((p) => {
-        setProfile(p); void loadMatches(false); void loadQuestions()
+        setProfile(p); void loadMatches(); void loadQuestions()
         getMyAlerts(token).then((a) => setUnread(a.unread)).catch(() => undefined)
       })
       .catch((e) => setInvalid(e instanceof ApiError ? e.detail : '회사 정보를 불러오지 못했습니다.'))
@@ -61,8 +61,7 @@ export function CompanyManagePage() {
     const gained = (res.summary.ELIGIBLE ?? 0) - before
     toast.show({ kind: 'success', title: '답변을 반영했습니다',
       message: gained > 0 ? `지원 가능 공고가 ${gained}건 늘었습니다.` : `지원 가능 ${res.summary.ELIGIBLE}건 · 확인 필요 ${res.summary.NEEDS_INFO}건` })
-    if (includeClosed) void loadMatches(true)
-    else setMatches(res)
+    setMatches(res)
     void loadQuestions()
   }
 
@@ -100,6 +99,9 @@ export function CompanyManagePage() {
         <button role="tab" className={tab === 'matches' ? 'on' : ''} onClick={() => setTab('matches')}>
           지원 가능 공고 {matches && <span className="tab-count tab-count-ok">{eligible}</span>}
         </button>
+        <button role="tab" className={tab === 'past' ? 'on' : ''} onClick={() => setTab('past')}>
+          참여할 수 있었던 사업
+        </button>
         <button role="tab" className={tab === 'alerts' ? 'on' : ''} onClick={() => setTab('alerts')}>
           알림 {unread > 0 && <span className="tab-count">{unread}</span>}
         </button>
@@ -110,11 +112,7 @@ export function CompanyManagePage() {
 
       {tab === 'matches' && (
         <Card title="지원 가능 공고" actions={
-          <label className="check small">
-            <input type="checkbox" checked={includeClosed}
-              onChange={(e) => { setIncludeClosed(e.target.checked); void loadMatches(e.target.checked) }} />
-            마감된 공고도 보기
-          </label>
+          <button className="link-btn small" onClick={() => setTab('past')}>마감된 공고는 ‘참여할 수 있었던 사업’에서</button>
         }>
           {missing.length > 0 && (
             <div className="notice small">
@@ -136,13 +134,20 @@ export function CompanyManagePage() {
         </Card>
       )}
 
-      {tab === 'alerts' && <AlertsPanel token={token!} onUnread={setUnread} />}
+      {tab === 'past' && (
+        <PastPanel key={profileKey} token={token!} onOpenCurrent={() => setTab('matches')} onEditProfile={() => setTab('profile')} />
+      )}
+
+      {tab === 'alerts' && <>
+        <OutreachConsent token={token!} profile={profile} onChange={(at) => setProfile({ ...profile, outreach_consent_at: at })} />
+        <AlertsPanel token={token!} onUnread={setUnread} />
+      </>}
 
       {tab === 'profile' && (
         <ProfilePanel key={profileKey} token={token!} profile={profile} missing={missing} onSaved={(p) => {
           setProfile(p)
           setProfileKey((k) => k + 1)
-          void loadMatches(includeClosed)
+          void loadMatches()
           void loadQuestions()
         }} />
       )}
@@ -159,11 +164,15 @@ function missingFields(p: FullProfile): string[] {
   if (p.annual_revenue_krw == null) out.push('매출')
   if (!p.region) out.push('소재지')
   if (p.rnd_history.length === 0) out.push('R&D 이력')
+  if (p.products.length === 0 && p.technologies.length === 0) out.push('제품·보유 기술')
   return out
 }
 
-type CertRow = { cert_type_code: string; cert_no: string; issued_on: string; expires_on: string }
-type CreditRow = { agency: string; grade: string; rated_on: string; valid_until: string }
+type CertRow = { cert_type_code: string; cert_no: string; issued_on: string; expires_on: string; company_evidence_id: number | null }
+type CreditRow = { agency: string; grade: string; rated_on: string; valid_until: string; company_evidence_id: number | null }
+type ProductRow = { name: string; category: ProductCategory; description: string; is_defense: boolean; customers: string }
+type TechRow = { tech_name: string; description: string; trl: string }
+type SupportRow = { program_name: string; agency: string; year: string; result: SupportResult; amount_krw: string }
 type RndRow = { title: string; funding_agency: string; start_date: string; end_date: string; role: 'LEAD' | 'PARTICIPANT' }
 
 const ORIGIN_LABELS: Record<string, string> = { SELF: '직접 입력', EXTERNAL: '공공데이터 확인', INTERNAL: '기관 보유 자료', STAFF: '담당자 입력' }
@@ -193,8 +202,11 @@ function ProfilePanel({ token, profile, missing, onSaved }: {
     onSaved(res.profile)
   })
   return (
-    <CompanyInfoForm profile={profile} missing={missing} submitLabel="저장하고 다시 판정"
-      top={
+    <CompanyInfoForm profile={profile} missing={missing} token={token} submitLabel="저장하고 다시 판정"
+      top={<>
+        <Card title="회사 역량 한눈에" actions={<span className="small muted">저장하면 다시 계산합니다</span>}>
+          <RadarChart radar={profile.radar} />
+        </Card>
         <div className="manage-box">
           <div>
             <strong>공공데이터로 자동 채우기</strong>
@@ -202,7 +214,7 @@ function ProfilePanel({ token, profile, missing, onSaved }: {
           </div>
           <button type="button" className="btn btn-primary" disabled={busy} onClick={autofill}>{busy ? '가져오는 중…' : '자동 채우기'}</button>
         </div>
-      }
+      </>}
       onSubmit={async (body) => {
         const p = await updateMyProfile(token, body)
         toast.show({ kind: 'success', title: '저장했습니다', message: '바뀐 정보로 공고를 다시 판정했습니다.' })
@@ -215,9 +227,11 @@ function ProfilePanel({ token, profile, missing, onSaved }: {
 export type Identity = { business_reg_no: string; representative_name: string; opened_on: string; email: string }
 
 /** 회사 정보 입력 양식. 등록(profile 없음, identity 있음)과 수정에 같이 쓴다. */
-export function CompanyInfoForm({ profile, missing = [], identity, setIdentity, top, submitLabel, onSubmit }: {
+export function CompanyInfoForm({ profile, missing = [], token, identity, setIdentity, top, submitLabel, onSubmit }: {
   profile: FullProfile | null
   missing?: string[]
+  /** 관리 링크 (있으면 증빙 올리기를 보여 준다) */
+  token?: string
   identity?: Identity
   setIdentity?: (i: Identity) => void
   top?: ReactNode
@@ -234,9 +248,18 @@ export function CompanyInfoForm({ profile, missing = [], identity, setIdentity, 
     export_krw: s(profile?.export_krw), export_year: s(profile?.export_year),
   })
   const [certs, setCerts] = useState<CertRow[]>((profile?.certifications ?? []).filter((c) => c.origin === 'SELF').map((c) => ({
-    cert_type_code: c.cert_type_code, cert_no: s(c.cert_no), issued_on: s(c.issued_on), expires_on: s(c.expires_on) })))
+    cert_type_code: c.cert_type_code, cert_no: s(c.cert_no), issued_on: s(c.issued_on), expires_on: s(c.expires_on),
+    company_evidence_id: c.company_evidence_id })))
   const [credits, setCredits] = useState<CreditRow[]>((profile?.credit_ratings ?? []).filter((c) => c.origin === 'SELF').map((c) => ({
-    agency: c.agency, grade: c.grade, rated_on: s(c.rated_on), valid_until: s(c.valid_until) })))
+    agency: c.agency, grade: c.grade, rated_on: s(c.rated_on), valid_until: s(c.valid_until), company_evidence_id: c.company_evidence_id })))
+  const self = <T extends { origin: string }>(rows: T[] | undefined) => (rows ?? []).filter((r) => r.origin === 'SELF')
+  const [products, setProducts] = useState<ProductRow[]>(self(profile?.products).map((p) => ({
+    name: p.name, category: p.category, description: s(p.description), is_defense: p.is_defense, customers: s(p.customers) })))
+  const [techs, setTechs] = useState<TechRow[]>(self(profile?.technologies).map((t) => ({
+    tech_name: t.tech_name, description: s(t.description), trl: s(t.trl) })))
+  const [supports, setSupports] = useState<SupportRow[]>(self(profile?.support_history).map((h) => ({
+    program_name: h.program_name, agency: s(h.agency), year: s(h.year), result: h.result, amount_krw: s(h.amount_krw) })))
+  const [evidence, setEvidence] = useState<Evidence[]>(profile?.evidence ?? [])
   const [rnds, setRnds] = useState<RndRow[]>((profile?.rnd_history ?? []).filter((r) => r.origin === 'SELF').map((r) => ({
     title: r.title, funding_agency: s(r.funding_agency), start_date: s(r.start_date), end_date: s(r.end_date), role: r.role })))
   const { busy, run } = useAction()
@@ -255,9 +278,16 @@ export function CompanyInfoForm({ profile, missing = [], identity, setIdentity, 
       defense_goods: tri(f.defense_goods), military_supply_krw: num(f.military_supply_krw),
       export_krw: num(f.export_krw), export_year: num(f.export_year),
       certifications: certs.filter((c) => c.cert_type_code).map((c) => ({ cert_type_code: c.cert_type_code,
-        cert_no: orNull(c.cert_no), issued_on: orNull(c.issued_on), expires_on: orNull(c.expires_on) })),
+        cert_no: orNull(c.cert_no), issued_on: orNull(c.issued_on), expires_on: orNull(c.expires_on),
+        company_evidence_id: c.company_evidence_id })),
       credit_ratings: credits.filter((c) => c.grade.trim()).map((c) => ({ agency: c.agency, grade: c.grade.trim().toUpperCase(),
-        rated_on: orNull(c.rated_on), valid_until: orNull(c.valid_until) })),
+        rated_on: orNull(c.rated_on), valid_until: orNull(c.valid_until), company_evidence_id: c.company_evidence_id })),
+      products: products.filter((p) => p.name.trim()).map((p) => ({ name: p.name.trim(), category: p.category,
+        description: orNull(p.description), is_defense: p.is_defense, customers: orNull(p.customers) })),
+      technologies: techs.filter((t) => t.tech_name.trim()).map((t) => ({ tech_name: t.tech_name.trim(),
+        description: orNull(t.description), trl: num(t.trl) })),
+      support_history: supports.filter((h) => h.program_name.trim()).map((h) => ({ program_name: h.program_name.trim(),
+        agency: orNull(h.agency), year: num(h.year), result: h.result, amount_krw: num(h.amount_krw) })),
       rnd_history: rnds.filter((r) => r.title.trim()).map((r) => ({ title: r.title.trim(), funding_agency: orNull(r.funding_agency),
         start_date: orNull(r.start_date), end_date: orNull(r.end_date), role: r.role })),
     }
@@ -265,6 +295,36 @@ export function CompanyInfoForm({ profile, missing = [], identity, setIdentity, 
   }
 
   const readonly = (origin: string) => origin !== 'SELF'
+  const [evMsg, setEvMsg] = useState<string | null>(null)
+  const onEvidence = (file: File | undefined) => {
+    if (!file || !token) return
+    void run(async () => {
+      const e = await uploadEvidence(token, file)
+      setEvidence((xs) => [e, ...xs.filter((x) => x.id !== e.id)])
+      const d = e.detected ?? {}
+      if (e.detected_kind === 'CERTIFICATION') {
+        const row = { cert_type_code: d.cert_type_code, cert_no: d.cert_no ?? '', issued_on: d.issued_on ?? '',
+          expires_on: d.expires_on ?? '', company_evidence_id: e.id }
+        // 같은 종류를 이미 적어 두었으면 그 줄을 바꾼다 (갱신한 확인서)
+        setCerts((rs) => rs.some((r) => r.cert_type_code === row.cert_type_code)
+          ? rs.map((r) => (r.cert_type_code === row.cert_type_code ? row : r)) : [...rs, row])
+        setEvMsg(`${CERT_TYPES[d.cert_type_code] ?? '인증'}을(를) 아래 칸에 채웠습니다. 값을 확인하고 저장하세요.`)
+      } else if (e.detected_kind === 'CREDIT_RATING') {
+        setCredits((rs) => [...rs, { agency: d.agency ?? 'OTHER', grade: d.grade ?? '', rated_on: d.rated_on ?? '',
+          valid_until: d.valid_until ?? '', company_evidence_id: e.id }])
+        setEvMsg('신용등급을 아래 칸에 채웠습니다. 값을 확인하고 저장하세요.')
+      } else {
+        setEvMsg(e.parse_note ?? '어떤 증빙인지 알아보지 못했습니다. 값을 직접 입력하세요.')
+      }
+    })
+  }
+  const removeEvidence = (id: number) => token && void run(async () => {
+    await deleteEvidence(token, id)
+    setEvidence((xs) => xs.filter((x) => x.id !== id))
+    setCerts((rs) => rs.map((r) => (r.company_evidence_id === id ? { ...r, company_evidence_id: null } : r)))
+    setCredits((rs) => rs.map((r) => (r.company_evidence_id === id ? { ...r, company_evidence_id: null } : r)))
+  })
+  const evName = (id: number | null) => (id == null ? null : evidence.find((e) => e.id === id)?.file_name ?? '증빙')
   return (
     <form className="stack" onSubmit={save}>
       {top}
@@ -354,10 +414,89 @@ export function CompanyInfoForm({ profile, missing = [], identity, setIdentity, 
         </div>
       </Card>
 
+      <Card title="제품" actions={<span className="small muted">공고의 요구 기술과 비교해 관련도를 계산합니다</span>}>
+        <ReadonlyRows rows={(profile?.products ?? []).filter((p) => readonly(p.origin)).map((p) => [p.name, ORIGIN_LABELS[p.origin] ?? p.origin])} />
+        <EditRows rows={products} setRows={setProducts}
+          empty={{ name: '', category: 'COMPONENT' as ProductCategory, description: '', is_defense: false, customers: '' }}
+          addLabel="제품 추가" render={(r, upd) => (
+            <>
+              <label className="grow">제품명<input value={r.name} placeholder="예: Ku 밴드 저잡음 증폭기" onChange={(e) => upd({ name: e.target.value })} /></label>
+              <label>분류
+                <select value={r.category} onChange={(e) => upd({ category: e.target.value as ProductCategory })}>
+                  {Object.entries(PRODUCT_CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </label>
+              <label className="grow">설명<input value={r.description} placeholder="쓰임새·성능" onChange={(e) => upd({ description: e.target.value })} /></label>
+              <label>주요 납품처<input value={r.customers} placeholder="예: 육군, 체계업체" onChange={(e) => upd({ customers: e.target.value })} /></label>
+              <label className="check inline-check"><input type="checkbox" checked={r.is_defense} onChange={(e) => upd({ is_defense: e.target.checked })} />군 납품·국방용</label>
+            </>
+          )} />
+      </Card>
+
+      <Card title="보유 기술">
+        <ReadonlyRows rows={(profile?.technologies ?? []).filter((t) => readonly(t.origin)).map((t) => [t.tech_name, ORIGIN_LABELS[t.origin] ?? t.origin])} />
+        <EditRows rows={techs} setRows={setTechs} empty={{ tech_name: '', description: '', trl: '' }}
+          addLabel="기술 추가" render={(r, upd) => (
+            <>
+              <label className="grow">기술명<input value={r.tech_name} placeholder="예: GaN 고출력 증폭 설계" onChange={(e) => upd({ tech_name: e.target.value })} /></label>
+              <label className="grow">설명<input value={r.description} onChange={(e) => upd({ description: e.target.value })} /></label>
+              <label title="1 기초 연구 ~ 9 실전 운용">기술성숙도(TRL)
+                <select value={r.trl} onChange={(e) => upd({ trl: e.target.value })}>
+                  <option value="">모름</option>
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
+            </>
+          )} />
+      </Card>
+
+      <Card title="지원사업 참여 이력" actions={<span className="small muted">R&amp;D 과제가 아닌 컨설팅·수출·시험평가 같은 지원사업</span>}>
+        <ReadonlyRows rows={(profile?.support_history ?? []).filter((h) => readonly(h.origin)).map((h) =>
+          [`${h.program_name}${h.year ? ` (${h.year})` : ''} · ${SUPPORT_RESULTS[h.result]}`, ORIGIN_LABELS[h.origin] ?? h.origin])} />
+        <EditRows rows={supports} setRows={setSupports}
+          empty={{ program_name: '', agency: '', year: '', result: 'SELECTED' as SupportResult, amount_krw: '' }}
+          addLabel="이력 추가" render={(r, upd) => (
+            <>
+              <label className="grow">사업명<input value={r.program_name} placeholder="예: 방산 중소기업 컨설팅 지원사업" onChange={(e) => upd({ program_name: e.target.value })} /></label>
+              <label>주관 기관<input value={r.agency} placeholder="예: 국방기술진흥연구소" onChange={(e) => upd({ agency: e.target.value })} /></label>
+              <label>연도<input type="number" min={1990} max={2100} value={r.year} onChange={(e) => upd({ year: e.target.value })} /></label>
+              <label>결과
+                <select value={r.result} onChange={(e) => upd({ result: e.target.value as SupportResult })}>
+                  {Object.entries(SUPPORT_RESULTS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </label>
+              <label>지원금 (원)<input type="number" min={0} value={r.amount_krw} onChange={(e) => upd({ amount_krw: e.target.value })} /></label>
+            </>
+          )} />
+      </Card>
+
+      {token && (
+        <Card title="증빙으로 채우기" actions={<span className="small muted">회사와 기관 담당자만 볼 수 있습니다</span>}>
+          <p className="small muted">벤처기업확인서, 기업부설연구소 인정서, ISO 인증서, 신용평가 등급확인서 PDF·한글 파일을 올리면 종류·번호·날짜·등급을 읽어 아래 칸에 채웁니다. 사진·스캔본은 읽지 못하니 직접 입력하세요. 원본 파일은 보관하지 않습니다.</p>
+          <label className="btn btn-sm file-btn">
+            {busy ? '읽는 중…' : '파일 올리기'}
+            <input type="file" accept=".pdf,.hwp,.hwpx,.png,.jpg,.jpeg" hidden disabled={busy}
+              onChange={(e) => { onEvidence(e.target.files?.[0]); e.target.value = '' }} />
+          </label>
+          {evMsg && <div className="notice small" style={{ marginTop: 8 }}>{evMsg}</div>}
+          {evidence.length > 0 && (
+            <ul className="plain-list small" style={{ marginTop: 8 }}>
+              {evidence.map((e) => (
+                <li key={e.id}>
+                  {e.file_name}{' '}
+                  {e.parse_status === 'PARSED' ? <span className="badge badge-ok">글자 읽음</span> : <span className="badge badge-muted">{e.parse_note ?? '읽지 않음'}</span>}{' '}
+                  <button type="button" className="link-btn small" onClick={() => removeEvidence(e.id)}>지우기</button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      )}
+
       <Card title="인증·지정">
         <ReadonlyRows rows={(profile?.certifications ?? []).filter((c) => readonly(c.origin)).map((c) =>
           [`${c.cert_type_name}${c.expires_on ? ` (만료 ${c.expires_on})` : ''}`, ORIGIN_LABELS[c.origin] ?? c.origin])} />
-        <EditRows rows={certs} setRows={setCerts} empty={{ cert_type_code: 'VENTURE', cert_no: '', issued_on: '', expires_on: '' }}
+        <EditRows rows={certs} setRows={setCerts} empty={{ cert_type_code: 'VENTURE', cert_no: '', issued_on: '', expires_on: '', company_evidence_id: null }}
           addLabel="인증 추가" render={(r, upd) => (
             <>
               <label>종류
@@ -368,6 +507,7 @@ export function CompanyInfoForm({ profile, missing = [], identity, setIdentity, 
               <label>번호<input value={r.cert_no} onChange={(e) => upd({ cert_no: e.target.value })} /></label>
               <label>발급일<input type="date" value={r.issued_on} onChange={(e) => upd({ issued_on: e.target.value })} /></label>
               <label>만료일<input type="date" value={r.expires_on} onChange={(e) => upd({ expires_on: e.target.value })} /></label>
+              {r.company_evidence_id != null && <span className="badge badge-info evidence-tag" title="올린 증빙에서 읽은 값">증빙: {evName(r.company_evidence_id)}</span>}
             </>
           )} />
       </Card>
@@ -375,7 +515,7 @@ export function CompanyInfoForm({ profile, missing = [], identity, setIdentity, 
       <Card title="신용등급" actions={<span className="small muted">회사와 기관 담당자만 볼 수 있습니다</span>}>
         <ReadonlyRows rows={(profile?.credit_ratings ?? []).filter((c) => readonly(c.origin)).map((c) =>
           [`${AGENCY_LABELS[c.agency] ?? c.agency} ${c.grade}${c.rated_on ? ` (${c.rated_on} 평가)` : ''}`, ORIGIN_LABELS[c.origin] ?? c.origin])} />
-        <EditRows rows={credits} setRows={setCredits} empty={{ agency: 'NICE', grade: '', rated_on: '', valid_until: '' }}
+        <EditRows rows={credits} setRows={setCredits} empty={{ agency: 'NICE', grade: '', rated_on: '', valid_until: '', company_evidence_id: null }}
           addLabel="등급 추가" render={(r, upd) => (
             <>
               <label>평가기관
@@ -386,6 +526,7 @@ export function CompanyInfoForm({ profile, missing = [], identity, setIdentity, 
               <label>등급<input value={r.grade} placeholder="예: BBB-" onChange={(e) => upd({ grade: e.target.value })} /></label>
               <label>평가일<input type="date" value={r.rated_on} onChange={(e) => upd({ rated_on: e.target.value })} /></label>
               <label>유효기간<input type="date" value={r.valid_until} onChange={(e) => upd({ valid_until: e.target.value })} /></label>
+              {r.company_evidence_id != null && <span className="badge badge-info evidence-tag" title="올린 증빙에서 읽은 값">증빙: {evName(r.company_evidence_id)}</span>}
             </>
           )} />
       </Card>

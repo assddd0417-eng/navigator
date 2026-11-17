@@ -91,3 +91,21 @@ async def client(database):
 
 def as_user(user_id: int) -> dict[str, str]:
     return {"X-User-Id": str(user_id)}
+
+
+async def manage_token(client, brn: str) -> str:
+    """확인 코드를 받아(메일 mock) 회사 정보 화면 관리 토큰을 얻는다."""
+    import re
+
+    from app.services import mailer
+    from app.services.ratelimit import limiter
+
+    limiter.reset()
+    with psycopg.connect(TEST_URL, autocommit=True) as conn:   # 1분에 한 번 제한을 테스트에서는 건너뜀
+        conn.execute("UPDATE ax.company_login_code SET created_at = created_at - interval '2 minutes'")
+    r = await client.post(f"/navigator/companies/{brn}/login-code")
+    assert r.status_code == 202, r.text
+    code = re.search(r"확인 코드 (\d{6})", mailer.OUTBOX[-1].subject).group(1)
+    r = await client.post(f"/navigator/companies/{brn}/login", json={"code": code})
+    assert r.status_code == 200, r.text
+    return r.json()["token"]

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from psycopg import AsyncConnection
 
+from app.config import get_settings
 from app.services.embedding import FacetText, _join, _sync, active_model_id
 
 
@@ -42,6 +43,11 @@ async def company_facets(conn: AsyncConnection, org_id: int) -> list[FacetText]:
     for t in await (await conn.execute(
             "SELECT id, tech_name, description FROM ax.company_technology WHERE organization_id = %s", (org_id,))).fetchall():
         facets.append(FacetText("TECH", _join(t["tech_name"], t["description"]), "company_technology", t["id"]))
+    for pr in await (await conn.execute(
+            "SELECT id, name, description, customers FROM ax.company_product WHERE organization_id = %s",
+            (org_id,))).fetchall():
+        facets.append(FacetText("TECH", _join(pr["name"], pr["description"], pr["customers"]),
+                                "company_product", pr["id"]))
     for pt in await (await conn.execute(
             "SELECT id, title, abstract FROM ax.company_patent WHERE organization_id = %s AND status <> 'LAPSED'",
             (org_id,))).fetchall():
@@ -91,3 +97,15 @@ async def ensure_embeddings(conn: AsyncConnection) -> dict[str, int]:
                                WHERE e.announcement_id = a.id AND e.model_id = %s)""", (model_id,))).fetchall()
     return {"companies": sum([await sync_company_embeddings(conn, r["id"]) for r in orgs]),
             "announcements": sum([await sync_announcement_embeddings(conn, r["id"]) for r in anns])}
+
+
+# 관련도 높음·보통 경계. 검증 데이터(docs/navigator_eval.md) 기준:
+#   hash   정답 기업 중앙값 .29, 나머지 최대 .22
+#   bge-m3 정답 기업 최소 .55·중앙값 .65, 나머지 중앙값 .45·상위 10% .53
+FIT_LEVELS = {"hash": (0.45, 0.25), "bge_m3": (0.60, 0.53)}
+
+
+def fit_levels() -> dict:
+    s = get_settings()
+    high, mid = FIT_LEVELS.get(s.embedder, FIT_LEVELS["hash"])
+    return {"embedder": s.embedder, "high": s.navigator_fit_high or high, "mid": s.navigator_fit_mid or mid}

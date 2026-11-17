@@ -227,7 +227,7 @@ async def test_public_matches_hide_credit(client):
         assert "business_reg_no" not in x and x["questions"] == []
         for c in x["checks"]:
             if c["req_type_code"] in ("MIN_CREDIT_GRADE", "REVENUE"):
-                assert c["result"] is None and c["detail"] == {} and c["result_label"] == "관리 링크로 확인"
+                assert c["result"] is None and c["detail"] == {} and c["result_label"] == "회사 정보에서 확인"
         assert not re.search(r"\b(A|B|C)+[+-]?\b", x["rationale"])
     assert (await client.get("/navigator/companies/9998999990/matches")).status_code in (404, 422)
 

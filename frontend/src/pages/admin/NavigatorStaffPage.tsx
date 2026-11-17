@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import {
-  dispatchAnnouncementAlerts, getAnnouncementAlerts, latestAnnouncementRun, listAnnouncements, runAnnouncementMatching, SIZE_LABELS, staffCompanyProfile,
-  type AnnouncementAlerts, type AnnouncementRow, type FullProfile, type MatchRun, type Verdict,
+  dispatchAnnouncementAlerts, getAnnouncementAlerts, getOutreach, latestAnnouncementRun, sendOutreach, listAnnouncements, PRODUCT_CATEGORIES, runAnnouncementMatching, SIZE_LABELS, staffCompanyProfile, SUPPORT_RESULTS,
+  type AnnouncementAlerts, type AnnouncementRow, type FullProfile, type MatchRun, type OutreachCandidates, type Verdict,
 } from '../../api/navigator'
 import { useAuth } from '../../auth/AuthContext'
 import { Card, Empty, fmtDate, PageHeader, useAction, useAsync } from '../../components/ui'
 import { AGENCY_LABELS, bizStatus, fmtBrn, fmtDay, fmtKrw, GroupedMatches, MatchCard, VerdictBadge, VerdictSummary } from '../navigator/components'
+import { RadarChart } from '../../components/RadarChart'
 
 const STATES: [string, string][] = [['', '전체'], ['OPEN', '접수중'], ['UPCOMING', '접수전'], ['CLOSED', '마감']]
 const STATE_TONES: Record<string, string> = { OPEN: 'ok', UPCOMING: 'info', CLOSED: 'muted' }
@@ -99,6 +100,8 @@ export function NavigatorStaffPage() {
             </Card>
           )}
 
+          {ann && result?.run && <OutreachCard key={result.run.id} annId={ann.id} canSend={canRun} />}
+
           {ann && <AlertsCard ann={ann} />}
         </div>
       </div>
@@ -142,9 +145,20 @@ function CompanyDrawer({ p, onClose }: { p: FullProfile; onClose: () => void }) 
           <dt>연락처</dt><dd>{p.registered_email ?? '–'}</dd>
         </dl>
         {p.main_business && <p>{p.main_business}</p>}
+        <h4>역량</h4>
+        <RadarChart radar={p.radar} compact who="이 회사" />
+        <h4>제품 {p.products.length}</h4>
+        <ul className="plain-list small">
+          {p.products.map((x) => <li key={x.id}>{x.name} <span className="muted">{PRODUCT_CATEGORIES[x.category]}{x.is_defense ? ' · 국방' : ''}{x.customers ? ` · ${x.customers}` : ''}</span></li>)}
+        </ul>
+        <h4>보유 기술 {p.technologies.length}</h4>
+        <ul className="plain-list small">
+          {p.technologies.map((t) => <li key={t.id}>{t.tech_name}{t.trl ? ` (TRL ${t.trl})` : ''}</li>)}
+        </ul>
         <h4>인증 {p.certifications.length}</h4>
         <ul className="plain-list small">
-          {p.certifications.map((c) => <li key={c.id}>{c.cert_type_name}{c.is_expired ? ' (만료)' : ''} <Origin v={c.is_verified} /></li>)}
+          {p.certifications.map((c) => <li key={c.id}>{c.cert_type_name}{c.is_expired ? ' (만료)' : ''} <Origin v={c.is_verified} />
+            {c.company_evidence_id != null && <span className="badge badge-info">증빙 있음</span>}</li>)}
         </ul>
         <h4>신용등급</h4>
         {p.credit_ratings.length === 0 ? <p className="small muted">없음</p> : (
@@ -155,6 +169,10 @@ function CompanyDrawer({ p, onClose }: { p: FullProfile; onClose: () => void }) 
         <h4>R&amp;D 이력 {p.rnd_history.length}</h4>
         <ul className="plain-list small">
           {p.rnd_history.map((r) => <li key={r.id}>{r.title} ({r.role === 'LEAD' ? '주관' : '참여'}) <Origin v={r.is_verified} /></li>)}
+        </ul>
+        <h4>지원사업 참여 {p.support_history.length}</h4>
+        <ul className="plain-list small">
+          {p.support_history.map((h) => <li key={h.id}>{h.program_name}{h.year ? ` (${h.year})` : ''} · {SUPPORT_RESULTS[h.result]}</li>)}
         </ul>
         <h4>특허 {p.patents.length}</h4>
         <ul className="plain-list small">{p.patents.map((x) => <li key={x.application_no}>{x.title}</li>)}</ul>
@@ -168,6 +186,87 @@ const Origin = ({ v }: { v: boolean }) =>
 
 const ALERT_STATUS: Record<string, [string, string]> = {
   PENDING: ['대기', 'warn'], SENT: ['보냄', 'ok'], FAILED: ['실패', 'bad'], READ: ['읽음', 'muted'],
+}
+
+const SENT_LABEL: Record<string, [string, string]> = { SENT: ['보냄', 'ok'], PENDING: ['대기', 'warn'], FAILED: ['실패', 'bad'] }
+
+/** 적합·확인 필요 기업 중 권유 메일에 동의한 곳에 참여 권유 메일. 같은 공고로는 한 번만 */
+function OutreachCard({ annId, canSend }: { annId: number; canSend: boolean }) {
+  const [data, setData] = useState<OutreachCandidates | null>(null)
+  const [picked, setPicked] = useState<Set<number>>(new Set())
+  const [note, setNote] = useState('')
+  const [last, setLast] = useState<string | null>(null)
+  const { busy, run } = useAction()
+
+  const load = (d: OutreachCandidates) => {
+    setData(d)
+    setPicked(new Set(d.companies.filter((c) => c.sendable && c.verdict === 'ELIGIBLE').map((c) => c.organization_id)))
+  }
+  useEffect(() => { void run(async () => load(await getOutreach(annId))) }, [annId, run])
+
+  const toggle = (id: number) => setPicked((p) => {
+    const n = new Set(p)
+    if (n.has(id)) n.delete(id)
+    else n.add(id)
+    return n
+  })
+  const send = () => run(async () => {
+    const r = await sendOutreach(annId, [...picked], note)
+    setLast([`${r.sent}곳에 보냈습니다`, r.failed ? `실패 ${r.failed}곳` : '',
+      r.skipped.length ? `건너뜀: ${r.skipped.map((x) => `${x.company_name ?? x.organization_id}(${x.reason_label})`).join(', ')}` : '']
+      .filter(Boolean).join(' · '))
+    setNote('')
+    load(r.candidates)
+  })
+
+  const consented = data?.companies.filter((c) => c.consent).length ?? 0
+  return (
+    <Card title="참여 권유" actions={data && <span className="small muted">적합·확인 필요 {data.companies.length}곳 중 권유 동의 {consented}곳</span>}>
+      <p className="small muted">
+        기업이 ‘참여 권유 메일 받기’에 동의한 경우에만 등록 이메일로 보냅니다. 같은 공고로는 한 번만 가고, 보낸 담당자의 이메일이 등록돼 있으면 회신이 그 주소로 갑니다.
+      </p>
+      {last && <div className="notice notice-ok small">{last}</div>}
+      {!data ? <div className="page-loading">불러오는 중…</div> : data.companies.length === 0 ? (
+        <Empty>적합·확인 필요 기업이 없습니다.</Empty>
+      ) : (
+        <>
+          <table className="table">
+            <thead><tr><th /><th>기업</th><th>판정</th><th>관련도</th><th>권유 동의</th><th>보낸 기록</th></tr></thead>
+            <tbody>
+              {data.companies.map((c) => (
+                <tr key={c.organization_id}>
+                  <td><input type="checkbox" aria-label={`${c.company_name} 선택`} disabled={!c.sendable || !data.open}
+                    checked={picked.has(c.organization_id)} onChange={() => toggle(c.organization_id)} /></td>
+                  <td>{c.company_name}</td>
+                  <td><VerdictBadge verdict={c.verdict} /></td>
+                  <td className="num">{Math.round(c.total_score * 100)}</td>
+                  <td>{c.consent ? <span className="badge badge-ok">동의</span> : <span className="muted small">안 함</span>}</td>
+                  <td className="nowrap">
+                    {c.sent_status ? <>
+                      <span className={`badge badge-${SENT_LABEL[c.sent_status][1]}`} title={c.sent_error ?? undefined}>{SENT_LABEL[c.sent_status][0]}</span>{' '}
+                      <span className="small muted">{c.sent_at ? fmtDate(c.sent_at) : ''}</span>
+                    </> : <span className="muted small">–</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {data.open ? (
+            <div className="stack" style={{ marginTop: 10 }}>
+              <textarea rows={3} maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)}
+                placeholder="메일에 덧붙일 말 (선택). 예: 11월 20일 대전 사업설명회, 문의 042-000-0000" />
+              <div>
+                <button className="btn btn-primary" disabled={busy || !canSend || picked.size === 0} onClick={() => void send()}
+                  title={canSend ? undefined : '기획 담당자만 보낼 수 있습니다'}>
+                  {busy ? '보내는 중…' : `선택한 ${picked.size}곳에 권유 메일 보내기`}
+                </button>
+              </div>
+            </div>
+          ) : <p className="small muted">마감됐거나 공개 전인 공고라 보낼 수 없습니다.</p>}
+        </>
+      )}
+    </Card>
+  )
 }
 
 function AlertsCard({ ann }: { ann: AnnouncementRow }) {
@@ -199,11 +298,12 @@ function AlertsCard({ ann }: { ann: AnnouncementRow }) {
         <Empty>보낸 알림이 없습니다.</Empty>
       ) : (
         <table className="table">
-          <thead><tr><th>기업</th><th>판정</th><th>관련도</th><th>상태</th><th>보낸 시각</th></tr></thead>
+          <thead><tr><th>기업</th><th>받는 사람</th><th>판정</th><th>관련도</th><th>상태</th><th>보낸 시각</th></tr></thead>
           <tbody>
             {data.notifications.map((n) => (
               <tr key={n.id}>
                 <td>{n.company_name}</td>
+                <td className="small">{n.email}</td>
                 <td><VerdictBadge verdict={n.verdict} /></td>
                 <td className="num">{Math.round(n.total_score * 100)}</td>
                 <td><span className={`badge badge-${ALERT_STATUS[n.status][1]}`}>{ALERT_STATUS[n.status][0]}</span></td>

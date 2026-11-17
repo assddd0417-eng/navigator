@@ -8,6 +8,7 @@ import { DashboardPage } from './pages/admin/DashboardPage'
 import { ProjectsPage } from './pages/admin/ProjectsPage'
 import { ReviewQueuePage } from './pages/admin/ReviewQueuePage'
 import { NavigatorSourcesPage } from './pages/admin/NavigatorSourcesPage'
+import { AnnouncementReviewPage } from './pages/admin/AnnouncementReviewPage'
 import { NavigatorStaffPage } from './pages/admin/NavigatorStaffPage'
 import { LoginPage } from './pages/LoginPage'
 import { CompanyManagePage } from './pages/navigator/CompanyManagePage'
@@ -41,11 +42,13 @@ export default function App() {
             <Route path="/navigator/manage" element={<CompanyManagePage />} />
             <Route path="/navigator/subscriptions/confirm" element={<SubscriptionLinkPage mode="confirm" />} />
             <Route path="/navigator/unsubscribe" element={<SubscriptionLinkPage mode="unsubscribe" />} />
+            <Route path="/navigator/outreach/optout" element={<SubscriptionLinkPage mode="outreach-optout" />} />
             <Route element={<RequireRole roles={ALL_ROLES}><Layout /></RequireRole>}>
               {/* 관리자: PLANNER · DEPT_REVIEWER */}
               <Route path="/dashboard" element={<RequireRole roles={ADMIN_ROLES}><DashboardPage /></RequireRole>} />
               <Route path="/projects" element={<RequireRole roles={ADMIN_ROLES}><ProjectsPage /></RequireRole>} />
               <Route path="/reviews" element={<RequireRole roles={ADMIN_ROLES}><ReviewQueuePage /></RequireRole>} />
+              <Route path="/staff/announcements" element={<RequireRole roles={ADMIN_ROLES}><AnnouncementReviewPage /></RequireRole>} />
               <Route path="/staff/navigator" element={<RequireRole roles={ADMIN_ROLES}><NavigatorStaffPage /></RequireRole>} />
               <Route path="/staff/sources" element={<RequireRole roles={ADMIN_ROLES}><NavigatorSourcesPage /></RequireRole>} />
               {/* 기관 포트폴리오: 관리자 + 기관 열람자(VIEWER). 넘기기는 PLANNER 만 — 서버가 판단 */}

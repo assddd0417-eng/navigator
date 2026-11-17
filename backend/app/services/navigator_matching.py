@@ -26,14 +26,21 @@ from app.services.eligibility import (
 from app.services.embedding import active_model_id
 from app.services.navigator_embedding import ensure_embeddings, rnd_facts
 
-RULE_VERSION = "navigator-v1"
-WEIGHTS = {"TECH": 0.45, "IPC": 0.15, "PURPOSE": 0.20, "PREFERENCE": 0.20}
+RULE_VERSION = "navigator-v2"
+# NAVIGATOR_RANKING=vector (기본, A안): 규칙 판정으로 거른 뒤 벡터 유사도(요구기술 0.7 + 사업 목적 0.3) 순.
+#   IPC 일치·우대 충족은 순위에 넣지 않고 같은 점수일 때만 앞에 둔다.
+# weighted: 이전 방식 (기술 .45 · IPC .15 · 목적 .20 · 우대 .20 가중합)
+WEIGHTS_BY_MODE = {
+    "vector": {"TECH": 0.7, "IPC": 0.0, "PURPOSE": 0.3, "PREFERENCE": 0.0},
+    "weighted": {"TECH": 0.45, "IPC": 0.15, "PURPOSE": 0.20, "PREFERENCE": 0.20},
+}
+WEIGHTS = WEIGHTS_BY_MODE["weighted"]   # 이전 결과 해석용
 NEUTRAL = 0.5
 VERDICT_ORDER = {"ELIGIBLE": 0, "NEEDS_INFO": 1, "INELIGIBLE": 2}
 COMPANY_TECH_FACETS = ("TECH", "PATENT", "RND", "BUSINESS")
 COMPANY_SUMMARY_FACETS = ("SUMMARY", "BUSINESS")
 SOURCE_KO = {"company_patent": "특허", "company_rnd_history": "R&D 이력", "project": "내부 과제",
-             "company_technology": "보유기술", None: "주요사업"}
+             "company_technology": "보유기술", "company_product": "제품", None: "주요사업"}
 SENSITIVE_TYPES = ("MIN_CREDIT_GRADE", "REVENUE")   # 공개(사업자번호만) 조회에서는 결과를 가린다
 
 
@@ -158,8 +165,12 @@ async def candidate_companies(conn: AsyncConnection, ann_id: int, k: int) -> set
     return {r["organization_id"] for r in rows}
 
 
-async def candidate_announcements(conn: AsyncConnection, org_id: int, k: int, states: tuple[str, ...]) -> set[int]:
+async def candidate_announcements(conn: AsyncConnection, org_id: int, k: int, states: tuple[str, ...],
+                                  closed_since: date | None = None) -> set[int]:
     ids: set[int] = set()
+    # 상태 조건을 이웃 검색 안에 넣어야 마감 공고가 많아도 현재 공고 후보가 밀려나지 않는다
+    pool = """SELECT id FROM ax.v_announcement WHERE status = 'PUBLISHED' AND receipt_state = ANY(%(states)s)
+                 AND (%(since)s::date IS NULL OR receipt_end >= %(since)s::date)"""
     for cfacets, afacets in (("('TECH','PATENT','RND','BUSINESS')", "('TECH_NEED')"),
                              ("('SUMMARY','BUSINESS')", "('SUMMARY','PURPOSE')")):
         rows = await (await conn.execute(
@@ -167,17 +178,13 @@ async def candidate_announcements(conn: AsyncConnection, org_id: int, k: int, st
                 CROSS JOIN LATERAL (
                     SELECT ae.announcement_id FROM ax.announcement_embedding ae
                      WHERE ae.facet IN {afacets} AND ae.model_id = ce.model_id
+                       AND ae.announcement_id IN ({pool})
                      ORDER BY ae.embedding <=> ce.embedding LIMIT %(k)s) a
                 WHERE ce.organization_id = %(org)s AND ce.facet IN {cfacets}
                   AND ce.model_id = (SELECT id FROM ax.embedding_model WHERE is_active)""",
-            {"org": org_id, "k": k * 4})).fetchall()
+            {"org": org_id, "k": k * 4, "states": list(states), "since": closed_since})).fetchall()
         ids.update(r["announcement_id"] for r in rows)
-    if not ids:
-        return ids
-    rows = await (await conn.execute(
-        "SELECT id FROM ax.v_announcement WHERE id = ANY(%s) AND status = 'PUBLISHED' AND receipt_state = ANY(%s)",
-        (list(ids), list(states)))).fetchall()
-    return {r["id"] for r in rows}
+    return ids
 
 
 async def pair_similarities(conn: AsyncConnection, org_ids: list[int], ann_ids: list[int]) -> list[dict]:
@@ -258,7 +265,7 @@ def score_pair(org: CompanyFacts, ann: AnnInfo, sims: list[dict]) -> Scored:
                   if pref else (NEUTRAL, "neutral:우대 요건 없음", {}))
 
     scores = {"TECH": tech, "IPC": ipc, "PURPOSE": purpose, "PREFERENCE": preference}
-    total = _clamp(sum(WEIGHTS[k] * v[0] for k, v in scores.items()))
+    total = combine(scores)
 
     for req, ch in checks:
         if ch.result != "MET" or not req.is_mandatory:
@@ -288,13 +295,39 @@ def rationale_text(org: CompanyFacts, ann: AnnInfo, checks: list[tuple[Requireme
     return head
 
 
+def ranking_mode() -> str:
+    mode = get_settings().navigator_ranking.lower()
+    if mode not in WEIGHTS_BY_MODE:
+        raise ValueError(f"NAVIGATOR_RANKING={mode} (vector|weighted)")
+    return mode
+
+
+def weights() -> dict[str, float]:
+    return WEIGHTS_BY_MODE[ranking_mode()]
+
+
+def combine(scores: dict[str, tuple]) -> float:
+    """기준별 점수 → 관련도. vector 모드는 값이 없는(neutral) 기준을 빼고 나머지 비율로 다시 나눈다."""
+    w = weights()
+    if ranking_mode() == "weighted":
+        return _clamp(sum(w[k] * v[0] for k, v in scores.items()))
+    used = {k: w[k] for k, v in scores.items() if w[k] > 0 and not str(v[1]).startswith("neutral")}
+    if not used:
+        return NEUTRAL
+    return _clamp(sum(wk * scores[k][0] for k, wk in used.items()) / sum(used.values()))
+
+
 def rank(scored: list[Scored]) -> list[Scored]:
-    return sorted(scored, key=lambda s: (VERDICT_ORDER[s.verdict], -s.total, s.org.organization_id, s.ann.id))
+    # 판정 → 관련도 → (같으면) 우대 충족 → IPC 일치
+    return sorted(scored, key=lambda s: (VERDICT_ORDER[s.verdict], -round(s.total, 4),
+                                         -s.scores["PREFERENCE"][0], -s.scores["IPC"][0],
+                                         s.org.organization_id, s.ann.id))
 
 
 def rule_snapshot() -> dict[str, Any]:
     s = get_settings()
-    return {"version": RULE_VERSION, "weights": WEIGHTS, "candidate_k": s.navigator_match_candidate_k,
+    return {"version": RULE_VERSION, "ranking": ranking_mode(), "weights": weights(),
+            "candidate_k": s.navigator_match_candidate_k,
             "verdict": "mandatory UNMET=INELIGIBLE, UNKNOWN=NEEDS_INFO", "neutral": NEUTRAL}
 
 
@@ -320,7 +353,7 @@ async def _save(conn: AsyncConnection, direction: str, ranked: list[Scored], *, 
             await conn.execute(
                 "INSERT INTO ax.company_recommendation_score (recommendation_id, criterion, score, weight, method, detail) "
                 "VALUES (%s, %s, %s, %s, %s, %s)",
-                (rec_id, crit, round(_clamp(score), 5), WEIGHTS[crit], method, json.dumps(detail, ensure_ascii=False)))
+                (rec_id, crit, round(_clamp(score), 5), weights()[crit], method, json.dumps(detail, ensure_ascii=False)))
         for req, ch in s.checks:
             await conn.execute(
                 """INSERT INTO ax.eligibility_check (recommendation_id, requirement_id, result, is_mandatory, reason,
@@ -363,16 +396,32 @@ async def match_announcement(conn: AsyncConnection, ann_id: int, *, requested_by
                        requested_by=requested_by, via=via, params=params)
 
 
-async def match_company(conn: AsyncConnection, org_id: int, *, include_closed: bool = False,
+def past_since(today: date | None = None) -> date:
+    t = today or date.today()
+    years = get_settings().navigator_past_years
+    try:
+        return t.replace(year=t.year - years)
+    except ValueError:          # 2월 29일
+        return t.replace(year=t.year - years, day=28)
+
+
+async def match_company(conn: AsyncConnection, org_id: int, *, include_closed: bool = False, past: bool = False,
                         requested_by: int | None = None, via: str = "COMPANY_LINK") -> int:
+    """past=True 면 최근 N년 안에 마감된 공고만 (참여할 수 있었던 사업). 판정 기준일은 각 공고 마감일."""
     await ensure_embeddings(conn)
     k = get_settings().navigator_match_candidate_k
-    states = ("OPEN", "UPCOMING", "CLOSED") if include_closed else ("OPEN", "UPCOMING")
-    ann_ids = sorted(await candidate_announcements(conn, org_id, k, states))
+    since = None
+    if past:
+        states, since = ("CLOSED",), past_since()
+    else:
+        states = ("OPEN", "UPCOMING", "CLOSED") if include_closed else ("OPEN", "UPCOMING")
+    ann_ids = sorted(await candidate_announcements(conn, org_id, k, states, since))
     orgs = await load_companies(conn, [org_id])
     if org_id not in orgs:
         raise NotFound("기업 프로필", org_id)
     anns = await load_announcements(conn, ann_ids) if ann_ids else {}
+    if past and orgs[org_id].opened_on:     # 회사가 생기기 전에 마감된 공고는 뺀다
+        ann_ids = [a for a in ann_ids if anns[a].as_of >= orgs[org_id].opened_on]
     sims = await pair_similarities(conn, [org_id], ann_ids) if ann_ids else []
     by_ann: dict[int, list[dict]] = {}
     for s in sims:
@@ -380,15 +429,18 @@ async def match_company(conn: AsyncConnection, org_id: int, *, include_closed: b
     ranked = rank([score_pair(orgs[org_id], anns[a], by_ann.get(a, [])) for a in ann_ids])
     return await _save(conn, "COMPANY_TO_ANNOUNCEMENT", ranked, ann_id=None, org_id=org_id,
                        requested_by=requested_by, via=via,
-                       params={"candidate_k": k, "include_closed": include_closed})
+                       params={"candidate_k": k, "include_closed": include_closed, "past": past,
+                               "closed_since": since.isoformat() if since else None})
 
 
-async def fresh_company_run(conn: AsyncConnection, org_id: int, include_closed: bool) -> int | None:
+async def fresh_company_run(conn: AsyncConnection, org_id: int, include_closed: bool,
+                            past: bool = False) -> int | None:
     """오늘 실행했고 이후 변경이 없으면 그 run id 재사용."""
     row = await (await conn.execute(
         """SELECT r.id FROM ax.company_match_run r
             WHERE r.direction = 'COMPANY_TO_ANNOUNCEMENT' AND r.organization_id = %(org)s
               AND (r.params->>'include_closed')::boolean = %(closed)s
+              AND coalesce((r.params->>'past')::boolean, false) = %(past)s
               AND r.created_at::date = current_date
               AND r.model_id = (SELECT id FROM ax.embedding_model WHERE is_active)
               AND r.created_at > GREATEST(
@@ -399,8 +451,14 @@ async def fresh_company_run(conn: AsyncConnection, org_id: int, include_closed: 
                     (SELECT max(updated_at) FROM ax.company_patent WHERE organization_id = %(org)s),
                     (SELECT max(updated_at) FROM ax.company_certification WHERE organization_id = %(org)s),
                     (SELECT max(updated_at) FROM ax.company_credit_rating WHERE organization_id = %(org)s),
-                    (SELECT max(updated_at) FROM ax.company_rnd_history WHERE organization_id = %(org)s))
-            ORDER BY r.created_at DESC LIMIT 1""", {"org": org_id, "closed": include_closed})).fetchone()
+                    (SELECT max(updated_at) FROM ax.company_rnd_history WHERE organization_id = %(org)s),
+                    (SELECT max(updated_at) FROM ax.company_product WHERE organization_id = %(org)s),
+                    (SELECT max(created_at) FROM ax.company_technology WHERE organization_id = %(org)s),
+                    (SELECT max(updated_at) FROM ax.company_support_history WHERE organization_id = %(org)s))
+              AND r.rule_snapshot->>'version' = %(ver)s
+              AND r.rule_snapshot->>'ranking' = %(mode)s
+            ORDER BY r.created_at DESC LIMIT 1""",
+        {"org": org_id, "closed": include_closed, "past": past, "ver": RULE_VERSION, "mode": ranking_mode()})).fetchone()
     return row["id"] if row else None
 
 
@@ -444,7 +502,7 @@ async def run_results(conn: AsyncConnection, run_id: int, *, public: bool = Fals
         c["result_label"] = RESULT_KO[c["result"]]
         c["mandatory_label"] = "필수" if c["is_mandatory"] else "우대"
         if public and c["req_type_code"] in SENSITIVE_TYPES:
-            c.update(result=None, result_label="관리 링크로 확인", reason="관리 링크로 확인할 수 있습니다",
+            c.update(result=None, result_label="회사 정보에서 확인", reason="회사 정보 입력·수정에서 확인할 수 있습니다",
                      question=None, detail={})
         checks.setdefault(c.pop("recommendation_id"), []).append(c)
     evidence: dict[int, list] = {}
@@ -475,6 +533,28 @@ async def run_results(conn: AsyncConnection, run_id: int, *, public: bool = Fals
     return {"run": run, "summary": summary, "recommendations": recs}
 
 
+async def add_past_context(conn: AsyncConnection, org_id: int, res: dict) -> dict:
+    """마감 공고 결과에 덧붙임: 같은 사업의 지금 열린 공고(next_round), 기업이 이미 참여 이력에 적은 공고(participated)."""
+    recs = res["recommendations"]
+    ids = [r["announcement_id"] for r in recs]
+    nxt = {r["past_id"]: r for r in await (await conn.execute(
+        """SELECT DISTINCT ON (p.id) p.id AS past_id, n.id, n.title, n.receipt_state, n.receipt_start, n.receipt_end
+             FROM ax.announcement p
+             JOIN ax.v_announcement n ON n.series_key = p.series_key AND n.id <> p.id
+            WHERE p.id = ANY(%s) AND p.series_key IS NOT NULL
+              AND n.status = 'PUBLISHED' AND n.receipt_state IN ('OPEN', 'UPCOMING')
+            ORDER BY p.id, n.receipt_end NULLS LAST""", (ids,))).fetchall()}
+    joined = {r["announcement_id"] for r in await (await conn.execute(
+        """SELECT announcement_id FROM ax.company_support_history
+            WHERE organization_id = %s AND announcement_id = ANY(%s)""", (org_id, ids))).fetchall()}
+    for r in recs:
+        n = nxt.get(r["announcement_id"])
+        r["next_round"] = {k: n[k] for k in ("id", "title", "receipt_state", "receipt_start", "receipt_end")} if n else None
+        r["participated"] = r["announcement_id"] in joined
+    res["closed_since"] = past_since().isoformat()
+    return res
+
+
 def _redact_public(r: dict) -> None:
     # 가린 요건(신용·매출)이 판정으로 새지 않게 나머지 요건만으로 판정 재계산
     r.pop("business_reg_no", None)
@@ -494,7 +574,7 @@ def _redact_public(r: dict) -> None:
              hidden_requirements=hidden, questions=[])
     text = f"공개 정보 기준 필수 요건 {r['mandatory_met']}/{r['mandatory_total']}개 충족."
     if hidden:
-        text += f" 신용등급·매출 요건 {hidden}개는 등록 이메일로 받은 링크에서 확인."
+        text += f" 신용등급·매출 요건 {hidden}개는 '회사 정보 입력·수정'에서 확인."
     r["rationale"] = text
     r["evidence"] = [e for e in r["evidence"] if e["kind"] != "REQUIREMENT"
                      or any(c["requirement_id"] == e["requirement_id"] for c in shown)]

@@ -9,9 +9,11 @@ from app.db import transaction
 from app.errors import NotFound
 from app.routers.navigator import _bizno, manage_link
 from app.services import mailer
+from app.services import navigator_outreach as outreach
 from app.services.bizno import format_bizno
 from app.services.company_profile import find_by_bizno, full_view
 from app.services.navigator_matching import (
+    add_past_context,
     fresh_company_run,
     match_announcement,
     match_company,
@@ -45,12 +47,15 @@ async def run_announcement_matching(ann_id: int, verdict: str | None = Query(Non
 
 
 @router.post("/matching/companies/{org_id}", status_code=201)
-async def run_company_matching(org_id: int, include_closed: bool = False, verdict: str | None = None,
+async def run_company_matching(org_id: int, include_closed: bool = False, past: bool = False,
+                               verdict: str | None = None,
                                user: CurrentUser = Depends(require_roles(*STAFF)), rid: str = Depends(request_id)):
     vs = _verdicts(verdict)
     async with transaction(user.id, rid) as conn:
-        run_id = await match_company(conn, org_id, include_closed=include_closed, requested_by=user.id, via="STAFF")
-        return await run_results(conn, run_id, verdicts=vs)
+        run_id = await match_company(conn, org_id, include_closed=include_closed, past=past,
+                                     requested_by=user.id, via="STAFF")
+        res = await run_results(conn, run_id, verdicts=vs)
+        return await add_past_context(conn, org_id, res) if past else res
 
 
 @router.get("/matching/announcements/{ann_id}")
@@ -88,9 +93,9 @@ async def get_run(run_id: int, verdict: str | None = None, _: CurrentUser = Depe
         return await run_results(conn, run_id, verdicts=_verdicts(verdict))
 
 
-async def _company_run(conn, org_id: int, include_closed: bool, refresh: bool, via: str) -> int:
-    run_id = None if refresh else await fresh_company_run(conn, org_id, include_closed)
-    return run_id or await match_company(conn, org_id, include_closed=include_closed, via=via)
+async def _company_run(conn, org_id: int, include_closed: bool, refresh: bool, via: str, past: bool = False) -> int:
+    run_id = None if refresh else await fresh_company_run(conn, org_id, include_closed, past)
+    return run_id or await match_company(conn, org_id, include_closed=include_closed, past=past, via=via)
 
 
 @router.get("/companies/{business_reg_no}/matches", dependencies=[Depends(public_rate_limit)])
@@ -112,6 +117,15 @@ async def my_matches(include_closed: bool = False, refresh: bool = False, verdic
     async with transaction(None, f"{rid}|company-link:{link['link_id']}") as conn:
         run_id = await _company_run(conn, link["organization_id"], include_closed, refresh, "COMPANY_LINK")
         return await run_results(conn, run_id, verdicts=vs)
+
+
+@router.post("/manage/past-matches", dependencies=[Depends(public_rate_limit)])
+async def my_past_matches(refresh: bool = False, link: dict = Depends(manage_link), rid: str = Depends(request_id)):
+    """참여할 수 있었던 사업: 최근 마감 공고 중 지금 회사 정보로 적합·확인 필요인 것."""
+    async with transaction(None, f"{rid}|company-link:{link['link_id']}") as conn:
+        run_id = await _company_run(conn, link["organization_id"], False, refresh, "COMPANY_LINK", past=True)
+        res = await run_results(conn, run_id, verdicts=("ELIGIBLE", "NEEDS_INFO"))
+        return await add_past_context(conn, link["organization_id"], res)
 
 
 @router.get("/manage/questions", dependencies=[Depends(public_rate_limit)])
@@ -169,3 +183,25 @@ async def answer_questions(body: AnswersIn, link: dict = Depends(manage_link), r
                 (org_id, a.requirement_id, "true" if a.value is True else "false" if a.value is False else str(a.value)))
         run_id = await match_company(conn, org_id, via="COMPANY_LINK")
         return await run_results(conn, run_id)
+
+
+class OutreachIn(BaseModel):
+    organization_ids: list[int] = Field(min_length=1, max_length=200)
+    note: str | None = Field(default=None, max_length=1000)
+
+
+@router.get("/matching/announcements/{ann_id}/outreach")
+async def outreach_candidates(ann_id: int, _: CurrentUser = Depends(require_roles(*STAFF))):
+    """마지막 매칭 결과의 적합·확인 필요 기업, 권유 메일 동의 여부, 보낸 기록."""
+    async with transaction() as conn:
+        return await outreach.candidates(conn, ann_id)
+
+
+@router.post("/matching/announcements/{ann_id}/outreach")
+async def send_outreach(ann_id: int, body: OutreachIn, user: CurrentUser = Depends(require_roles(*STAFF)),
+                        rid: str = Depends(request_id)):
+    """권유 메일 발송. 동의하지 않았거나 이미 보낸 기업은 건너뛰고 skipped 에 이유를 적는다."""
+    res = await outreach.send(ann_id, body.organization_ids, (body.note or "").strip() or None, user.id, rid)
+    async with transaction() as conn:
+        res["candidates"] = await outreach.candidates(conn, ann_id)
+    return res

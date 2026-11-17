@@ -15,7 +15,7 @@
 # 사용법:
 #   BASE_URL=http://localhost:8000 ./scripts/smoke_test.sh
 #
-# 전제: 마이그레이션 + seeds/init_test_data.sql + seeds/navigator_companies.sql + seeds/navigator_announcements.sql 적용, 서버 실행 중 (기본 EMBEDDER=hash).
+# 전제: 마이그레이션 + seeds/init_test_data.sql + seeds/navigator_companies.sql + seeds/navigator_announcements.sql (+ navigator_past_announcements.sql 선택) 적용, 서버 실행 중 (기본 EMBEDDER=hash).
 # 필요 도구: curl, jq   (PDF 픽스처: scripts/fixtures/*.pdf, 커밋되어 있음)
 # 재실행 안전: card_no·demand_no·external_ref 에 실행 태그를 붙여 매번 새 데이터로 돈다.
 #   같은 DB 에서 수십 번 돌리면 같은 내용의 카드가 쌓여 이번 카드가 상위 K 밖으로 밀리고,
@@ -349,6 +349,7 @@ check "확인됨 · 특허 공개 · 신용등급 숨김" \
 api "미확인 가상 기업 공개 조회" 200 GET /navigator/companies/9998300038 -
 check "미확인 표시" '.biz_verify_label == "미확인"'
 api "관리 링크 없이 내 프로필" 401 GET /navigator/manage/profile -
+api "관리 링크 없이 증빙 올리기" 401 POST /navigator/manage/evidence -
 api "사업자번호 형식 오류" 422 POST /navigator/companies - \
     '{"business_reg_no":"999-81-00016","company_name":"x","representative_name":"x","opened_on":"2020-01-01","email":"a@b.co"}'
 api "이미 등록된 사업자번호 재등록 거부" 409 POST /navigator/companies - \
@@ -381,6 +382,10 @@ check "한빛 적합 1위 · 누리·새봄 부적격 · 기준별 점수 4개" 
      and (.recommendations[0].scores | length) == 4
      and any(.recommendations[]; .organization_id == 102 and .verdict == "INELIGIBLE")
      and any(.recommendations[]; .organization_id == 103 and .verdict == "INELIGIBLE")'
+api "공고 101 참여 권유 대상" 200 GET /navigator/matching/announcements/101/outreach "$PLANNER"
+check "적합·확인 필요만, 한빛 포함" \
+    '.open and all(.companies[]; .verdict != "INELIGIBLE") and any(.companies[]; .organization_id == 101)'
+api "권유 메일은 담당자만 (VIEWER)" 403 POST /navigator/matching/announcements/101/outreach "$VIEWER" '{"organization_ids":[101]}'
 api "공고 103 → 기업" 201 POST /navigator/matching/announcements/103 "$PLANNER"
 check "새봄 정보부족 + TRL 보완질문" \
     'any(.recommendations[]; .organization_id == 103 and .verdict == "NEEDS_INFO"
@@ -389,6 +394,11 @@ api "새봄 → 공고 (마감 포함)" 201 POST "/navigator/matching/companies/
 check "103 정보부족 · 101/102/104 부적격" \
     '[.recommendations[] | select(.announcement_id <= 105 and .announcement_id >= 101) | {(.announcement_id|tostring): .verdict}]
      | add | .["103"] == "NEEDS_INFO" and .["101"] == "INELIGIBLE" and .["102"] == "INELIGIBLE" and .["104"] == "INELIGIBLE"'
+api "한빛 → 최근 마감 공고 (참여할 수 있었던 사업)" 201 POST "/navigator/matching/companies/101?past=true" "$PLANNER"
+check "마감 공고만, 다음 회차 표시" \
+    'all(.recommendations[]; .receipt_state == "CLOSED")
+     and (([.recommendations[] | select(.announcement_id == 106)] | length) == 0
+          or any(.recommendations[]; .announcement_id == 106 and .next_round.id == 101))'
 api "사업자번호로 추천 공고 (로그인 없음)" 200 GET /navigator/companies/999-82-00026/matches -
 check "사업자번호 없음 · 신용등급 요건 결과 가림" \
     'all(.recommendations[]; (has("business_reg_no") | not)
@@ -414,6 +424,23 @@ api "국기원 공지사항 공고" 200 POST /navigator/sources/KRIT/run "$PLANN
 api "공고는 기업별 수집 안 됨" 422 POST "/navigator/sources/BIZINFO/run?organization_id=101" "$PLANNER"
 api "연결 안 된 출처" 404 POST /navigator/sources/NICE/run "$PLANNER"
 api "수집 기록" 200 GET "/navigator/sources/jobs?limit=5" "$PLANNER"
+
+section "⑫-2 공고 등록·조건 확인"
+NOTICE_TEXT='신청자격\n방산 부품을 생산하는 중소기업으로서 기업부설연구소를 보유한 기업\n신청제한\n1. 국세 체납 또는 휴·폐업 중인 기업\n신청기간 : 2026. 11. 16. ~ 11. 27.'
+api "공고문 붙여넣기 등록" 201 POST /navigator/announcements/text "$PLANNER" \
+    "{\"announcement_no\":\"SMK-$RUN_TAG\",\"title\":\"스모크 공고 $RUN_TAG\",\"body_text\":\"$NOTICE_TEXT\"}"
+TXT_ANN=$(pick '.id')
+if [[ -n "$TXT_ANN" ]]; then
+    api "확인 전 목록에 있음" 200 GET "/navigator/announcements?review=PENDING&q=$RUN_TAG" "$PLANNER"
+    check "작성 중 공고 1건" 'length == 1 and .[0].status == "DRAFT"'
+    api "조건 뽑기" 200 POST "/navigator/announcements/$TXT_ANN/extract" "$PLANNER"
+    check "기업규모·연구소·휴폐업·체납 후보, 접수 마감" \
+        '([.requirements[].req_type_code] | contains(["COMPANY_SIZE","REQUIRED_CERT","BUSINESS_STATUS","NO_DISQUALIFICATION"]))
+         and .fields.receipt_end == "2026-11-27"'
+    REQS=$(printf '%s' "$BODY" | jq -c '[.requirements[] | {req_type_code, rule, is_mandatory, description, source_quote, origin: "AI_EXTRACTED"}]')
+    api "조건 확인 저장" 204 PUT "/navigator/announcements/$TXT_ANN/review" "$PLANNER" "{\"requirements\":$REQS}"
+    api "조건 확인은 담당자만 (VIEWER)" 403 POST "/navigator/announcements/$TXT_ANN/extract" "$VIEWER"
+fi
 
 section "⑬ 기관 포트폴리오"
 api "포트폴리오 숫자 (기관 열람자)" 200 GET /portfolio/overview "$AGENCY"
