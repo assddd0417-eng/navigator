@@ -143,6 +143,7 @@ class LinkSent(BaseModel):
 
 class RegisterResult(LinkSent):
     organization_id: int
+    manage_token: str = Field(description="등록한 사람이 바로 회사 정보 화면을 열 관리 토큰")
     business_reg_no: str
     biz_verify_status: Literal["VERIFIED", "UNVERIFIED", "FAILED"]
     biz_verify_label: str

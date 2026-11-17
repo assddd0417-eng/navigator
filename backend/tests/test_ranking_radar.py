@@ -6,7 +6,7 @@ from app.config import get_settings
 from app.services import company_radar as cr
 from app.services import navigator_matching as nm
 from app.services.ratelimit import limiter
-from tests.conftest import TEST_URL
+from tests.conftest import TEST_URL, manage_token
 
 BRN = "9998700036"
 
@@ -80,7 +80,7 @@ async def test_radar_in_profile(client, database):
             "business_reg_no": BRN, "company_name": "(가상)레이더정밀", "representative_name": "김가상",
             "opened_on": "2019-01-01", "email": f"{BRN}@example.com", "main_business": "RF 부품"})
         assert r.status_code == 201, r.text
-        h = {"X-Manage-Token": (await client.post(f"/navigator/companies/{BRN}/open")).json()["token"]}
+        h = {"X-Manage-Token": await manage_token(client, BRN)}
         p = (await client.get("/navigator/manage/profile", headers=h)).json()
         axes = {a["code"]: a for a in p["radar"]["axes"]}
         assert [a["label"] for a in p["radar"]["axes"]] == ["신용", "특허", "인증", "기술", "제품", "사업참여"]

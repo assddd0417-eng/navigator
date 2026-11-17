@@ -9,7 +9,7 @@ import pytest
 from app.config import get_settings
 from app.services import navigator_matching as nm
 from app.services.ratelimit import limiter
-from tests.conftest import ROOT, TEST_URL, _psql_url, as_user
+from tests.conftest import ROOT, TEST_URL, _psql_url, as_user, manage_token
 
 HANBIT, HANBIT_BRN = 101, "9998100015"
 PAST = 106          # seeds/navigator_past_announcements.sql — 101 의 이전 회차, 2025-12-15 마감
@@ -42,7 +42,7 @@ def test_past_since():
 
 
 async def test_past_matches(client, seeded):
-    h = {"X-Manage-Token": (await client.post(f"/navigator/companies/{HANBIT_BRN}/open")).json()["token"]}
+    h = {"X-Manage-Token": await manage_token(client, HANBIT_BRN)}
     r = await client.post("/navigator/manage/past-matches", headers=h)
     assert r.status_code == 200, r.text
     body = r.json()

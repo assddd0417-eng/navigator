@@ -265,6 +265,7 @@ export interface LinkSent {
 
 export interface RegisterResult extends LinkSent {
   organization_id: number
+  manage_token: string
   business_reg_no: string
   biz_verify_label: string
   business_status: string
@@ -292,8 +293,12 @@ export const getPublicMatches = (brn: string) =>
   api<MatchRun>(`/navigator/companies/${bizno(brn)}/matches`, anon)
 export const requestAccessLink = (brn: string) =>
   api<LinkSent>(`/navigator/companies/${bizno(brn)}/access-link`, { ...anon, method: 'POST' })
-export const openCompany = (brn: string) =>
-  api<{ token: string; expires_at: string }>(`/navigator/companies/${bizno(brn)}/open`, { ...anon, method: 'POST' })
+export const sendLoginCode = (brn: string) =>
+  api<{ sent_to: string; expires_at: string; dev_code?: string }>(`/navigator/companies/${bizno(brn)}/login-code`,
+    { ...anon, method: 'POST', silent: true })
+export const loginWithCode = (brn: string, code: string) =>
+  api<{ token: string; expires_at: string }>(`/navigator/companies/${bizno(brn)}/login`,
+    { ...anon, method: 'POST', body: { code }, silent: true })
 export interface AutofillResult { source: string; label: string; ok: boolean; error: string | null; counts: Record<string, number> }
 export const uploadEvidence = (token: string, file: File) => {
   const form = new FormData()

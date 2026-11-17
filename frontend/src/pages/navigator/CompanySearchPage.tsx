@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiError } from '../../api/client'
 import {
-  getPublicCompany, getPublicMatches, openCompany,
+  getPublicCompany, getPublicMatches, loginWithCode, sendLoginCode,
   type MatchRun, type PublicProfile,
 } from '../../api/navigator'
 import { Card, useAction } from '../../components/ui'
@@ -35,7 +35,7 @@ export function CompanySearchPage() {
       setNotFound('사업자등록번호 10자리를 입력하세요. (예: 123-45-67890)')
       return
     }
-    setProfile(null); setMatches(null); setNotFound(null)
+    setProfile(null); setMatches(null); setNotFound(null); setCodeSent(null); setCode(''); setCodeError(null)
     setParams({ brn: value })
     await run(async () => {
       try {
@@ -55,10 +55,33 @@ export function CompanySearchPage() {
   }
 
   const navigate = useNavigate()
-  const openManage = () => run(async () => {
-    const { token } = await openCompany(profile!.business_reg_no)
-    navigate(`/navigator/manage#t=${encodeURIComponent(token)}`)
+  const [codeSent, setCodeSent] = useState<{ sent_to: string; dev_code?: string } | null>(null)
+  const [code, setCode] = useState('')
+  const [codeError, setCodeError] = useState<string | null>(null)
+  const askCode = () => run(async () => {
+    setCodeError(null)
+    try {
+      const r = await sendLoginCode(profile!.business_reg_no)
+      setCodeSent(r); setCode(r.dev_code ?? '')
+    } catch (e) {
+      if (e instanceof ApiError && (e.status === 409 || e.status === 429)) setCodeError(e.detail)
+      else throw e
+    }
   })
+  const openManage = (e: FormEvent) => {
+    e.preventDefault()
+    void run(async () => {
+      try {
+        const { token } = await loginWithCode(profile!.business_reg_no, code.trim())
+        navigate(`/navigator/manage#t=${encodeURIComponent(token)}`)
+      } catch (err) {
+        if (err instanceof ApiError && (err.status === 400 || err.status === 410 || err.status === 422)) {
+          setCodeError(err.status === 422 ? '숫자 6자리를 넣으세요' : err.detail)
+          if (err.status === 410) setCodeSent(null)
+        } else throw err
+      }
+    })
+  }
   const found = profile || notFound
 
   return (
@@ -117,8 +140,19 @@ export function CompanySearchPage() {
                 회사 정보를 공공데이터로 자동으로 채우거나 직접 입력하고, 확인 필요 항목에 답하고, 알림을 설정할 수 있습니다.
               </div>
             </div>
-            <button className="btn btn-primary" disabled={busy} onClick={() => void openManage()}>회사 정보 입력·수정</button>
+            {!codeSent && <button className="btn btn-primary" disabled={busy} onClick={() => void askCode()}>회사 정보 입력·수정</button>}
           </div>
+          {codeSent && (
+            <form className="search-row" onSubmit={openManage}>
+              <span className="small muted">{codeSent.sent_to} 로 보낸 확인 코드 6자리 (10분 유효)</span>
+              <input value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" maxLength={6}
+                autoComplete="one-time-code" aria-label="확인 코드" placeholder="123456" />
+              <button className="btn btn-primary" disabled={busy || code.trim().length !== 6}>열기</button>
+              <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => void askCode()}>코드 다시 받기</button>
+            </form>
+          )}
+          {codeSent?.dev_code && <div className="small muted">로컬 시연: 코드를 미리 채워 두었습니다.</div>}
+          {codeError && <div className="notice notice-warn small">{codeError}</div>}
         </Card>
       )}
 

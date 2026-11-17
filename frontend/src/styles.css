@@ -282,6 +282,7 @@ blockquote { margin: 4px 0 0; padding: 6px 10px; border-left: 3px solid var(--pr
 .manage-box { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 12px; border-radius: 8px; background: var(--bg); flex-wrap: wrap; }
 .manage-box > div { flex: 1 1 260px; }
 .notice-ok { background: var(--ok-soft); color: var(--ok); margin-top: 10px; }
+.notice-warn { background: var(--warn-soft); color: var(--warn); margin-top: 10px; }
 .notice + .match-list, .notice { margin-bottom: 10px; }
 .link-btn { font: inherit; border: none; background: none; padding: 0; color: var(--primary); cursor: pointer; text-align: left; }
 .link-btn:hover { text-decoration: underline; }

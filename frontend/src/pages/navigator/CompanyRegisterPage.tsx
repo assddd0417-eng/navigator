@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { openCompany, registerCompany } from '../../api/navigator'
+import { registerCompany } from '../../api/navigator'
 import { Card } from '../../components/ui'
 import { CompanyInfoForm, type Identity } from './CompanyManagePage'
 import { CompanyShell } from './components'
@@ -25,8 +25,7 @@ export function CompanyRegisterPage() {
         top={<Card title="안내"><p className="small muted">대표자명·개업일은 국세청 사업자 확인에만 씁니다. 등록 후 ‘자동 채우기’로 특허·매출 같은 공공데이터를 더 가져올 수 있습니다.</p></Card>}
         onSubmit={async (body) => {
           const res = await registerCompany({ ...body, ...identity, company_name: body.company_name! })
-          const { token } = await openCompany(res.business_reg_no)
-          navigate(`/navigator/manage#t=${encodeURIComponent(token)}`)
+          navigate(`/navigator/manage#t=${encodeURIComponent(res.manage_token)}`)
         }} />
     </CompanyShell>
   )

@@ -502,7 +502,7 @@ async def run_results(conn: AsyncConnection, run_id: int, *, public: bool = Fals
         c["result_label"] = RESULT_KO[c["result"]]
         c["mandatory_label"] = "필수" if c["is_mandatory"] else "우대"
         if public and c["req_type_code"] in SENSITIVE_TYPES:
-            c.update(result=None, result_label="관리 링크로 확인", reason="관리 링크로 확인할 수 있습니다",
+            c.update(result=None, result_label="회사 정보에서 확인", reason="회사 정보 입력·수정에서 확인할 수 있습니다",
                      question=None, detail={})
         checks.setdefault(c.pop("recommendation_id"), []).append(c)
     evidence: dict[int, list] = {}

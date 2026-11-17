@@ -3,6 +3,7 @@ import hashlib
 import logging
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Response, UploadFile, status
+from pydantic import BaseModel, Field
 from psycopg.types.json import Jsonb
 
 from app.auth import request_id
@@ -10,7 +11,7 @@ from app.config import get_settings
 from app.db import transaction
 from app.errors import Conflict
 from app.schemas.navigator import CompanyRegister, CompanyUpdate, LinkSent, RegisterResult
-from app.services import access_link, collector, company_evidence, mailer, navigator_alerts
+from app.services import access_link, collector, company_evidence, login_code, mailer, navigator_alerts
 from app.services.bizno import InvalidBizNo, format_bizno, normalize
 from app.services.company_profile import (
     BUSINESS_STATUS_LABEL, LIST_TABLES, PROFILE_FIELDS, VERIFY_LABEL, find_by_bizno, full_view,
@@ -146,7 +147,7 @@ async def register_company(body: CompanyRegister, rid: str = Depends(request_id)
         organization_id=org_id, business_reg_no=format_bizno(bizno),
         biz_verify_status=result.verify_status, biz_verify_label=VERIFY_LABEL[result.verify_status],
         business_status=BUSINESS_STATUS_LABEL[result.business_status], message=result.message,
-        **sent.model_dump())
+        manage_token=link.token, **sent.model_dump())
 
 
 @router.get("/companies/{business_reg_no}", dependencies=[Depends(public_rate_limit)])
@@ -172,16 +173,57 @@ async def resend_access_link(business_reg_no: str, rid: str = Depends(request_id
     return await _send_link(found["registered_email"], found["name"], link, first=False)
 
 
-@router.post("/companies/{business_reg_no}/open", dependencies=[Depends(public_rate_limit)])
-async def open_company(business_reg_no: str, rid: str = Depends(request_id)):
-    """이메일 없이 바로 회사 정보 화면을 연다 (관리 토큰 발급, 이전 토큰은 폐기).
-    ponytail: 사업자번호만 알면 누구나 수정·신용등급 열람 가능 (PoC). 운영 전에는 본인 확인(인증서·이메일)을 붙일 것."""
+class LoginCodeIn(BaseModel):
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+async def _company_for_login(conn, bizno: str) -> dict:
+    found = await find_by_bizno(conn, bizno, lock=True)
+    if not found or not found["has_profile"] or found["org_type"] != "COMPANY":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"사업자번호 {format_bizno(bizno)} 로 등록된 기업이 없습니다")
+    if not found["registered_email"]:
+        raise Conflict("등록 이메일이 없는 기업입니다. 기관 담당자에게 이메일 등록을 요청하세요")
+    return found
+
+
+@router.post("/companies/{business_reg_no}/login-code", status_code=202, dependencies=[Depends(public_rate_limit)])
+async def send_login_code(business_reg_no: str, rid: str = Depends(request_id)):
+    """회사 정보 화면을 열 확인 코드를 등록 이메일로 보낸다 (10분 유효, 1분에 한 번)."""
     bizno = _bizno(business_reg_no)
     async with transaction(None, rid) as conn:
-        found = await find_by_bizno(conn, bizno, lock=True)
-        if not found or not found["has_profile"] or found["org_type"] != "COMPANY":
-            raise HTTPException(status.HTTP_404_NOT_FOUND, f"사업자번호 {format_bizno(bizno)} 로 등록된 기업이 없습니다")
-        link = await access_link.issue(conn, found["organization_id"], found["registered_email"] or "")
+        found = await _company_for_login(conn, bizno)
+        try:
+            issued = await login_code.issue(conn, found["organization_id"], found["registered_email"])
+        except login_code.TooSoon as e:
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, f"{e.wait_s}초 뒤에 다시 받을 수 있습니다",
+                                headers={"Retry-After": str(e.wait_s)}) from None
+    email = found["registered_email"]
+    try:
+        await mailer.send_async(email, f"[Navigator] 확인 코드 {issued.code}",
+                                f"{found['name']} 회사 정보 화면 확인 코드입니다.\n\n{issued.code}\n\n"
+                                f"{login_code.TTL_MINUTES}분 안에 화면에 넣으세요. 본인이 요청하지 않았다면 이 메일을 무시하세요.")
+    except mailer.MailError as e:
+        log.warning("확인 코드 메일 실패: %s", e)
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "메일을 보내지 못했습니다. 잠시 후 다시 시도하세요") from None
+    out = {"sent_to": mailer.mask_email(email), "expires_at": issued.expires_at.isoformat()}
+    if get_settings().navigator_dev_expose_link:
+        out["dev_code"] = issued.code
+    return out
+
+
+@router.post("/companies/{business_reg_no}/login", dependencies=[Depends(public_rate_limit)])
+async def login_with_code(business_reg_no: str, body: LoginCodeIn, rid: str = Depends(request_id)):
+    """확인 코드가 맞으면 관리 토큰을 준다 (이전 토큰은 폐기)."""
+    bizno = _bizno(business_reg_no)
+    async with transaction(None, rid) as conn:
+        found = await _company_for_login(conn, bizno)
+        result = await login_code.verify(conn, found["organization_id"], body.code)
+        if result == "OK":
+            link = await access_link.issue(conn, found["organization_id"], found["registered_email"])
+    if result == "WRONG":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "확인 코드가 맞지 않습니다")
+    if result == "EXPIRED":
+        raise HTTPException(status.HTTP_410_GONE, "확인 코드가 만료되었습니다. 코드를 다시 받으세요")
     return {"token": link.token, "expires_at": link.expires_at.isoformat()}
 
 

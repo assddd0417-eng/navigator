@@ -9,7 +9,7 @@ import pytest
 from app.config import get_settings
 from app.services import mailer
 from app.services.ratelimit import limiter
-from tests.conftest import ROOT, TEST_URL, _psql_url, as_user
+from tests.conftest import ROOT, TEST_URL, _psql_url, as_user, manage_token
 
 PLANNER = 1
 HANBIT, HANBIT_BRN, HANBIT_MAIL = 101, "9998100015", "contact@hanbit.example"
@@ -115,7 +115,7 @@ async def test_outreach_flow(client, seeded):
         HANBIT: "NO_CONSENT", NURI: "INELIGIBLE", 999999: "NOT_IN_RESULT"}
 
     # 기업이 동의
-    h = {"X-Manage-Token": (await client.post(f"/navigator/companies/{HANBIT_BRN}/open")).json()["token"]}
+    h = {"X-Manage-Token": await manage_token(client, HANBIT_BRN)}
     ok = await client.put("/navigator/manage/outreach-consent", headers=h, json={"consent": True})
     assert ok.status_code == 200 and ok.json()["outreach_consent"] is True
     assert (await client.get("/navigator/manage/profile", headers=h)).json()["outreach_consent_at"]
