@@ -145,3 +145,19 @@ async def test_db_rules(client, ready):
         names = dict(conn.execute("SELECT code, name_ko FROM ax.code_program_type").fetchall())
         assert names["DEFENSE_TECH_PLAN"] == "국방기술기획" and names["CORE_TECH"] == "핵심기술개발"
         assert names["EXPORT_COMPETITIVENESS"] == "전략적 수출경쟁력 강화" and names["FORCE_SUPPORT"] == "무기체계 전력지원"
+
+
+def test_brief_min_sim_by_embedder(monkeypatch):
+    from app.config import get_settings
+    from app.services.planning_brief import brief_min_sim
+
+    assert (brief_min_sim(), brief_min_sim(True)) == (0.45, 0.35)
+    monkeypatch.setattr(get_settings(), "embedder", "bge_m3")
+    assert (brief_min_sim(), brief_min_sim(True)) == (0.55, 0.50)
+
+
+async def test_brief_wide_uses_looser_level(client, ready):
+    url = f"/planning/brief/{ready['trend']}"
+    base = (await client.get(url, headers=as_user(PLANNER))).json()
+    wide = (await client.get(url, headers=as_user(PLANNER), params={"wide": "true"})).json()
+    assert len(wide["projects"]) >= len(base["projects"])
