@@ -1,5 +1,6 @@
 """Navigator 기업 프로필 (공개 API). 수정·민감정보 조회는 관리 링크(X-Manage-Token) 필요."""
 import hashlib
+import logging
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Response, UploadFile, status
 from psycopg.types.json import Jsonb
@@ -9,7 +10,7 @@ from app.config import get_settings
 from app.db import transaction
 from app.errors import Conflict
 from app.schemas.navigator import CompanyRegister, CompanyUpdate, LinkSent, RegisterResult
-from app.services import access_link, collector, company_evidence, mailer
+from app.services import access_link, collector, company_evidence, mailer, navigator_alerts
 from app.services.bizno import InvalidBizNo, format_bizno, normalize
 from app.services.company_profile import (
     BUSINESS_STATUS_LABEL, LIST_TABLES, PROFILE_FIELDS, VERIFY_LABEL, find_by_bizno, full_view,
@@ -20,6 +21,7 @@ from app.services.navigator_embedding import sync_company_embeddings
 from app.services.ratelimit import public_rate_limit
 
 router = APIRouter(prefix="/navigator", tags=["Navigator 기업 프로필 (로그인 없음)"])
+log = logging.getLogger(__name__)
 
 
 def _bizno(raw: str) -> str:
@@ -29,18 +31,25 @@ def _bizno(raw: str) -> str:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e)) from None
 
 
-def _send_link(email: str, company_name: str, link: access_link.IssuedLink, first: bool) -> LinkSent:
+async def _send_link(email: str, company_name: str, link: access_link.IssuedLink, first: bool) -> LinkSent:
     if first:   # 등록 메일은 알림 주소 확인용. 회사 정보는 화면에서 바로 입력하므로 링크를 넣지 않는다
-        mailer.send(email, f"[Navigator] {company_name} 등록 완료",
-                    f"{company_name} 등록이 완료되었습니다.\n조건에 맞는 새 공고가 올라오면 이 주소로 알려 드립니다.\n"
-                    "본인이 등록하지 않았다면 이 메일을 무시하세요.")
+        try:    # 등록은 이미 저장됐으니 메일 실패로 요청을 실패시키지 않는다
+            await mailer.send_async(email, f"[Navigator] {company_name} 등록 완료",
+                                    f"{company_name} 등록이 완료되었습니다.\n조건에 맞는 새 공고가 올라오면 이 주소로 알려 드립니다.\n"
+                                    "본인이 등록하지 않았다면 이 메일을 무시하세요.")
+        except mailer.MailError as e:
+            log.warning("등록 메일 실패: %s", e)
         return LinkSent(sent_to=mailer.mask_email(email), expires_at=link.expires_at.isoformat(),
                         dev_management_link=link.url if get_settings().navigator_dev_expose_link else None)
     what = "관리 링크를 다시 보내 드립니다"
-    mailer.send(email, f"[Navigator] {company_name} 관리 링크",
-                f"{company_name} 기업 프로필 {what}.\n\n아래 주소에서 회사 정보를 고치고 신용정보를 볼 수 있습니다.\n"
-                f"{link.url}\n\n유효기간: {link.expires_at:%Y-%m-%d %H:%M} (UTC) 까지. "
-                "만료되면 사업자번호로 다시 요청하세요.\n본인이 요청하지 않았다면 이 메일을 무시하세요.")
+    try:
+        await mailer.send_async(email, f"[Navigator] {company_name} 관리 링크",
+                                f"{company_name} 기업 프로필 {what}.\n\n아래 주소에서 회사 정보를 고치고 신용정보를 볼 수 있습니다.\n"
+                                f"{link.url}\n\n유효기간: {link.expires_at:%Y-%m-%d %H:%M} (UTC) 까지. "
+                                "만료되면 사업자번호로 다시 요청하세요.\n본인이 요청하지 않았다면 이 메일을 무시하세요.")
+    except mailer.MailError as e:
+        log.warning("관리 링크 메일 실패: %s", e)
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "메일을 보내지 못했습니다. 잠시 후 다시 시도하세요") from None
     return LinkSent(sent_to=mailer.mask_email(email), expires_at=link.expires_at.isoformat(),
                     dev_management_link=link.url if get_settings().navigator_dev_expose_link else None)
 
@@ -130,8 +139,9 @@ async def register_company(body: CompanyRegister, rid: str = Depends(request_id)
             await insert_list_items(conn, org_id, key, getattr(body, key))
         await sync_company_embeddings(conn, org_id)
         link = await access_link.issue(conn, org_id, body.email)
+        await navigator_alerts.subscribe_registered_email(conn, org_id, body.email)
 
-    sent = _send_link(body.email, body.company_name, link, first=True)
+    sent = await _send_link(body.email, body.company_name, link, first=True)
     return RegisterResult(
         organization_id=org_id, business_reg_no=format_bizno(bizno),
         biz_verify_status=result.verify_status, biz_verify_label=VERIFY_LABEL[result.verify_status],
@@ -159,7 +169,7 @@ async def resend_access_link(business_reg_no: str, rid: str = Depends(request_id
             raise HTTPException(status.HTTP_404_NOT_FOUND,
                                 f"사업자번호 {format_bizno(bizno)} 로 등록(이메일 포함)된 기업이 없습니다")
         link = await access_link.issue(conn, found["organization_id"], found["registered_email"])
-    return _send_link(found["registered_email"], found["name"], link, first=False)
+    return await _send_link(found["registered_email"], found["name"], link, first=False)
 
 
 @router.post("/companies/{business_reg_no}/open", dependencies=[Depends(public_rate_limit)])

@@ -106,7 +106,7 @@ async def public_view(conn: AsyncConnection, org_id: int) -> dict:
         "business_status": p["business_status"],
         "business_status_label": BUSINESS_STATUS_LABEL[p["business_status"]],
         "patents": [{k: v for k, v in pt.items() if k not in ("id", "abstract", "origin")} for pt in patents],
-        "note": "신용등급·매출·자가입력 내용은 등록 이메일로 받은 관리 링크로만 볼 수 있습니다",
+        "note": "신용등급·매출·자가입력 내용은 '회사 정보 입력·수정'에서만 볼 수 있습니다",
     }
 
 
@@ -116,7 +116,8 @@ async def full_view(conn: AsyncConnection, org_id: int) -> dict:
                    cp.representative_name, cp.opened_on, cp.is_defense_company,
                    {", ".join(f"cp.{f}" for f in PROFILE_FIELDS)},
                    cp.business_status, cp.business_status_checked_at, cp.biz_verify_status, cp.biz_verified_at,
-                   cp.registered_email, cp.registration_channel, cp.created_at, cp.updated_at
+                   cp.registered_email, cp.registration_channel, cp.created_at, cp.updated_at,
+                   cp.outreach_consent_at
               FROM ax.organization o JOIN ax.company_profile cp ON cp.organization_id = o.id
              WHERE o.id = %s""", (org_id,))).fetchone()
     p["business_reg_no"] = format_bizno(p["business_reg_no"])

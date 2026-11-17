@@ -86,7 +86,11 @@
 | `POST /navigator/manage/alerts/read` | 관리 링크 | 읽음 처리 `{announcement_ids}` (생략하면 전체) |
 | `POST /navigator/subscriptions/confirm` | 메일 링크 | `{token}` 수신 확인 |
 | `POST /navigator/subscriptions/unsubscribe` | 메일 링크 | `{token}` 수신 거부 |
-| `GET /navigator/alerts/announcements/{id}` | 담당자 | 공고별 발송 현황 |
+| `PUT /navigator/manage/outreach-consent` | 관리 링크 | `{consent}` 기관 담당자의 참여 권유 메일 받기 |
+| `POST /navigator/outreach/optout` | 메일 링크 | `{token}` 참여 권유 수신 거부 (동의 해제) |
+| `GET /navigator/matching/announcements/{id}/outreach` | 담당자 | 마지막 매칭의 적합·확인 필요 기업, 권유 동의, 보낸 기록 |
+| `POST /navigator/matching/announcements/{id}/outreach` | 담당자 | `{organization_ids, note}` 권유 메일. 못 보낸 기업은 `skipped` 에 이유 |
+| `GET /navigator/alerts/announcements/{id}` | 담당자 | 공고별 발송 현황 (받는 사람은 가린 주소) |
 | `POST /navigator/alerts/announcements/{id}` | 담당자 | 아직 안 보낸 구독 기업에 발송 |
 
 결과 행: `rank`, `verdict`, `total_score`, `scores`, `checks`(요건별 판정·사유·보완질문·원문), `questions`, `evidence`, `rationale`.
@@ -127,6 +131,7 @@
 
 - `REQUIREMENT_EXTRACTOR=auto`(기본)는 LLM 자격증명이 있으면 LLM, 없으면 규칙. `rules` 는 외부로 보내는 것 없음.
 - 규칙: 신청자격·신청제한·우대 구역을 나눠 기업규모, 휴·폐업, 체납·부도·참여제한, 연구소·인증, 신용등급, 업력, 지역, TRL, 우대 특허·수출만 찾는다. 지원 한도는 "기업당·한도·최대" 줄에서, 총 예산은 뺀다.
+- "2. 지원대상: 중소기업 (…)" 처럼 제목과 내용이 한 줄이면 콜론 앞을 제목으로 보고 구역을 정한다. 요구기술은 "요구기술:"·"개발 대상 기술:" 줄만 쉼표로 나눠 뽑는다 ("지원분야"는 컨설팅 분야 같은 것이 섞여 안 씀).
 - LLM: 공고문 글자(최대 4만 자)와 조건 코드표를 보내 JSON 으로 받는다. 규칙 형식이 틀리거나 목록에 없는 인증이면 '기타'로 바꾸고 경고. 근거 문장이 공고문에 그대로 없으면 `quote_found=false`.
 - 뽑은 것은 후보일 뿐이다. 담당자가 원문과 대조해 저장해야 `origin = AI_EXTRACTED` 로 들어가고, 공개해야 기업 추천·알림에 쓰인다.
 - 실제 국기원 공고 19건에 규칙을 돌려 보면 대부분 기업규모·휴폐업·결격사유가 나오고, 방산혁신클러스터 공고는 지역이 나온다. "다음 각 호 중 하나" 같은 조건은 규칙으로 못 뽑으니 '기타'로 직접 넣는다.
@@ -235,11 +240,28 @@ weighted 모드는 비교 대상이 없으면 0.5. 정렬 방식·가중치·규
 - 공고가 PUBLISHED 로 등록되거나 PUBLISHED 로 바뀌면 발송한다. 접수전·접수중 공고만.
 - 구독 기업만 판정한다 (`requested_via = SYSTEM` 실행). 이 실행은 담당자 화면의 '마지막 매칭'에 쓰지 않는다.
 - 보내는 조건: 적합 (정보부족은 `include_needs_info` 일 때), 총점 ≥ `min_score`, 관심 분야가 비었거나 공고 제목·개요·요구기술에 하나라도 포함.
+- 등록 이메일은 등록할 때 기본 설정(전체 분야, 확인 필요 포함, 화면+메일)으로 바로 수신자가 된다. 끄거나 지우는 건 알림 탭에서.
 - 수신자: 관리 링크를 받은 주소는 바로 시작. 다른 주소는 그 주소로 확인 메일(3일 유효)을 보내고, 열어야 시작. 기업당 5명.
 - 같은 수신자에게 같은 공고는 한 번만. 메일마다 수신 거부 링크(1회용 토큰, 해시만 저장)를 넣는다.
 - 수신 거부한 주소는 기업이 켤 수 없고, 확인 메일을 다시 받아 수신자가 열어야 살아난다.
 - 메일은 커밋 후 보낸다. 실패하면 FAILED 로 남기고 공고 등록은 그대로 성공. 화면 알림은 남는다.
 - 메일에는 판정·총점·연계이유만 넣고 신용등급 값은 넣지 않는다.
+
+### 참여 권유
+
+- 기업이 알림 탭에서 "참여 권유 메일 받기"를 켜야 보낸다 (`company_profile.outreach_consent_at`). 받는 주소는 등록 이메일.
+- 담당자는 공고의 마지막 매칭 결과(담당자 실행)에서 적합·확인 필요 기업만 고를 수 있다. 접수중·접수 예정 공고만.
+- 같은 공고·기업에는 한 번만 (`outreach_message`). 실패한 것만 다시 보낼 수 있다.
+- 메일: 공고명, 접수 기간, 판정과 필수 조건 충족 수, 담당자 메모, 공개 조회 링크, 보낸 사람. 담당자 이메일이 있으면 Reply-To 로 넣는다. 신용등급 값은 넣지 않는다.
+- 메일마다 수신 거부 링크(1회용 토큰, 해시만 저장). 누르면 동의가 풀린다.
+- 메일은 커밋 후 보낸다. 실패하면 FAILED 로 남고 화면에 표시된다.
+
+### 메일 발송
+
+- `MAILER=mock`(기본)은 보내지 않고 메모리에만 쌓는다. `MAILER=smtp` 면 아래 SMTP 설정으로 보낸다.
+- 설정 확인: `cd backend && python -m app.services.mailer 받는주소@example.com`
+- Gmail 은 2단계 인증 후 앱 비밀번호를 `SMTP_PASSWORD` 에 넣는다 (`smtp.gmail.com`, 587, starttls). 사내 메일 서버는 담당 부서에 호스트·포트·계정을 받는다.
+- 관리 링크 재발송·수신 확인 메일이 실패하면 503 으로 알린다. 등록 완료 메일과 공고 알림·권유 메일은 실패해도 요청은 성공하고 기록만 남긴다.
 
 ### 참여할 수 있었던 사업
 
@@ -261,9 +283,9 @@ weighted 모드는 비교 대상이 없으면 0.5. 정렬 방식·가중치·규
 | `/navigator` | 기업 | 사업자번호 조회 → 공개 정보, 추천 공고, 관리 링크 받기 |
 | `/navigator/register` | 기업 | 신규 등록 |
 | `/navigator/manage#t=…` | 기업 (관리 링크) | 탭: 지원 가능 공고 / 참여할 수 있었던 사업 / 알림 / 회사 정보(맨 위 역량 레이더). 저장하면 재판정 |
-| `/navigator/subscriptions/confirm#t=…`, `/navigator/unsubscribe#t=…` | 메일 수신자 | 수신 확인, 수신 거부 |
+| `/navigator/subscriptions/confirm#t=…`, `/navigator/unsubscribe#t=…`, `/navigator/outreach/optout#t=…` | 메일 수신자 | 수신 확인, 알림 수신 거부, 참여 권유 수신 거부 |
 | `/staff/announcements` | 담당자 (메뉴 "공고 등록·조건 확인") | 확인 전 / 확인 완료 공고 → 왼쪽 원문(본문·첨부 글자), 오른쪽 조건 뽑기 → 접수기간·지원 한도·조건·요구기술 고치기 → 확인 저장 또는 공개. 공고문 붙여넣기 등록 |
-| `/staff/navigator` | 담당자 (메뉴 "공고별 적합 기업") | 공고 목록 → 마지막 매칭 결과(적합 / 정보부족 / 부적격 목록을 따로 총점 순, 부적격은 접힘) → 다시 매칭, 기업 프로필, 구독 기업 알림 현황 |
+| `/staff/navigator` | 담당자 (메뉴 "공고별 적합 기업") | 공고 목록 → 마지막 매칭 결과(적합 / 정보부족 / 부적격 목록을 따로 총점 순, 부적격은 접힘) → 다시 매칭, 기업 프로필, 참여 권유(동의 기업 선택·메모·보낸 기록), 구독 기업 알림 현황 |
 | `/staff/sources` | 담당자 (메뉴 "외부 수집") | 출처별 모드·주기·마지막 결과, 지금 수집, 수집 기록 |
 
 외부 확인값·내부 과제 등 기업이 고칠 수 없는 항목은 "(수정 불가)"로 표시한다. 특허는 기업이 직접 고치지 않고 KIPRIS 수집으로 들어온다.
@@ -306,7 +328,12 @@ weighted 모드는 비교 대상이 없으면 0.5. 정렬 방식·가중치·규
 | `NAVIGATOR_RANKING` | `vector` | 같은 판정 안의 순서. `vector` = 벡터 관련도(A안), `weighted` = 이전 가중합 |
 | `REQUIREMENT_EXTRACTOR` | `auto` | 공고 조건 뽑기. `auto` 는 LLM 키가 있으면 LLM (`LLM_PROVIDER`·`LLM_MODEL` 따름), `rules` 는 규칙만 |
 | `NAVIGATOR_ANNOUNCEMENT_KEYWORDS` | `국방,방산,방위산업,방위사업,무기체계,군수` | 외부 공고 거르기 (쉼표). "방위"만 쓰면 "주방위생" 같은 공고가 걸림 |
-| `MAILER` | `mock` | mock 은 발송 없이 로그만 (본문은 DEBUG 로그) |
+| `MAILER` | `mock` | mock 은 발송 없이 로그만 (본문은 DEBUG 로그), smtp 는 실제 발송 |
+| `SMTP_HOST`, `SMTP_PORT` | -, `587` | SMTP 서버 |
+| `SMTP_USER`, `SMTP_PASSWORD` | - | 로그인 계정. 비우면 로그인 없이 보냄 |
+| `SMTP_FROM`, `SMTP_FROM_NAME` | `SMTP_USER`, `Navigator` | 보내는 주소·이름 |
+| `SMTP_SECURITY` | `starttls` | `starttls`(587) / `ssl`(465) / `none` |
+| `SMTP_TIMEOUT_S` | `15` | 연결 제한 시간 |
 | `NAVIGATOR_PUBLIC_BASE_URL` | `http://localhost:5173` | 관리 링크 주소 |
 | `NAVIGATOR_LINK_TTL_DAYS` | `30` | 관리 링크 유효기간 |
 | `NAVIGATOR_RATE_LIMIT_PER_MINUTE` | `60` | 비로그인 API 제한 |
@@ -363,7 +390,7 @@ curl -s -X POST localhost:8000/navigator/announcements -H 'X-User-Id: 1' -H 'Con
 - 실제 LLM 키로 조건 뽑기 정확도 측정 (지금은 규칙으로만 실공고 확인)
 - 실제 키로 live 연결 확인 (국세청 → KIPRIS → DART → 기업마당 순서)
 - 나라장터·방사청 공고, NICE·KED 신용등급, NTIS 과제 연결 부품
-- 실제 메일 발송 (SMTP 등, `mailer.send` 만 바꾸면 됨). 지금은 mock
+- 실제 SMTP 서버로 발송 확인 (코드는 `MAILER=smtp` 로 준비, 클라우드에서는 외부 SMTP 가 막혀 가짜 서버로만 시험)
 - 알림 발송을 큐로 분리 (지금은 공고 등록 요청 안에서 처리)
 - 사진·스캔 증빙 OCR (지금은 PDF·한글 파일 글자만 읽음)
 - 운영 임베딩 모델(bge-m3) 기준 순위 재측정·가중치 조정

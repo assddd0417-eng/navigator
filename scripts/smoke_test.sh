@@ -382,6 +382,10 @@ check "한빛 적합 1위 · 누리·새봄 부적격 · 기준별 점수 4개" 
      and (.recommendations[0].scores | length) == 4
      and any(.recommendations[]; .organization_id == 102 and .verdict == "INELIGIBLE")
      and any(.recommendations[]; .organization_id == 103 and .verdict == "INELIGIBLE")'
+api "공고 101 참여 권유 대상" 200 GET /navigator/matching/announcements/101/outreach "$PLANNER"
+check "적합·확인 필요만, 한빛 포함" \
+    '.open and all(.companies[]; .verdict != "INELIGIBLE") and any(.companies[]; .organization_id == 101)'
+api "권유 메일은 담당자만 (VIEWER)" 403 POST /navigator/matching/announcements/101/outreach "$VIEWER" '{"organization_ids":[101]}'
 api "공고 103 → 기업" 201 POST /navigator/matching/announcements/103 "$PLANNER"
 check "새봄 정보부족 + TRL 보완질문" \
     'any(.recommendations[]; .organization_id == 103 and .verdict == "NEEDS_INFO"

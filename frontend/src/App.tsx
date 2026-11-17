@@ -42,6 +42,7 @@ export default function App() {
             <Route path="/navigator/manage" element={<CompanyManagePage />} />
             <Route path="/navigator/subscriptions/confirm" element={<SubscriptionLinkPage mode="confirm" />} />
             <Route path="/navigator/unsubscribe" element={<SubscriptionLinkPage mode="unsubscribe" />} />
+            <Route path="/navigator/outreach/optout" element={<SubscriptionLinkPage mode="outreach-optout" />} />
             <Route element={<RequireRole roles={ALL_ROLES}><Layout /></RequireRole>}>
               {/* 관리자: PLANNER · DEPT_REVIEWER */}
               <Route path="/dashboard" element={<RequireRole roles={ADMIN_ROLES}><DashboardPage /></RequireRole>} />

@@ -9,6 +9,7 @@ from app.db import transaction
 from app.errors import NotFound
 from app.routers.navigator import _bizno, manage_link
 from app.services import mailer
+from app.services import navigator_outreach as outreach
 from app.services.bizno import format_bizno
 from app.services.company_profile import find_by_bizno, full_view
 from app.services.navigator_matching import (
@@ -182,3 +183,25 @@ async def answer_questions(body: AnswersIn, link: dict = Depends(manage_link), r
                 (org_id, a.requirement_id, "true" if a.value is True else "false" if a.value is False else str(a.value)))
         run_id = await match_company(conn, org_id, via="COMPANY_LINK")
         return await run_results(conn, run_id)
+
+
+class OutreachIn(BaseModel):
+    organization_ids: list[int] = Field(min_length=1, max_length=200)
+    note: str | None = Field(default=None, max_length=1000)
+
+
+@router.get("/matching/announcements/{ann_id}/outreach")
+async def outreach_candidates(ann_id: int, _: CurrentUser = Depends(require_roles(*STAFF))):
+    """마지막 매칭 결과의 적합·확인 필요 기업, 권유 메일 동의 여부, 보낸 기록."""
+    async with transaction() as conn:
+        return await outreach.candidates(conn, ann_id)
+
+
+@router.post("/matching/announcements/{ann_id}/outreach")
+async def send_outreach(ann_id: int, body: OutreachIn, user: CurrentUser = Depends(require_roles(*STAFF)),
+                        rid: str = Depends(request_id)):
+    """권유 메일 발송. 동의하지 않았거나 이미 보낸 기업은 건너뛰고 skipped 에 이유를 적는다."""
+    res = await outreach.send(ann_id, body.organization_ids, (body.note or "").strip() or None, user.id, rid)
+    async with transaction() as conn:
+        res["candidates"] = await outreach.candidates(conn, ann_id)
+    return res

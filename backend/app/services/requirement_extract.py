@@ -61,7 +61,7 @@ def source_text(body: str | None, attachments: list[dict]) -> str:
 _SEC_QUALIFY = re.compile(r"(신청|지원|참여|모집)\s*(자격|대상)|자격\s*요건")
 _SEC_LIMIT = re.compile(r"(신청|지원|참여)\s*(제한|제외)|제외\s*대상|결격")
 _SEC_PREFER = re.compile(r"우대|가점")
-_SEC_OTHER = re.compile(r"(지원|사업)\s*(내용|분야|범위|규모|기간|개요)|신청\s*방법|제출\s*서류|평가|선정\s*절차|문의")
+_SEC_OTHER = re.compile(r"(지원|사업)\s*(내용|분야|범위|규모|기간|개요|목적)|요구\s*기술|신청\s*방법|제출\s*서류|평가|선정\s*절차|문의")
 
 _REGIONS = {"서울": "서울", "부산": "부산", "대구": "대구", "인천": "인천", "광주": "광주", "대전": "대전",
             "울산": "울산", "세종": "세종", "경기": "경기", "강원": "강원", "충청북도": "충북", "충북": "충북",
@@ -88,18 +88,37 @@ def _lines(text: str) -> list[_Line]:
         ln = raw.strip()
         if not ln:
             continue
-        # 짧은 줄은 제목으로 보고 구역을 바꾼다 ("2. 신청자격 및 제한", "나. 신청제한")
-        if len(ln) <= 30:
-            if _SEC_LIMIT.search(ln):
-                sec = "LIMIT"
-            elif _SEC_PREFER.search(ln) and not _SEC_QUALIFY.search(ln):
-                sec = "PREFER"
-            elif _SEC_QUALIFY.search(ln):
-                sec = "QUALIFY"
-            elif _SEC_OTHER.search(ln) or ln.startswith("[첨부"):
-                sec = "OTHER"
+        # 짧은 줄은 제목으로 보고 구역을 바꾼다 ("2. 신청자격 및 제한", "나. 신청제한").
+        # "2. 지원대상: 중소기업 ..." 처럼 제목 뒤에 내용이 붙은 줄은 콜론 앞을 제목으로 본다
+        head = _inline_head(ln)
+        if head is not None or len(ln) <= 30:
+            sec = _section(head if head is not None else ln, sec)
         out.append(_Line(ln, sec))
     return out
+
+
+_HEAD = re.compile(r"^\s*(?:\d{1,2}[.)]|[가-하][.)]|[①-⑳]|[□■○●◦▪-])?\s*([^:：]{2,15}?)\s*[:：]\s*\S")
+
+
+def _inline_head(ln: str) -> str | None:
+    m = _HEAD.match(ln)
+    return m.group(1) if m and len(ln) > 30 else None
+
+
+def _section(head: str, cur: str) -> str:
+    if _SEC_LIMIT.search(head):
+        return "LIMIT"
+    if _SEC_PREFER.search(head) and not _SEC_QUALIFY.search(head):
+        return "PREFER"
+    if _SEC_QUALIFY.search(head):
+        return "QUALIFY"
+    if _SEC_OTHER.search(head) or head.startswith("[첨부"):
+        return "OTHER"
+    return cur
+
+
+def _inline_body(ln: str) -> str:
+    return re.split(r"[:：]", ln, maxsplit=1)[-1].strip() if _inline_head(ln) else ""
 
 
 def _quote(ln: str) -> str:
@@ -183,9 +202,28 @@ def extract_rules(text: str, posted_on: date | None = None) -> Extraction:
             "·".join(names[c] for c in order) + " 없음", checks[order[0]])
 
     reqs = sorted(found.values(), key=lambda s: (not s.is_mandatory, list(RULE_MODELS).index(s.req_type_code)))
-    ex = Extraction("rules", fields=extract_fields(text, posted_on), requirements=reqs)
+    ex = Extraction("rules", fields=extract_fields(text, posted_on), requirements=reqs,
+                    tech_needs=extract_tech_needs(lines))
     ex.warnings.append("규칙으로는 자주 나오는 조건만 찾습니다. 원문을 보고 빠진 조건은 직접 추가하세요.")
     return ex
+
+
+_TECH_HEAD = re.compile(r"요구\s*기술|개발\s*(?:대상\s*)?기술|대상\s*기술")
+
+
+def extract_tech_needs(lines: list[_Line]) -> list[dict]:
+    """'요구기술: A, B' 줄만 본다. 목록형 본문은 LLM 이나 담당자가 채운다."""
+    out: list[dict] = []
+    for ln in lines:
+        head = re.split(r"[:：]", ln.text, maxsplit=1)[0] if re.search(r"[:：]", ln.text) else ""
+        if len(head) > 20 or not _TECH_HEAD.search(head):
+            continue
+        body = re.split(r"[:：]", ln.text, maxsplit=1)[-1]
+        for name in re.split(r"\s*(?:[,，;/]|\s및\s)\s*", body):
+            name = name.strip(" .-·")
+            if 2 <= len(name) <= 300 and name not in {t["tech_name"] for t in out}:
+                out.append({"tech_name": name, "description": None, "is_core": not out})
+    return out[:10]
 
 
 def _cert_label(codes: list[str]) -> str:
@@ -234,6 +272,10 @@ def extract_fields(text: str, posted_on: date | None = None) -> dict:
             fields["support_period_months"] = n
     lines = _lines(text)
     for i, ln in enumerate(lines):
+        head = _inline_head(ln.text)
+        if head and _SEC_QUALIFY.search(head) and not re.search(r"모집|공고", head):
+            fields["target_desc"] = _inline_body(ln.text)[:500]
+            break
         if (ln.section == "QUALIFY" and _SEC_QUALIFY.search(ln.text) and len(ln.text) <= 30
                 and not re.search(r"모집|공고", ln.text)):
             nxt = next((x.text for x in lines[i + 1:i + 4] if len(x.text) > 15 and x.section == "QUALIFY"), None)

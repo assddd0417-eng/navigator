@@ -102,6 +102,8 @@ async def test_subscription_confirm_rules(client):
 
 async def test_publish_alerts_subscribed_companies_only(client):
     _seed()
+    with psycopg.connect(TEST_URL, autocommit=True) as conn:   # 다른 테스트에서 등록한 기업은 등록 때 자동 구독됨
+        conn.execute("DELETE FROM ax.alert_subscription WHERE organization_id NOT IN (101, 102, 103)")
     hanbit = await _token(client, "9998100015", "contact@hanbit.example")
     nuri = await _token(client, "9998200026", "rnd@nuri.example")
     saebom = await _token(client, "9998300038", "hello@saebom.example")

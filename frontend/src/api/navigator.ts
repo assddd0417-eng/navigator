@@ -193,6 +193,7 @@ export interface FullProfile {
   evidence: Evidence[]
   field_sources: { field_name: string; preferred_value: unknown; any_verified: boolean; differs: boolean }[]
   radar: Radar
+  outreach_consent_at?: string | null
   access_link?: { expires_at: string }
 }
 
@@ -393,7 +394,7 @@ export interface AlertItem {
 
 export interface AnnouncementAlerts {
   subscribed_companies: number
-  notifications: { id: number; company_name: string; verdict: Verdict; verdict_label: string; total_score: number;
+  notifications: { id: number; company_name: string; email: string; verdict: Verdict; verdict_label: string; total_score: number;
     status: 'PENDING' | 'SENT' | 'FAILED' | 'READ'; created_at: string; sent_at: string | null;
     read_at: string | null; channels: AlertChannel[] }[]
 }
@@ -419,6 +420,40 @@ export const confirmSubscription = (token: string) =>
 export const unsubscribeAlerts = (token: string) =>
   api<{ company_name: string; email: string }>('/navigator/subscriptions/unsubscribe',
     { ...anon, method: 'POST', body: { token }, silent: true })
+export const setOutreachConsent = (token: string, consent: boolean) =>
+  api<{ outreach_consent: boolean; outreach_consent_at: string | null }>('/navigator/manage/outreach-consent',
+    { ...manage(token), method: 'PUT', body: { consent } })
+export const outreachOptout = (token: string) =>
+  api<{ company_name: string; email: string }>('/navigator/outreach/optout', { ...anon, method: 'POST', body: { token }, silent: true })
+
+// 참여 권유 (담당자)
+export interface OutreachCompany {
+  recommendation_id: number
+  organization_id: number
+  company_name: string
+  verdict: Verdict
+  verdict_label: string
+  total_score: number
+  rank: number
+  consent: boolean
+  has_email: boolean
+  sendable: boolean
+  sent_status: 'PENDING' | 'SENT' | 'FAILED' | null
+  sent_at: string | null
+  sent_error: string | null
+}
+export interface OutreachCandidates { announcement_id: number; match_run_id: number | null; open: boolean; companies: OutreachCompany[] }
+export interface OutreachResult {
+  sent: number
+  failed: number
+  skipped: { organization_id: number; company_name: string | null; reason: string; reason_label: string }[]
+  candidates: OutreachCandidates
+}
+export const getOutreach = (annId: number) =>
+  api<OutreachCandidates>(`/navigator/matching/announcements/${annId}/outreach`)
+export const sendOutreach = (annId: number, organization_ids: number[], note: string) =>
+  api<OutreachResult>(`/navigator/matching/announcements/${annId}/outreach`, { method: 'POST', body: { organization_ids, note } })
+
 export const getAnnouncementAlerts = (annId: number) =>
   api<AnnouncementAlerts>(`/navigator/alerts/announcements/${annId}`)
 export const dispatchAnnouncementAlerts = (annId: number) =>
