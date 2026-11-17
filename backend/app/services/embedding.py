@@ -23,6 +23,7 @@ import numpy as np
 from psycopg import AsyncConnection
 
 from app.config import Settings, get_settings
+from app.services.synonyms import expand, load_groups
 
 log = logging.getLogger(__name__)
 
@@ -229,13 +230,15 @@ async def card_facets(conn: AsyncConnection, card_id: int) -> tuple[int, list[Fa
         "SELECT id, description FROM ax.card_open_issue WHERE card_id = %s AND NOT is_resolved "
         "ORDER BY sort_order, id", (card_id,))).fetchall()
 
-    facets = [FacetText("SUMMARY", _join(card["title"], card["core_achievement"], card["summary"]))]
+    g = await load_groups(conn)
+    facets = [FacetText("SUMMARY", expand(_join(card["title"], card["core_achievement"], card["summary"]), g))]
     for t in techs:
-        facets.append(FacetText("CORE_TECH", t["tech_name"], "card_technology", t["id"]))
+        facets.append(FacetText("CORE_TECH", expand(t["tech_name"], g), "card_technology", t["id"]))
         if t["principle"]:
-            facets.append(FacetText("PRINCIPLE", _join(t["tech_name"], t["principle"]), "card_technology", t["id"]))
+            facets.append(FacetText("PRINCIPLE", expand(_join(t["tech_name"], t["principle"]), g),
+                                    "card_technology", t["id"]))
     for i in issues:
-        facets.append(FacetText("OPEN_ISSUE", i["description"], "card_open_issue", i["id"]))
+        facets.append(FacetText("OPEN_ISSUE", expand(i["description"], g), "card_open_issue", i["id"]))
     if perfs:
         facets.append(FacetText("PERFORMANCE", "\n".join(
             f"{p['metric_name']} {p['achieved_value'] if p['achieved_value'] is not None else (p['achieved_text'] or '')}"
@@ -257,10 +260,12 @@ async def demand_facets(conn: AsyncConnection, demand_id: int) -> list[FacetText
         "SELECT metric_name, required_value, required_text, unit FROM ax.demand_performance_req "
         "WHERE demand_id = %s ORDER BY sort_order, id", (demand_id,))).fetchall()
 
-    facets = [FacetText("SUMMARY", _join(d["title"], d["tech_need"])),
-              FacetText("TECH_NEED", d["tech_need"])]
+    g = await load_groups(conn)
+    facets = [FacetText("SUMMARY", expand(_join(d["title"], d["tech_need"]), g)),
+              FacetText("TECH_NEED", expand(d["tech_need"], g))]
     for t in techs:
-        facets.append(FacetText("TECH_NEED", _join(t["tech_name"], t["description"]), "demand_technology", t["id"]))
+        facets.append(FacetText("TECH_NEED", expand(_join(t["tech_name"], t["description"]), g),
+                                "demand_technology", t["id"]))
     if reqs:
         facets.append(FacetText("PERFORMANCE", "\n".join(
             f"{r['metric_name']} {r['required_value'] if r['required_value'] is not None else (r['required_text'] or '')}"
@@ -280,8 +285,9 @@ async def overseas_demand_facets(conn: AsyncConnection, overseas_demand_id: int)
     perfs = await (await conn.execute(
         "SELECT metric_name, required_value, required_text, unit FROM ax.overseas_demand_performance "
         "WHERE overseas_demand_id = %s ORDER BY sort_order, id", (overseas_demand_id,))).fetchall()
-    facets = [FacetText("SUMMARY", _join(d["title"], d["requirement"])),
-              FacetText("TECH_NEED", _join(d["tech_area"], d["title"], d["requirement"]))]
+    g = await load_groups(conn)
+    facets = [FacetText("SUMMARY", expand(_join(d["title"], d["requirement"]), g)),
+              FacetText("TECH_NEED", expand(_join(d["tech_area"], d["title"], d["requirement"]), g))]
     if perfs:
         facets.append(FacetText("PERFORMANCE", "\n".join(
             f"{p['metric_name']} {p['required_value'] if p['required_value'] is not None else (p['required_text'] or '')}"

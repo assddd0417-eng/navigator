@@ -7,6 +7,7 @@ db/migrations/   0001~0015 순번 마이그레이션 (파일별 단일 트랜잭
 db/optional/     IVFFlat 인덱스 대안
 db/tests/        스모크 테스트 (샘플 데이터 → 전체 흐름 검증 → ROLLBACK)
 seeds/          init_test_data.sql (부서·사용자 1~5·역할·기관·사업·과제 최소 시드, 재실행 안전)
+                term_synonym.sql (선택: 국방기술 용어 사전 시작본 32쌍. 넣은 뒤 화면 '용어 사전'에서 적용)
 scripts/         migrate.sh (psql 기반 실행기, 체크섬 검증), smoke_test.sh (curl API 스모크 테스트)
 docs/ERD.md      ERD·설계 설명·가정·요구사항 매핑
 backend/         FastAPI 백엔드 (매칭·추천 엔진, HITL 검토 API) — backend/README.md

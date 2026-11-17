@@ -547,3 +547,7 @@ label.check input { width: auto; }
 .lineage-up { border-left-color: #b8c0cc !important; }
 .lineage-me { border-left-color: #1d4e89 !important; background: #eef4fb; }
 .lineage-down { border-left-color: #1d7a5f !important; }
+label > .inline { display: flex; align-items: center; gap: 4px; }
+.syn-preview { white-space: pre-wrap; background: #f6f8fa; border-radius: 8px; padding: 10px 14px; margin: 0; font-family: inherit; }
+.syn-filter { display: flex; align-items: center; gap: 10px; }
+.syn-filter label { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; font-size: 13px; }
