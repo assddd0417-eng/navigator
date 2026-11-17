@@ -1,7 +1,7 @@
 [project]
-name = "relay-ax-backend"
+name = "navigator-backend"
 version = "0.1.0"
-description = "국방 R&D 성과연계·이어달리기 AX PoC 백엔드 (FastAPI)"
+description = "Navigator 백엔드 (FastAPI)"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
@@ -14,8 +14,7 @@ dependencies = [
     "numpy>=1.26",
     "python-multipart>=0.0.9",   # 파일 업로드 (multipart/form-data)
     "pdfplumber>=0.11",          # PDF 텍스트 추출 (pdfminer.six 기반, 순수 Python + 휠)
-    "httpx>=0.27",               # app.synthetic: API 를 프로세스 안에서 호출
-    "openpyxl>=3.1",             # 해외 수요 정리 엑셀 올리기 (POST /overseas/import)
+    "httpx>=0.27",               # 외부 수집 연결 (국세청·KIPRIS·DART·기업마당·국기원)
     "olefile>=0.47",             # 공고 첨부 HWP 5.0 글자 추출
     "certifi>=2024.2",           # SMTP TLS 인증서 (맥 python.org 파이썬)
 ]
@@ -24,7 +23,7 @@ dependencies = [
 # BGE-M3 임베더 사용 시 (폐쇄망은 모델 파일을 사전 반입 후 EMBEDDING_MODEL_PATH 지정)
 # torch 2.2+ = Apple Silicon MPS 지원. macOS arm64 는 PyPI 기본 휠이 MPS 를 포함한다.
 bge = ["sentence-transformers>=3.0", "torch>=2.2"]
-# LLM 연계이유 문장 생성 (LLM_PROVIDER=anthropic | openai)
+# 공고 조건 뽑기 LLM (LLM_PROVIDER=anthropic | openai)
 llm = ["anthropic>=2.3", "openai>=1.99"]
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "httpx>=0.27", "reportlab>=4.0"]  # reportlab: 테스트용 PDF 생성
 

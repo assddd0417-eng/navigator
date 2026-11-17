@@ -14,7 +14,7 @@ from app.services.external import krit
 from app.services.ratelimit import limiter
 from tests.conftest import TEST_URL, as_user
 
-PLANNER = 1
+STAFF = 1
 
 
 def _q(sql: str, *args):
@@ -32,7 +32,7 @@ def clean(database):
 
 
 async def _run(client):
-    r = await client.post("/navigator/sources/KRIT/run", headers=as_user(PLANNER))
+    r = await client.post("/navigator/sources/KRIT/run", headers=as_user(STAFF))
     assert r.status_code == 200, r.text
     return r.json()
 
@@ -61,7 +61,7 @@ async def test_collect_company_recruitments_with_attachments(client, clean):
 
 
 async def test_overview_lists_krit(client):
-    ov = (await client.get("/navigator/sources", headers=as_user(PLANNER))).json()
+    ov = (await client.get("/navigator/sources", headers=as_user(STAFF))).json()
     k = next(s for s in ov if s["code"] == "KRIT")
     assert k["implemented"] and not k["requires_key"] and k["mode"] == "mock"
 

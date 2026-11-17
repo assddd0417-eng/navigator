@@ -10,7 +10,7 @@ seeds/navigator_eval/corpus.json 의 가상 기업 20곳(시드 101~103 + 111~12
     python -m app.navigator_eval all     # load + eval
     python -m app.navigator_eval clean   # 기업 111~127 비활성화 (화면·매칭에서 빠짐)
 
-전제: 마이그레이션, seeds/init_test_data.sql, navigator_companies.sql, navigator_announcements.sql.
+전제: 마이그레이션, seeds/base.sql, navigator_companies.sql, navigator_announcements.sql.
 보완질문 답(TRL, 보안측정)은 DB 에 넣지 않고 측정할 때만 corpus 의 answers 를 쓴다.
 판정은 규칙이라 임베더와 무관하다. 순위는 EMBEDDER=bge_m3 로 잰 값만 의미가 있다.
 """
@@ -38,7 +38,7 @@ from app.services.navigator_matching import (
 log = logging.getLogger("app.navigator_eval")
 
 CORPUS = Path(__file__).resolve().parents[2] / "seeds" / "navigator_eval" / "corpus.json"
-PLANNER = 1
+STAFF = 1
 TOP_KS = (3, 5)
 VERDICT_KO = {"ELIGIBLE": "적합", "NEEDS_INFO": "정보부족", "INELIGIBLE": "부적격"}
 
@@ -59,7 +59,7 @@ def _d(v: str | None) -> date | None:
 async def load(c: dict) -> int:
     new = [x for x in c["companies"] if not x.get("seed")]
     ids = [x["id"] for x in new]
-    async with transaction(PLANNER) as conn:
+    async with transaction(STAFF) as conn:
         have = await (await conn.execute(
             "SELECT count(*) AS n FROM ax.company_profile WHERE organization_id = ANY(%s)",
             ([x["id"] for x in c["companies"] if x.get("seed")],))).fetchone()
@@ -128,7 +128,7 @@ async def load(c: dict) -> int:
 
 async def clean(c: dict) -> int:
     ids = [x["id"] for x in c["companies"] if not x.get("seed")]
-    async with transaction(PLANNER) as conn:
+    async with transaction(STAFF) as conn:
         cur = await conn.execute("UPDATE ax.organization SET is_active = false WHERE id = ANY(%s)", (ids,))
     return cur.rowcount
 
@@ -137,7 +137,7 @@ async def evaluate(c: dict) -> dict:
     s = get_settings()
     companies = {x["id"]: x for x in c["companies"]}
     org_ids = sorted(companies)
-    async with transaction(PLANNER) as conn:
+    async with transaction(STAFF) as conn:
         await ensure_embeddings(conn)
         model = (await (await conn.execute("SELECT name FROM ax.embedding_model WHERE is_active")).fetchone())["name"]
         missing = await (await conn.execute(
@@ -178,7 +178,7 @@ async def evaluate(c: dict) -> dict:
              json.dumps({"kind": "NAVIGATOR", "embedder": s.embedder, "model": model,
                          "dataset": "seeds/navigator_eval/corpus.json",
                          "companies": len(org_ids), "announcements": c["announcements"]}, ensure_ascii=False),
-             json.dumps(metrics, ensure_ascii=False), PLANNER))).fetchone())["id"]
+             json.dumps(metrics, ensure_ascii=False), STAFF))).fetchone())["id"]
     return {"eval_run_id": run_id, "model": model, "embedder": s.embedder, "metrics": metrics,
             "pairs": pairs, "rankings": rankings}
 

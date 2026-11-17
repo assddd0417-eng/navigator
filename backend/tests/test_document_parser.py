@@ -1,4 +1,4 @@
-"""PDF·텍스트 파일 업로드: 추출·청킹 단위 테스트 + /documents/parse·/documents/upload API.
+"""공고문 파일 읽기: PDF·텍스트 추출과 청킹.
 
 테스트 PDF 는 reportlab 으로 즉석 생성한다. 한국어는 reportlab 내장 CID 글꼴(HYSMyeongJo,
 Adobe-Korea1)로 써서 글꼴 파일 없이도 실제 한글 PDF 와 같은 추출 경로를 탄다.
@@ -11,9 +11,7 @@ from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfgen import canvas
 
 from app.services.document_parser import ParseError, _pack, _page_ranges, parse_upload
-from tests.conftest import as_user
 
-PLANNER, REVIEWER, EXPERT, CURATOR, VIEWER = 1, 2, 3, 4, 5
 KO_FONT = "HYSMyeongJo-Medium"
 pdfmetrics.registerFont(UnicodeCIDFont(KO_FONT))
 
@@ -46,7 +44,6 @@ def parse(data: bytes, name: str = "보고서.pdf", **kw):
     return parse_upload(data, name, max_pages=kw.get("max_pages", 100), chunk_max_chars=kw.get("chunk_max_chars", 1000))
 
 
-# ---- 단위 --------------------------------------------------------------------
 def test_korean_pdf_pages_and_paragraphs():
     doc = parse(make_pdf([PAGE1, [], PAGE3]))
     assert doc.file_type == "pdf" and doc.parser == "pdfplumber" and doc.page_count == 3
@@ -118,58 +115,3 @@ def test_unsupported_and_empty():
     with pytest.raises(ParseError) as e:
         parse(b"", "빈.pdf")
     assert e.value.kind == "empty_file"
-
-
-# ---- API ---------------------------------------------------------------------
-def pdf_file(data: bytes, name: str = "항재밍_결과보고서.pdf"):
-    return {"file": (name, data, "application/pdf")}
-
-
-async def test_parse_preview_does_not_store(client):
-    before = len((await client.get("/documents", headers=as_user(CURATOR))).json())
-    r = await client.post("/documents/parse", headers=as_user(CURATOR), files=pdf_file(make_pdf([PAGE1, [], PAGE3])))
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["page_count"] == 3 and body["pages_without_text"] == [2] and body["warnings"]
-    assert body["filename"] == "항재밍_결과보고서.pdf" and body["chunks"][0]["page_start"] == 1
-    assert len((await client.get("/documents", headers=as_user(CURATOR))).json()) == before
-
-
-async def test_upload_pdf_registers_and_is_searchable(client):
-    r = await client.post("/documents/upload", headers=as_user(CURATOR), files=pdf_file(make_pdf([PAGE1, [], PAGE3])),
-                          data={"doc_type_code": "FINAL_REPORT", "project_id": "1", "owner_dept_id": "3",
-                                "version_label": "최종"})
-    assert r.status_code == 201, r.text
-    up = r.json()
-    assert up["file_type"] == "pdf" and up["page_count"] == 3 and up["embedded"] == len(up["chunk_ids"]) > 0
-    docs = (await client.get("/documents", headers=as_user(CURATOR))).json()
-    row = next(d for d in docs if d["id"] == up["id"])
-    assert row["title"] == "항재밍_결과보고서" and row["parse_status"] == "EMBEDDED"   # 제목 비우면 파일 이름
-
-    hits = (await client.post("/documents/search", headers=as_user(CURATOR), json={
-        "query": "항재밍 데이터링크 모뎀의 국산화 가능성을 확인하였으며 체계 적용 시험이 남아 있음.", "k": 3,
-        "project_id": 1})).json()
-    assert any(h["document_id"] == up["id"] and h["page_start"] == 3 for h in hits)
-
-
-@pytest.mark.parametrize("data,kind,status", [
-    (make_pdf([[], []]), "no_text_layer", 422),
-    (make_pdf([PAGE1], encrypt="secret"), "encrypted_pdf", 422),
-    (b"%PDF-1.4 broken", "corrupt_pdf", 422),
-])
-async def test_upload_rejects_bad_pdf(client, data, kind, status):
-    r = await client.post("/documents/upload", headers=as_user(CURATOR), files=pdf_file(data),
-                          data={"doc_type_code": "FINAL_REPORT", "project_id": "1", "owner_dept_id": "3"})
-    assert r.status_code == status and r.json()["kind"] == kind and r.headers["X-Request-Id"]
-
-
-async def test_upload_unsupported_type_415(client):
-    r = await client.post("/documents/parse", headers=as_user(CURATOR),
-                          files={"file": ("보고서.hwp", b"HWP Document File", "application/x-hwp")})
-    assert r.status_code == 415 and r.json()["kind"] == "unsupported_type"
-
-
-async def test_upload_requires_role(client):
-    r = await client.post("/documents/upload", headers=as_user(EXPERT), files=pdf_file(make_pdf([PAGE1])),
-                          data={"doc_type_code": "FINAL_REPORT", "project_id": "1"})
-    assert r.status_code == 403

@@ -6,6 +6,8 @@ build_llm_client 에 LLM_PROVIDER 값을 등록하면 된다.
 """
 from __future__ import annotations
 
+import os
+
 import logging
 from typing import Protocol
 
@@ -19,7 +21,7 @@ class LLMError(Exception):
 
 
 class LLMClient(Protocol):
-    name: str  # 예: "anthropic/claude-opus-5-5" (match_run.params·rationale_meta 에 기록)
+    name: str  # 예: "anthropic/claude-opus-5-5" 
 
     async def complete(self, system: str, user: str) -> str: ...
 
@@ -125,3 +127,14 @@ def build_llm_client(settings: Settings) -> LLMClient | None:
         return None
     log.warning("알 수 없는 LLM_PROVIDER=%s, 템플릿 문장 사용", settings.llm_provider)
     return None
+
+
+def llm_credentials_configured(settings: Settings) -> bool:
+    """자격증명이 설정돼 있는지 (auto 모드 판단용). 사내 제공자는 키 없이 붙을 수 있어 항상 True."""
+    provider = settings.llm_provider.lower()
+    if provider == "openai":
+        return bool(settings.openai_api_key or os.environ.get("OPENAI_API_KEY"))
+    if provider != "anthropic":
+        return True
+    return bool(settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
+                or os.environ.get("ANTHROPIC_AUTH_TOKEN"))

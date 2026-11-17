@@ -8,7 +8,7 @@ from app.errors import NotFound
 from app.services import collector
 
 router = APIRouter(prefix="/navigator/sources", tags=["Navigator 외부 수집"])
-STAFF = ("PLANNER",)
+STAFF = ("STAFF",)
 
 
 class ExternalIdIn(BaseModel):

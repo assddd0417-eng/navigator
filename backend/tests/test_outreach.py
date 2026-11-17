@@ -11,7 +11,7 @@ from app.services import mailer
 from app.services.ratelimit import limiter
 from tests.conftest import ROOT, TEST_URL, _psql_url, as_user, manage_token
 
-PLANNER = 1
+STAFF = 1
 HANBIT, HANBIT_BRN, HANBIT_MAIL = 101, "9998100015", "contact@hanbit.example"
 NURI = 102
 
@@ -97,7 +97,7 @@ async def test_mail_failure_handling(client, seeded, smtp, monkeypatch):
 
 
 async def test_outreach_flow(client, seeded):
-    staff = as_user(PLANNER)
+    staff = as_user(STAFF)
     _q("DELETE FROM ax.company_match_run WHERE announcement_id = 101")
     assert (await client.post("/navigator/matching/announcements/101/outreach", headers=staff,
                               json={"organization_ids": [HANBIT]})).status_code == 409   # 판정 전
@@ -143,13 +143,13 @@ async def test_outreach_flow(client, seeded):
 
 
 async def test_outreach_rules(client, seeded):
-    staff = as_user(PLANNER)
+    staff = as_user(STAFF)
     # 마감 공고에는 못 보냄
     assert (await client.post("/navigator/matching/announcements/105", headers=staff)).status_code == 201
     r = await client.post("/navigator/matching/announcements/105/outreach", headers=staff,
                           json={"organization_ids": [HANBIT]})
     assert r.status_code == 409
     # 담당자만
-    assert (await client.get("/navigator/matching/announcements/101/outreach", headers=as_user(5))).status_code == 403
+    assert (await client.get("/navigator/matching/announcements/101/outreach", headers=as_user(2))).status_code == 403
     assert (await client.post("/navigator/matching/announcements/101/outreach",
                               json={"organization_ids": [HANBIT]})).status_code == 401

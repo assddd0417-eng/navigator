@@ -9,7 +9,7 @@ from app.services.ratelimit import limiter
 from tests.conftest import TEST_URL, as_user
 from tests.test_navigator_matching import _seed
 
-PLANNER, VIEWER = 1, 5
+STAFF, VIEWER = 1, 2
 HANBIT, NURI, SAEBOM = 101, 102, 103
 
 
@@ -27,7 +27,7 @@ def _q(sql: str, *args):
 
 
 async def _run(client, code: str, **params):
-    r = await client.post(f"/navigator/sources/{code}/run", params=params, headers=as_user(PLANNER))
+    r = await client.post(f"/navigator/sources/{code}/run", params=params, headers=as_user(STAFF))
     assert r.status_code == 200, r.text
     return r.json()
 
@@ -66,7 +66,7 @@ async def test_kipris_patents(client):
     assert "inserted" not in again["counts"] and "updated" not in again["counts"]     # 바뀐 것 없음
 
     # 기업 화면에도 외부 확인으로 보임
-    prof = (await client.get(f"/navigator/matching/companies/{HANBIT}/profile", headers=as_user(PLANNER))).json()
+    prof = (await client.get(f"/navigator/matching/companies/{HANBIT}/profile", headers=as_user(STAFF))).json()
     assert len(prof["patents"]) == 3 and all(p["origin"] == "EXTERNAL" for p in prof["patents"])
 
 
@@ -94,7 +94,7 @@ async def test_bizinfo_announcements(client):
     pub = (await client.get("/navigator/announcements", params={"q": "부품국산화 개발지원 사업"})).json()
     assert not any(a["announcement_no"].startswith("BIZINFO-") for a in pub)
     assert (await client.post("/navigator/sources/BIZINFO/run", params={"organization_id": HANBIT},
-                              headers=as_user(PLANNER))).status_code == 422
+                              headers=as_user(STAFF))).status_code == 422
 
 
 async def test_live_without_key_fails_and_is_recorded(client, monkeypatch):
@@ -103,7 +103,7 @@ async def test_live_without_key_fails_and_is_recorded(client, monkeypatch):
     r = await _run(client, "KIPRIS")
     assert r["status"] == "FAILED" and "KIPRIS_ACCESS_KEY" in r["error"] and r["mode"] == "live"
     jobs = (await client.get("/navigator/sources/jobs", params={"source": "KIPRIS", "limit": 1},
-                             headers=as_user(PLANNER))).json()
+                             headers=as_user(STAFF))).json()
     assert jobs[0]["status"] == "FAILED" and jobs[0]["mode"] == "LIVE"
 
 
@@ -125,20 +125,20 @@ async def test_due_sources_and_overview(client):
     assert all(r["status"] == "SUCCEEDED" for r in first)
     assert await collector.run_due() == []                                  # 주기 안에는 다시 안 돎
 
-    ov = (await client.get("/navigator/sources", headers=as_user(PLANNER))).json()
+    ov = (await client.get("/navigator/sources", headers=as_user(STAFF))).json()
     by = {s["code"]: s for s in ov}
     assert by["KIPRIS"]["implemented"] and by["KIPRIS"]["mode"] == "mock" and by["KIPRIS"]["next_due_at"]
     assert not by["NICE"]["implemented"] and by["NICE"]["mode"] is None
-    assert (await client.post("/navigator/sources/NICE/run", headers=as_user(PLANNER))).status_code == 404
+    assert (await client.post("/navigator/sources/NICE/run", headers=as_user(STAFF))).status_code == 404
 
 
 async def test_staff_only_and_external_id(client):
     assert (await client.get("/navigator/sources")).status_code == 401
     assert (await client.post("/navigator/sources/KIPRIS/run", headers=as_user(VIEWER))).status_code == 403
-    r = await client.put(f"/navigator/sources/companies/{SAEBOM}/external-ids/dart", headers=as_user(PLANNER),
+    r = await client.put(f"/navigator/sources/companies/{SAEBOM}/external-ids/dart", headers=as_user(STAFF),
                          json={"external_id": "99900038"})
     assert r.status_code == 204
-    ids = (await client.get(f"/navigator/sources/companies/{SAEBOM}/external-ids", headers=as_user(PLANNER))).json()
+    ids = (await client.get(f"/navigator/sources/companies/{SAEBOM}/external-ids", headers=as_user(STAFF))).json()
     assert ids == [{"source": "DART", "external_id": "99900038", "set_by": "STAFF", "updated_at": ids[0]["updated_at"]}]
     r = await _run(client, "DART", organization_id=SAEBOM)
     assert r["counts"] == {"not_found": 1}                                   # 목업에 없는 고유번호

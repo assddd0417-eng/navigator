@@ -1,4 +1,4 @@
-"""공고 API. 등록·수정은 PLANNER, 조회는 공개(PUBLISHED 만, 담당자는 전체)."""
+"""공고 API. 등록·수정은 기관 담당자(STAFF), 조회는 공개(PUBLISHED 만, 담당자는 전체)."""
 from pathlib import PurePath
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Response, UploadFile, status
@@ -8,7 +8,7 @@ from app.auth import CurrentUser, get_current_user, request_id, require_roles
 from app.db import transaction
 from app.errors import NotFound
 from app.repositories.sql import evidence_from_chunk, insert, update
-from app.routers.documents import parse_file, store_document
+from app.services.announcement_docs import parse_file, store_document
 from app.config import get_settings
 from app.schemas.announcements import (AnnouncementCreate, AnnouncementCreated, AnnouncementFromText,
                                        AnnouncementReview, AnnouncementUpdate, RequirementIn, RequirementUpdate,
@@ -21,7 +21,7 @@ from app.services.ratelimit import public_rate_limit
 from app.services.requirement_extract import extract, source_text
 
 router = APIRouter(prefix="/navigator/announcements", tags=["Navigator 공고"])
-STAFF = ("PLANNER",)
+STAFF = ("STAFF",)
 RECEIPT_LABEL = {"UPCOMING": "접수전", "OPEN": "접수중", "CLOSED": "마감", "DRAFT": "작성중", "CANCELLED": "취소"}
 
 

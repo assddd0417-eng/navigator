@@ -7,7 +7,6 @@ from psycopg.types.json import Jsonb
 
 from app.services import company_radar
 from app.repositories.sql import insert
-from app.schemas.navigator import RndHistoryIn
 from app.services.bizno import format_bizno
 
 VERIFY_LABEL = {"VERIFIED": "확인됨", "UNVERIFIED": "미확인", "FAILED": "불일치"}
@@ -54,11 +53,6 @@ async def record_field(conn: AsyncConnection, org_id: int, field_name: str, valu
 async def insert_list_items(conn: AsyncConnection, org_id: int, key: str, items: list, origin: str = "SELF") -> None:
     for item in items:
         data = {**item.model_dump(), "organization_id": org_id, "origin": origin}
-        if isinstance(item, RndHistoryIn) and item.project_no:
-            # 내부 과제번호와 같으면 연결
-            row = await (await conn.execute(
-                "SELECT id FROM ax.project WHERE project_no = %s", (item.project_no,))).fetchone()
-            data["internal_project_id"] = row["id"] if row else None
         if data.get("company_evidence_id") and not await (await conn.execute(
                 "SELECT 1 FROM ax.company_evidence WHERE id = %s AND organization_id = %s",
                 (data["company_evidence_id"], org_id))).fetchone():
@@ -138,9 +132,8 @@ async def full_view(conn: AsyncConnection, org_id: int) -> dict:
             ORDER BY rated_on DESC NULLS LAST, id""", (org_id,))).fetchall()
     p["rnd_history"] = await (await conn.execute(
         """SELECT h.id, h.project_no, h.title, h.funding_agency, h.start_date, h.end_date, h.amount_krw, h.role,
-                  h.summary, h.internal_project_id, pr.title AS internal_project_title, h.origin,
-                  h.verified_at IS NOT NULL AS is_verified
-             FROM ax.company_rnd_history h LEFT JOIN ax.project pr ON pr.id = h.internal_project_id
+                  h.summary, h.origin, h.verified_at IS NOT NULL AS is_verified
+             FROM ax.company_rnd_history h
             WHERE h.organization_id = %s ORDER BY h.start_date DESC NULLS LAST, h.id""", (org_id,))).fetchall()
     p["products"] = await (await conn.execute(
         """SELECT id, name, category, description, is_defense, customers, origin

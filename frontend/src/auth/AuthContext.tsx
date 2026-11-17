@@ -3,7 +3,7 @@ import { setApiUserId } from '../api/client'
 import { getMe, type Me } from '../api/endpoints'
 import { primaryRole, SEED_USERS, type RoleCode } from './roles'
 
-const STORAGE_KEY = 'relay-ax.userId'
+const STORAGE_KEY = 'navigator.userId'
 
 interface AuthState {
   user: Me | null

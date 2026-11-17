@@ -12,22 +12,11 @@ from app.services.levels import SIM_LEVELS, sim_levels
 
 
 async def rnd_facts(conn: AsyncConnection, org_id: int) -> list[dict]:
-    """company_rnd_history + card_company 로 연결된 내부 과제 (중복이면 rnd_history 우선)."""
+    """기업이 입력했거나 외부에서 확인한 R&D 수행 이력."""
     return await (await conn.execute(
         """SELECT 'company_rnd_history' AS source_table, h.id AS source_id, h.title, h.summary, h.role,
                   h.start_date, h.end_date, h.origin, h.verified_at IS NOT NULL AS is_verified
-             FROM ax.company_rnd_history h WHERE h.organization_id = %(org)s
-           UNION ALL
-           SELECT DISTINCT ON (p.id) 'project', p.id, p.title, ac.core_achievement,
-                  CASE WHEN p.lead_org_id = %(org)s THEN 'LEAD' ELSE 'PARTICIPANT' END,
-                  p.start_date, p.end_date, 'INTERNAL', true
-             FROM ax.card_company cc
-             JOIN ax.achievement_card ac ON ac.id = cc.card_id
-             JOIN ax.project p ON p.id = ac.project_id
-            WHERE cc.organization_id = %(org)s AND cc.relation_status = 'CONFIRMED'
-              AND cc.relation_type IN ('DEVELOPER','TECH_HOLDER')
-              AND NOT EXISTS (SELECT 1 FROM ax.company_rnd_history h2
-                               WHERE h2.organization_id = %(org)s AND h2.internal_project_id = p.id)""",
+             FROM ax.company_rnd_history h WHERE h.organization_id = %(org)s""",
         {"org": org_id})).fetchall()
 
 

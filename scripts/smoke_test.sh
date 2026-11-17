@@ -1,39 +1,24 @@
 #!/usr/bin/env bash
-# =============================================================================
-# API 스모크 테스트: 실행 중인 백엔드에 curl 로 전체 흐름을 한 번 돌려 본다.
-#
-#   ① /health  ② 문서 등록(CURATOR)  ③ 문서 검색
-#   ③-2 PDF 업로드: 미리보기·등록·쪽 번호 검색, 스캔본·암호·손상·미지원 형식 거부  ④ 성과카드 생성·발행
-#   ⑤ 수요 등록 → 매칭 → 매칭 런·추천 조회(PLANNER)
-#   ⑥ 검토 배정(PLANNER) → 전문가 의견(EXPERT) → 전문가 최종판정 시도 403
-#      → 담당부서 최종판정 ADOPT(DEPT_REVIEWER)
-#   ⑦ KPI 조회
-#   ⑧ Navigator 기업 프로필: 공개 조회, 관리 링크 없이 401, 형식 오류 422, 재등록 409
-#   ⑨ Navigator 공고: 목록·상세(로그인 없음), 직접 입력(PLANNER), 잘못된 규칙 422
-#   ⑩ Navigator 매칭: 공고→기업(PLANNER) 판정 순위, 기업→공고, 공개 조회는 신용등급 가림, 관리 링크 없이 401
+# API 스모크 테스트: 실행 중인 백엔드에 curl 로 주요 흐름을 한 번 돌려 본다.
+#   ① /health  ② 기업 정보  ③ 공고  ④ 공고문 PDF  ⑤ 매칭·판정  ⑥ 알림  ⑦ 외부 수집  ⑧ 공고 등록·조건 확인
 #
 # 사용법:
 #   BASE_URL=http://localhost:8000 ./scripts/smoke_test.sh
 #
-# 전제: 마이그레이션 + seeds/init_test_data.sql + seeds/navigator_companies.sql + seeds/navigator_announcements.sql (+ navigator_past_announcements.sql 선택) 적용, 서버 실행 중 (기본 EMBEDDER=hash).
-# 필요 도구: curl, jq   (PDF 픽스처: scripts/fixtures/*.pdf, 커밋되어 있음)
-# 재실행 안전: card_no·demand_no·external_ref 에 실행 태그를 붙여 매번 새 데이터로 돈다.
-#   같은 DB 에서 수십 번 돌리면 같은 내용의 카드가 쌓여 이번 카드가 상위 K 밖으로 밀리고,
-#   그때는 이번 매칭 런의 다른 추천으로 검증하며 2건이 SKIP 된다. 전부 PASS 를 보려면 DB 를 새로 만든다.
-# ID 는 하드코딩하지 않고 응답에서 꺼내 쓴다.
+# 전제: 마이그레이션 + seeds/base.sql + seeds/navigator_companies.sql + seeds/navigator_announcements.sql
+#       (+ navigator_past_announcements.sql) 적용, 서버 실행 중 (기본 EMBEDDER=hash).
+# 필요 도구: curl, jq   (PDF 픽스처: scripts/fixtures/*.pdf)
+# 재실행 안전: 공고번호에 실행 태그를 붙여 매번 새 데이터로 돈다.
 # 종료 코드: 모두 통과 0, 하나라도 실패 1.
-# =============================================================================
 set -uo pipefail
 
 BASE_URL="${BASE_URL:-http://localhost:8000}"
 BASE_URL="${BASE_URL%/}"
 RUN_TAG="${RUN_TAG:-$(date +%Y%m%d%H%M%S)-$$}"
 VERBOSE="${VERBOSE:-0}"          # 1 이면 실패하지 않은 응답 본문도 출력
-SMOKE_LLM="${SMOKE_LLM:-0}"      # 1 이면 서버의 실제 LLM 연계이유 재생성까지 확인 (서버에 LLM 제공자 API 키 필요)
 
-# 시드 사용자 (seeds/init_test_data.sql)
-PLANNER=1 REVIEWER=2 EXPERT=3 CURATOR=4 VIEWER=5 AGENCY=6
-OWNER_DEPT=3                     # 과제 1 소관부서 = 무인미래통신기술팀
+# 시드 사용자 (seeds/base.sql)
+STAFF=1 VIEWER=2
 
 for bin in curl jq; do
     command -v "$bin" >/dev/null || { echo "필요 도구가 없습니다: $bin" >&2; exit 2; }
@@ -122,227 +107,13 @@ api "헬스체크" 200 GET /health - || abort "서버에 연결할 수 없거나
 LATEST_SCHEMA=$(basename "$(ls "$(dirname "$0")"/../db/migrations/[0-9][0-9][0-9][0-9]_*.sql | sort | tail -1)" | cut -c1-4)
 check "status=ok, 스키마 $LATEST_SCHEMA 적용, pgvector 설치" \
     '.status == "ok" and .schema_version == $v and (.pgvector | type) == "string"' --arg v "$LATEST_SCHEMA"
-api "인증 헤더 없으면 401" 401 GET /cards -
-api "시드 사용자 확인 (PLANNER=$PLANNER)" 200 GET /cards "$PLANNER" \
-    || abort "시드 사용자가 없습니다. seeds/init_test_data.sql 을 먼저 적용하세요"
+api "인증 헤더 없으면 401" 401 GET /me -
+api "시드 사용자 확인 (STAFF=$STAFF)" 200 GET /me "$STAFF" \
+    || abort "시드 사용자가 없습니다. seeds/base.sql 을 먼저 적용하세요"
+check "기관 담당자 역할" '.roles == ["STAFF"]'
 
 # -----------------------------------------------------------------------------
-section "② 문서 등록 (CURATOR=$CURATOR)"
-CHUNK1_TEXT="광대역 재밍 환경에서 주파수 도약 동기 유지 시간이 목표 10초 대비 6초로 부족하여 후속 연구가 필요함"
-CHUNK2_TEXT="시험은 실내 전파차폐실과 야외 시험장에서 수행하였으며 재밍 전력 30dBm 조건을 적용함"
-DOC_JSON=$(jq -n --arg tag "$RUN_TAG" --arg c1 "$CHUNK1_TEXT" --arg c2 "$CHUNK2_TEXT" '{
-    doc_type_code: "FINAL_REPORT", title: "항재밍 데이터링크 결과보고서", project_id: 1,
-    owner_dept_id: 3, external_ref: ("SMOKE-DOC-" + $tag), version_label: "최종", authored_at: "2025-01-15",
-    sections: [{key: "s43", section_no: "4.3", heading: "미해결 기술 및 후속 연구 필요사항",
-                page_start: 87, page_end: 89}],
-    chunks: [
-        {content: $c1, section_key: "s43", page_start: 88, location: {paragraph: 2}},
-        {content: $c2, section_key: "s43", page_start: 89}
-    ]}')
-api "권한 없는 사용자(EXPERT)의 문서 등록 거부" 403 POST /documents "$EXPERT" "$DOC_JSON"
-api "문서 등록" 201 POST /documents "$CURATOR" "$DOC_JSON" || abort "문서 등록 실패"
-check "청크 2개 생성·임베딩" '(.chunk_ids | length) == 2 and .embedded == 2'
-DOC_ID=$(pick '.id')
-CHUNK_ID=$(pick '.chunk_ids[0]')
-CHUNK_IDS=$(pick '.chunk_ids | map(tostring) | join(",")')
-[[ -n "$CHUNK_ID" ]] || abort "응답에서 chunk_ids 를 찾지 못했습니다"
-printf '       document_id=%s chunk_ids=[%s]\n' "$DOC_ID" "$CHUNK_IDS"
-
-# -----------------------------------------------------------------------------
-section "③ 문서 검색"
-api "RAG 검색 (CURATOR, 과제 1)" 200 POST /documents/search "$CURATOR" \
-    "$(jq -n --arg q "$CHUNK1_TEXT" '{query: $q, k: 5, project_id: 1}')"
-check "결과 1건 이상, 1위가 질의한 청크 내용" '(length > 0) and (.[0].content == $q)' --arg q "$CHUNK1_TEXT"
-check "출처(조항 4.3·88쪽) 포함" '.[0].section_no == "4.3" and .[0].page_start == 88'
-api "열람권 없는 부서(EXPERT)의 검색은 해당 문서 제외" 200 POST /documents/search "$EXPERT" \
-    "$(jq -n --arg q "$CHUNK1_TEXT" '{query: $q, k: 5, project_id: 1}')"
-check "EXPERT 검색 결과에 과제 1 결과보고서 청크 없음" 'map(select(.content == $q)) | length == 0' --arg q "$CHUNK1_TEXT"
-
-# -----------------------------------------------------------------------------
-section "③-2 PDF 업로드 (CURATOR=$CURATOR)"
-FIX="$(dirname "$0")/fixtures"
-PDF_FIELDS=(doc_type_code=FINAL_REPORT project_id=1 owner_dept_id=$OWNER_DEPT "external_ref=SMOKE-PDF-$RUN_TAG")
-upload "권한 없는 사용자(EXPERT)의 PDF 미리보기 거부" 403 /documents/parse "$EXPERT" "$FIX/report_ko.pdf"
-upload "PDF 미리보기 (저장 없음)" 200 /documents/parse "$CURATOR" "$FIX/report_ko.pdf"
-check "3쪽, 텍스트 없는 2쪽은 제외·경고, 1쪽 청크에 한국어 본문(어절 공백 보존)" \
-    '.page_count == 3 and .pages_without_text == [2] and (.warnings | length) == 1
-     and (.chunks[0].page_start == 1) and (.chunks[0].content | contains("목표 10초 대비 6초로 부족하여"))'
-upload "PDF 업로드·등록 (제목은 파일 이름)" 201 /documents/upload "$CURATOR" "$FIX/report_ko.pdf" "${PDF_FIELDS[@]}" \
-    || abort "PDF 업로드 실패"
-check "page_count=3, 청크 모두 임베딩" '.file_type == "pdf" and .page_count == 3 and .embedded == (.chunk_ids | length) and .embedded > 0'
-PDF_DOC_ID=$(pick '.id')
-api "문서 목록에 PDF 문서(제목=report_ko, 임베딩 완료)" 200 GET /documents "$CURATOR"
-check "업로드한 문서 확인" 'map(select(.id == $id and .title == "report_ko" and .parse_status == "EMBEDDED")) | length == 1' \
-    --argjson id "$PDF_DOC_ID"
-PDF_Q="항재밍 데이터링크 모뎀의 국산화 가능성을 확인하였으며 체계 적용 시험이 남아 있음."
-api "PDF 본문 검색" 200 POST /documents/search "$CURATOR" "$(jq -n --arg q "$PDF_Q" '{query: $q, k: 5, project_id: 1}')"
-check "업로드한 PDF 의 3쪽 청크가 출처 쪽 번호와 함께 검색됨" \
-    'map(select(.document_id == $id and .page_start == 3)) | length >= 1' --argjson id "$PDF_DOC_ID"
-upload "스캔본(텍스트 없음) 거부" 422 /documents/upload "$CURATOR" "$FIX/scanned.pdf" "${PDF_FIELDS[@]}"
-check "kind=no_text_layer, OCR 미지원 안내" '.kind == "no_text_layer" and (.detail | contains("OCR"))'
-upload "암호 걸린 PDF 거부" 422 /documents/upload "$CURATOR" "$FIX/encrypted.pdf" "${PDF_FIELDS[@]}"
-check "kind=encrypted_pdf" '.kind == "encrypted_pdf"'
-BROKEN_PDF="$BODY_FILE.broken.pdf"; head -c 400 "$FIX/report_ko.pdf" > "$BROKEN_PDF"
-upload "손상된 PDF(잘린 파일) 거부" 422 /documents/upload "$CURATOR" "$BROKEN_PDF" "${PDF_FIELDS[@]}"
-check "kind=corrupt_pdf" '.kind == "corrupt_pdf"'
-HWP_FILE="$BODY_FILE.sample.hwp"; printf 'HWP Document File' > "$HWP_FILE"
-upload "지원하지 않는 형식(.hwp) 거부" 415 /documents/parse "$CURATOR" "$HWP_FILE"
-check "kind=unsupported_type" '.kind == "unsupported_type"'
-rm -f "$BROKEN_PDF" "$HWP_FILE"
-
-# -----------------------------------------------------------------------------
-section "④ 성과카드 생성·발행 (CURATOR=$CURATOR)"
-CARD_JSON=$(jq -n --arg tag "$RUN_TAG" --argjson cid "$CHUNK_ID" '{
-    card_no: ("SMOKE-AC-" + $tag), project_id: 1, title: "항재밍 주파수 도약 데이터링크",
-    core_achievement: "소형 무인기용 주파수 도약 기반 항재밍 데이터링크 시제 개발",
-    trl: 5, dev_stage_code: "PROTOTYPE", application_env: "소형 무인기 탑재, 야외 시험장 재밍 환경",
-    technologies: [{tech_name: "주파수 도약 항재밍 데이터링크", principle: "고속 주파수 도약과 적응형 채널 선택",
-                    is_primary: true, evidence: [{chunk_id: $cid}]}],
-    performances: [{metric_name: "동기 유지 시간", target_value: 10, achieved_value: 6, unit: "s",
-                    is_achieved: false, evidence: [{chunk_id: $cid}]}],
-    open_issues: [{issue_type: "UNRESOLVED_TECH", source: "REPORT",
-                   description: "광대역 재밍 환경에서 주파수 도약 동기 유지 시간 부족",
-                   evidence: [{chunk_id: $cid, quote: "동기 유지 시간이 목표 10초 대비 6초"}]}],
-    weapon_systems: [{id: 1}],
-    companies: [{id: 1, relation_type: "TECH_HOLDER", confidence: 0.6}]
-}')
-api "근거 기반 성과카드 생성" 201 POST /cards "$CURATOR" "$CARD_JSON" || abort "카드 생성 실패"
-CARD_ID=$(pick '.id')
-printf '       card_id=%s\n' "$CARD_ID"
-api "PLANNER 는 발행 불가" 403 POST "/cards/$CARD_ID/publish" "$PLANNER"
-api "카드 발행 (매칭 대상)" 204 POST "/cards/$CARD_ID/publish" "$CURATOR" || abort "카드 발행 실패"
-api "카드 조회" 200 GET "/cards/$CARD_ID" "$PLANNER"
-check "PUBLISHED, 원문 근거 3건(조항 4.3)" \
-    '.status == "PUBLISHED" and (.evidence | length) == 3 and .evidence[0].section_no == "4.3"'
-
-# 근거 없는 카드: 이 카드에서 나온 추천은 검토 배정이 DB 가드로 거부되어야 한다 (⑥에서 확인)
-NOEV_JSON=$(jq -n --arg tag "$RUN_TAG" '{
-    card_no: ("SMOKE-AC-NOEV-" + $tag), project_id: 2, title: "전술 배터리 열관리",
-    core_achievement: "상변화물질 기반 배터리 열관리 모듈", trl: 6,
-    technologies: [{tech_name: "상변화물질 열관리", is_primary: true}]}')
-api "근거 없는 성과카드 생성 (422 가드 확인용)" 201 POST /cards "$CURATOR" "$NOEV_JSON"
-NOEV_CARD_ID=$(pick '.id')
-[[ -n "$NOEV_CARD_ID" ]] && api "근거 없는 카드 발행" 204 POST "/cards/$NOEV_CARD_ID/publish" "$CURATOR"
-
-# -----------------------------------------------------------------------------
-section "⑤ 수요 등록 → 매칭 → 결과 조회 (PLANNER=$PLANNER)"
-DEMAND_JSON=$(jq -n --arg tag "$RUN_TAG" '{
-    demand_no: ("SMOKE-DM-" + $tag), title: "광대역 재밍 대응 정찰드론 데이터링크",
-    tech_need: "광대역 재밍 환경에서 드론 데이터링크 주파수 도약 동기 유지 시간 확보",
-    business_purpose: "미래 핵심기술 확보", required_trl_min: 5, required_trl_max: 7,
-    target_program_id: 2,
-    performance_reqs: [{metric_name: "동기 유지 시간", required_value: 10, unit: "s"}],
-    technologies: [{tech_name: "주파수 도약 항재밍 데이터링크"}, {tech_name: "상변화물질 열관리"}],
-    weapon_system_ids: [1]}')
-api "VIEWER 는 수요 등록 불가" 403 POST /demands "$VIEWER" "$DEMAND_JSON"
-api "수요 등록" 201 POST /demands "$PLANNER" "$DEMAND_JSON" || abort "수요 등록 실패"
-DEMAND_ID=$(pick '.id')
-printf '       demand_id=%s\n' "$DEMAND_ID"
-
-api "매칭 실행" 201 POST "/demands/$DEMAND_ID/match" "$PLANNER" '{"top_k": 20}' || abort "매칭 실패"
-RUN_ID=$(pick '.id')
-printf '       match_run_id=%s\n' "$RUN_ID"
-
-api "매칭 런 조회" 200 GET "/match-runs/$RUN_ID" "$PLANNER" || abort "매칭 런 조회 실패"
-check "SUCCEEDED, 추천 1건 이상" '.status == "SUCCEEDED" and (.recommendations | length) > 0'
-
-# 검토 대상: 이번 카드에서 나온 단일 성과 추천 중 근거가 있는 최상위.
-# 같은 DB 에서 여러 번 돌리면 내용이 같은 카드가 쌓여 이번 카드가 상위 K 밖으로 밀릴 수 있으므로,
-# 그때는 이번 매칭 런의 다른 근거 있는 추천으로 대신 검증한다 (추천 행은 매칭 런마다 새로 생긴다).
-REC_FILTER='[.recommendations[] | select(.linkage_type_code != "CONVERGENCE" and .evidence_count > 0
-             and ($c == null or any(.source_cards[]; .card_id == $c)))][0].recommendation_id'
-NOEV_FILTER='[.recommendations[] | select(.evidence_count == 0
-             and ($c == null or any(.source_cards[]; .card_id == $c)))][0].recommendation_id'
-if printf '%s' "$BODY" | jq -e --argjson c "$CARD_ID" 'any(.recommendations[]; any(.source_cards[]; .card_id == $c))' >/dev/null; then
-    pass "이번 카드(card_id=$CARD_ID)가 추천 후보에 포함"
-    REC_ID=$(pick "$REC_FILTER" --argjson c "$CARD_ID")
-else
-    skip "이번 카드가 상위 K 밖 (이전 실행 데이터 누적) → 이번 매칭 런의 다른 근거 있는 추천으로 진행"
-    REC_ID=$(pick "$REC_FILTER" --argjson c null)
-fi
-NOEV_REC_ID=$(pick "$NOEV_FILTER" --argjson c "${NOEV_CARD_ID:-0}")
-[[ -n "$NOEV_REC_ID" ]] || NOEV_REC_ID=$(pick "$NOEV_FILTER" --argjson c null)
-REC_TYPE=$(pick '.recommendations[] | select(.recommendation_id == $r) | .linkage_type_code' --argjson r "${REC_ID:-0}")
-[[ -n "$REC_ID" ]] || abort "이번 매칭 런에 근거가 있는 추천이 없습니다"
-printf '       recommendation_id=%s (유형 %s)\n' "$REC_ID" "$REC_TYPE"
-
-api "추천 상세 조회" 200 GET "/recommendations/$REC_ID" "$PLANNER"
-check "5개 기준 점수와 원문 근거 포함" \
-    '([.score_details[].criterion] | sort) == ["ENVIRONMENT","PERFORMANCE","PURPOSE","TECH","TRL"]
-     and (.evidence | length) > 0 and .status == "GENERATED"'
-check "연계이유와 출처(rationale_source) 포함" \
-    '(.rationale | length) > 0 and (.rationale_source | IN("LLM","TEMPLATE","TEMPLATE_RESTRICTED"))'
-api "EXPERT 는 연계이유 재생성 불가" 403 POST "/recommendations/$REC_ID/rationale" "$EXPERT"
-# 서버에 LLM 키가 있으면 SMOKE_LLM=1 로 실행 (실제 생성 확인), 없으면 409(꺼짐) 확인
-if [[ "${SMOKE_LLM:-0}" == 1 ]]; then
-    api "AI 연계이유 재생성 (PLANNER)" 200 POST "/recommendations/$REC_ID/rationale" "$PLANNER"
-    check "생성 결과 OK 또는 템플릿 대체 사유 포함" \
-        '(.status == "OK" and .rationale_source == "LLM") or (.status == "FALLBACK" and (.error | length) > 0)'
-else
-    api "LLM 꺼짐 상태의 재생성 요청은 409" 409 POST "/recommendations/$REC_ID/rationale" "$PLANNER"
-fi
-
-# -----------------------------------------------------------------------------
-section "⑥ 검토 배정 → 전문가 의견 → 최종판정"
-api "EXPERT 는 배정 불가" 403 POST "/recommendations/$REC_ID/assignments" "$EXPERT" \
-    "$(jq -n --argjson u "$EXPERT" '{review_role: "EXPERT", assignee_user_id: $u}')"
-api "전문가 검토 배정 (PLANNER → EXPERT)" 201 POST "/recommendations/$REC_ID/assignments" "$PLANNER" \
-    "$(jq -n --argjson u "$EXPERT" '{review_role: "EXPERT", assignee_user_id: $u}')" || abort "배정 실패"
-EXPERT_ASSIGNMENT=$(pick '.id')
-api "담당부서 검토 배정 (PLANNER → 부서 $OWNER_DEPT)" 201 POST "/recommendations/$REC_ID/assignments" "$PLANNER" \
-    "$(jq -n --argjson d "$OWNER_DEPT" '{review_role: "DEPT_OWNER", assignee_dept_id: $d}')" || abort "배정 실패"
-OWNER_ASSIGNMENT=$(pick '.id')
-printf '       assignment_id: expert=%s dept_owner=%s\n' "$EXPERT_ASSIGNMENT" "$OWNER_ASSIGNMENT"
-
-if [[ -n "$NOEV_REC_ID" ]]; then
-    api "근거 없는 추천의 검토 배정은 422 (DB 가드)" 422 POST "/recommendations/$NOEV_REC_ID/assignments" "$PLANNER" \
-        "$(jq -n --argjson u "$EXPERT" '{review_role: "EXPERT", assignee_user_id: $u}')"
-else
-    skip "근거 없는 카드의 추천이 이번 매칭 결과에 없어 422 확인 생략"
-fi
-
-api "EXPERT 검토 대기열에 배정 건 표시" 200 GET /reviews/queue "$EXPERT"
-check "대기열에 전문가 배정 포함" 'any(.[]; .assignment_id == $a)' --argjson a "$EXPERT_ASSIGNMENT"
-
-api "전문가 의견 작성 (is_final=false)" 201 POST "/recommendations/$REC_ID/decisions" "$EXPERT" \
-    "$(jq -n --argjson a "$EXPERT_ASSIGNMENT" '{decision_code: "ADOPT", assignment_id: $a, opinion: "후속형 연계 적절",
-        relevance_rating: 5, evidence_adequacy: 4, dev_needs_accuracy: "CORRECT"}')"
-
-api "EXPERT 의 최종판정 시도는 403" 403 POST "/recommendations/$REC_ID/decisions" "$EXPERT" \
-    '{"decision_code": "ADOPT", "is_final": true, "opinion": "전문가가 최종판정 시도"}'
-check "403 사유: 최종판정 권한 없음 (DB 트리거)" '.detail | contains("최종판정 권한")'
-
-api "DEPT_REVIEWER 최종판정 ADOPT" 201 POST "/recommendations/$REC_ID/decisions" "$REVIEWER" \
-    "$(jq -n --argjson a "$OWNER_ASSIGNMENT" '{decision_code: "ADOPT", is_final: true, assignment_id: $a,
-        opinion: "소관부서 검토 결과 채택"}')" || abort "최종판정 실패"
-
-api "판정 후 추천 상태 확인" 200 GET "/recommendations/$REC_ID" "$PLANNER"
-check "DECIDED / 최종판정 ADOPT / 배정 모두 SUBMITTED" \
-    '.status == "DECIDED" and .final_decision_code == "ADOPT"
-     and ([.assignments[].status] | unique) == ["SUBMITTED"]'
-check "EXPERT 거부 시도는 판정 이력에 남지 않음 (전문가 의견 1 + 최종 1)" \
-    '[.decisions[] | {reviewer_id, is_final}] == [{reviewer_id: $e, is_final: false}, {reviewer_id: $r, is_final: true}]' \
-    --argjson e "$EXPERT" --argjson r "$REVIEWER"
-
-api "검토 이력 조회" 200 GET "/recommendations/$REC_ID/history" "$PLANNER"
-check "상태 이력 GENERATED → ASSIGNED → IN_REVIEW → DECIDED, 마지막 변경자 DEPT_REVIEWER" \
-    '[.status_history[].to_status] == ["GENERATED","ASSIGNED","IN_REVIEW","DECIDED"]
-     and .status_history[-1].changed_by == $r' --argjson r "$REVIEWER"
-check "감사 로그에 review_decision 기록" 'any(.audit[]; .table_name == "review_decision")'
-
-# -----------------------------------------------------------------------------
-section "⑦ KPI 조회"
-api "추천 KPI (이번 매칭 런)" 200 GET "/kpi/recommendations?match_run_id=$RUN_ID" "$PLANNER"
-check "최종 검토 1건 이상·채택 1건 이상·근거 연결률 > 0" \
-    'length == 1 and .[0].finally_reviewed >= 1 and .[0].adopted >= 1
-     and ((.[0].evidence_coverage_pct | tonumber) > 0)'
-api "평가 KPI" 200 GET /kpi/eval "$PLANNER"
-check "배열 응답" 'type == "array"'
-api "업무시간 KPI" 200 GET /kpi/work-time "$PLANNER"
-check "배열 응답" 'type == "array"'
-
-# -----------------------------------------------------------------------------
-section "⑧ Navigator 기업 프로필 (로그인 없음, seeds/navigator_companies.sql 필요)"
+section "② 기업 정보 (로그인 없음, seeds/navigator_companies.sql 필요)"
 api "가상 기업 공개 조회 (사업자번호)" 200 GET /navigator/companies/999-81-00015 -
 check "확인됨 · 특허 공개 · 신용등급 숨김" \
     '.biz_verify_label == "확인됨" and (.patents | length) >= 1 and (has("credit_ratings") | not)'
@@ -356,7 +127,7 @@ api "이미 등록된 사업자번호 재등록 거부" 409 POST /navigator/comp
     '{"business_reg_no":"999-81-00015","company_name":"x","representative_name":"김한빛","opened_on":"2012-03-15","email":"a@b.co"}'
 
 # -----------------------------------------------------------------------------
-section "⑨ Navigator 공고 (seeds/navigator_announcements.sql 필요)"
+section "③ 공고 (seeds/navigator_announcements.sql 필요)"
 api "공고 목록 (로그인 없음)" 200 GET "/navigator/announcements?q=%EA%B0%80%EC%83%81" -
 check "가상 공고 5건, 105 는 마감" \
     '([.[] | select(.announcement_no | startswith("NAV-2026-"))] | length) == 5
@@ -366,35 +137,45 @@ check "자격요건 8줄 (필수 5·우대 3) · 요구기술 2" \
     '(.requirements | length) == 8 and ([.requirements[] | select(.is_mandatory)] | length) == 5
      and (.tech_needs | length) == 2'
 api "로그인 없이 공고 등록 거부" 401 POST /navigator/announcements - '{"announcement_no":"x","title":"x","agency_name":"x"}'
-api "공고 직접 입력 (PLANNER)" 201 POST /navigator/announcements "$PLANNER" \
+api "공고 직접 입력 (STAFF)" 201 POST /navigator/announcements "$STAFF" \
     "$(jq -n --arg no "SMOKE-$RUN_TAG" '{announcement_no: $no, title: "스모크 공고", agency_name: "(가상)기관",
         requirements: [{req_type_code: "MIN_CREDIT_GRADE", rule: {min_grade: "BB-"}, description: "BB- 이상"}]}')"
-api "잘못된 규칙 거부" 422 POST /navigator/announcements "$PLANNER" \
+api "잘못된 규칙 거부" 422 POST /navigator/announcements "$STAFF" \
     "$(jq -n --arg no "SMOKE-BAD-$RUN_TAG" '{announcement_no: $no, title: "x", agency_name: "x",
         requirements: [{req_type_code: "MIN_CREDIT_GRADE", rule: {min_grade: "Z"}, description: "x"}]}')"
 
 # -----------------------------------------------------------------------------
-section "⑩ Navigator 매칭과 판정 (가상 기업 3곳 × 공고 5건)"
+section "④ 공고문 PDF 올리기"
+FIX="$(dirname "$0")/fixtures"
+PDF_FIELDS=("announcement_no=PDF-$RUN_TAG" "agency_name=(가상)기관")
+upload "열람자는 거부" 403 /navigator/announcements/upload "$VIEWER" "$FIX/report_ko.pdf" "${PDF_FIELDS[@]}"
+upload "공고문 PDF 등록 (제목은 파일 이름)" 201 /navigator/announcements/upload "$STAFF" "$FIX/report_ko.pdf" "${PDF_FIELDS[@]}"
+check "작성 중 공고, 원문 청크 저장" '.id > 0 and .chunk_count > 0'
+upload "스캔본(글자 없음) 거부" 422 /navigator/announcements/upload "$STAFF" "$FIX/scanned.pdf" "announcement_no=PDF2-$RUN_TAG" "agency_name=(가상)기관"
+upload "암호 걸린 PDF 거부" 422 /navigator/announcements/upload "$STAFF" "$FIX/encrypted.pdf" "announcement_no=PDF3-$RUN_TAG" "agency_name=(가상)기관"
+
+# -----------------------------------------------------------------------------
+section "⑤ 매칭과 판정 (가상 기업 3곳 × 공고 5건)"
 api "매칭은 담당자만 (VIEWER)" 403 POST /navigator/matching/announcements/101 "$VIEWER"
-api "공고 101 → 기업 (PLANNER)" 201 POST /navigator/matching/announcements/101 "$PLANNER"
+api "공고 101 → 기업 (STAFF)" 201 POST /navigator/matching/announcements/101 "$STAFF"
 check "한빛 적합 1위 · 누리·새봄 부적격 · 기준별 점수 4개" \
     '.recommendations[0].organization_id == 101 and .recommendations[0].verdict == "ELIGIBLE"
      and (.recommendations[0].scores | length) == 4
      and any(.recommendations[]; .organization_id == 102 and .verdict == "INELIGIBLE")
      and any(.recommendations[]; .organization_id == 103 and .verdict == "INELIGIBLE")'
-api "공고 101 참여 권유 대상" 200 GET /navigator/matching/announcements/101/outreach "$PLANNER"
+api "공고 101 참여 권유 대상" 200 GET /navigator/matching/announcements/101/outreach "$STAFF"
 check "적합·확인 필요만, 한빛 포함" \
     '.open and all(.companies[]; .verdict != "INELIGIBLE") and any(.companies[]; .organization_id == 101)'
 api "권유 메일은 담당자만 (VIEWER)" 403 POST /navigator/matching/announcements/101/outreach "$VIEWER" '{"organization_ids":[101]}'
-api "공고 103 → 기업" 201 POST /navigator/matching/announcements/103 "$PLANNER"
+api "공고 103 → 기업" 201 POST /navigator/matching/announcements/103 "$STAFF"
 check "새봄 정보부족 + TRL 보완질문" \
     'any(.recommendations[]; .organization_id == 103 and .verdict == "NEEDS_INFO"
          and any(.questions[]; .question | test("TRL")))'
-api "새봄 → 공고 (마감 포함)" 201 POST "/navigator/matching/companies/103?include_closed=true" "$PLANNER"
+api "새봄 → 공고 (마감 포함)" 201 POST "/navigator/matching/companies/103?include_closed=true" "$STAFF"
 check "103 정보부족 · 101/102/104 부적격" \
     '[.recommendations[] | select(.announcement_id <= 105 and .announcement_id >= 101) | {(.announcement_id|tostring): .verdict}]
      | add | .["103"] == "NEEDS_INFO" and .["101"] == "INELIGIBLE" and .["102"] == "INELIGIBLE" and .["104"] == "INELIGIBLE"'
-api "한빛 → 최근 마감 공고 (참여할 수 있었던 사업)" 201 POST "/navigator/matching/companies/101?past=true" "$PLANNER"
+api "한빛 → 최근 마감 공고 (참여할 수 있었던 사업)" 201 POST "/navigator/matching/companies/101?past=true" "$STAFF"
 check "마감 공고만, 다음 회차 표시" \
     'all(.recommendations[]; .receipt_state == "CLOSED")
      and (([.recommendations[] | select(.announcement_id == 106)] | length) == 0
@@ -405,138 +186,40 @@ check "사업자번호 없음 · 신용등급 요건 결과 가림" \
          and all(.checks[]; (.req_type_code != "MIN_CREDIT_GRADE") or (.result == null)))'
 api "관리 링크 없이 내 매칭" 401 POST /navigator/manage/matches -
 
-
-section "⑪ Navigator 공고 알림"
+section "⑥ 공고 알림"
 api "관리 링크 없이 구독 목록" 401 GET /navigator/manage/subscriptions -
 api "잘못된 확인 링크" 404 POST /navigator/subscriptions/confirm - '{"token":"xxxxxxxxxxxxxxxx"}'
 api "잘못된 해지 링크" 404 POST /navigator/subscriptions/unsubscribe - '{"token":"xxxxxxxxxxxxxxxx"}'
 api "공고 알림 현황은 담당자만 (VIEWER)" 403 GET /navigator/alerts/announcements/101 "$VIEWER"
-api "공고 101 알림 현황 (PLANNER)" 200 GET /navigator/alerts/announcements/101 "$PLANNER"
+api "공고 101 알림 현황 (STAFF)" 200 GET /navigator/alerts/announcements/101 "$STAFF"
 
-section "⑫ Navigator 외부 수집 (mock)"
+section "⑦ 외부 수집 (mock)"
 api "출처 목록은 담당자만 (VIEWER)" 403 GET /navigator/sources "$VIEWER"
-api "출처 목록 (PLANNER)" 200 GET /navigator/sources "$PLANNER"
-api "국세청 휴·폐업 재확인" 200 POST /navigator/sources/NTS_BIZ/run "$PLANNER"
-api "KIPRIS 특허 (한빛)" 200 POST "/navigator/sources/KIPRIS/run?organization_id=101" "$PLANNER"
-api "DART 재무 (누리)" 200 POST "/navigator/sources/DART/run?organization_id=102" "$PLANNER"
-api "기업마당 공고" 200 POST /navigator/sources/BIZINFO/run "$PLANNER"
-api "국기원 공지사항 공고" 200 POST /navigator/sources/KRIT/run "$PLANNER"
-api "공고는 기업별 수집 안 됨" 422 POST "/navigator/sources/BIZINFO/run?organization_id=101" "$PLANNER"
-api "연결 안 된 출처" 404 POST /navigator/sources/NICE/run "$PLANNER"
-api "수집 기록" 200 GET "/navigator/sources/jobs?limit=5" "$PLANNER"
+api "출처 목록 (STAFF)" 200 GET /navigator/sources "$STAFF"
+api "국세청 휴·폐업 재확인" 200 POST /navigator/sources/NTS_BIZ/run "$STAFF"
+api "KIPRIS 특허 (한빛)" 200 POST "/navigator/sources/KIPRIS/run?organization_id=101" "$STAFF"
+api "DART 재무 (누리)" 200 POST "/navigator/sources/DART/run?organization_id=102" "$STAFF"
+api "기업마당 공고" 200 POST /navigator/sources/BIZINFO/run "$STAFF"
+api "국기원 공지사항 공고" 200 POST /navigator/sources/KRIT/run "$STAFF"
+api "공고는 기업별 수집 안 됨" 422 POST "/navigator/sources/BIZINFO/run?organization_id=101" "$STAFF"
+api "연결 안 된 출처" 404 POST /navigator/sources/NICE/run "$STAFF"
+api "수집 기록" 200 GET "/navigator/sources/jobs?limit=5" "$STAFF"
 
-section "⑫-2 공고 등록·조건 확인"
+section "⑧ 공고 등록·조건 확인"
 NOTICE_TEXT='신청자격\n방산 부품을 생산하는 중소기업으로서 기업부설연구소를 보유한 기업\n신청제한\n1. 국세 체납 또는 휴·폐업 중인 기업\n신청기간 : 2026. 11. 16. ~ 11. 27.'
-api "공고문 붙여넣기 등록" 201 POST /navigator/announcements/text "$PLANNER" \
+api "공고문 붙여넣기 등록" 201 POST /navigator/announcements/text "$STAFF" \
     "{\"announcement_no\":\"SMK-$RUN_TAG\",\"title\":\"스모크 공고 $RUN_TAG\",\"body_text\":\"$NOTICE_TEXT\"}"
 TXT_ANN=$(pick '.id')
 if [[ -n "$TXT_ANN" ]]; then
-    api "확인 전 목록에 있음" 200 GET "/navigator/announcements?review=PENDING&q=$RUN_TAG" "$PLANNER"
+    api "확인 전 목록에 있음" 200 GET "/navigator/announcements?review=PENDING&q=$RUN_TAG" "$STAFF"
     check "작성 중 공고 1건" 'length == 1 and .[0].status == "DRAFT"'
-    api "조건 뽑기" 200 POST "/navigator/announcements/$TXT_ANN/extract" "$PLANNER"
+    api "조건 뽑기" 200 POST "/navigator/announcements/$TXT_ANN/extract" "$STAFF"
     check "기업규모·연구소·휴폐업·체납 후보, 접수 마감" \
         '([.requirements[].req_type_code] | contains(["COMPANY_SIZE","REQUIRED_CERT","BUSINESS_STATUS","NO_DISQUALIFICATION"]))
          and .fields.receipt_end == "2026-11-27"'
     REQS=$(printf '%s' "$BODY" | jq -c '[.requirements[] | {req_type_code, rule, is_mandatory, description, source_quote, origin: "AI_EXTRACTED"}]')
-    api "조건 확인 저장" 204 PUT "/navigator/announcements/$TXT_ANN/review" "$PLANNER" "{\"requirements\":$REQS}"
+    api "조건 확인 저장" 204 PUT "/navigator/announcements/$TXT_ANN/review" "$STAFF" "{\"requirements\":$REQS}"
     api "조건 확인은 담당자만 (VIEWER)" 403 POST "/navigator/announcements/$TXT_ANN/extract" "$VIEWER"
 fi
 
-section "⑬ 기관 포트폴리오"
-api "포트폴리오 숫자 (기관 열람자)" 200 GET /portfolio/overview "$AGENCY"
-check "숫자 5개" 'has("cards_published") and has("overseas_demands") and has("gaps_confirmed") and has("gaps_draft") and has("handed_off")'
-api "분야별 대조 (기획자)" 200 GET "/portfolio/areas?include_draft=true" "$PLANNER"
-api "국내 성과 분포 (검수자)" 200 GET /portfolio/domestic "$REVIEWER"
-api "기획 후보 (기관 열람자)" 200 GET /portfolio/actions "$AGENCY"
-api "포트폴리오는 관리자·열람자만 (EXPERT)" 403 GET /portfolio/overview "$EXPERT"
-api "기획수요로 넘기기는 기획자만 (기관 열람자)" 403 POST /portfolio/actions/1/to-demand "$AGENCY"
-
-section "⑭ 신규 과제 기획 (동향 → 기획 참고서 → 기획수요)"
-api "동향 직접 입력 (큐레이터)" 201 POST /planning/trends "$CURATOR" \
-    '{"title":"스모크 성능개량 동향 '"$RUN_TAG"'","demand_kind":"UPGRADE","region":"육군","requirement":"항재밍 데이터링크 동기 유지 시간 향상","source_note":"스모크 시험용 메모","performances":[{"metric_name":"동기 유지 시간","required_value":30,"unit":"s"}]}'
-TREND_ID=$(pick '.id')
-[[ -n "$TREND_ID" ]] || abort "동향 id 를 받지 못함"
-api "출처 메모 없는 동향은 거부" 422 POST /planning/trends "$PLANNER" \
-    '{"title":"출처 없음","demand_kind":"UPGRADE","region":"육군","requirement":"요구"}'
-api "기획 참고서 (기획자)" 200 GET "/planning/brief/$TREND_ID?min_sim=-1" "$PLANNER"
-check "관련 과제·성능 비교·새 기획에 넣을 것" 'has("projects") and (.comparison | length) == 1 and (.suggestions | length) >= 1'
-api "기획 참고서는 기획·검수·큐레이터만 (EXPERT)" 403 GET "/planning/brief/$TREND_ID" "$EXPERT"
-api "기획수요 만들기는 기획자만 (큐레이터)" 403 POST "/planning/brief/$TREND_ID/to-demand" "$CURATOR"
-api "기획 참고서로 기획수요 만들기" 201 POST "/planning/brief/$TREND_ID/to-demand?min_sim=-1" "$PLANNER"
-PD_ID=$(pick '.demand_id')
-api "기획수요에 붙은 참고서 사본" 200 GET "/planning/demands/$PD_ID/brief" "$REVIEWER"
-check "참고서 문서" '.content_md | startswith("# 기획 참고서")'
-
-section "⑮ 기획서·공모서 과제번호 연결"
-api "공모서 올리기 (과제 지정 없음)" 201 POST /documents "$PLANNER" \
-    '{"doc_type_code":"PROGRAM_NOTICE","title":"스모크 공모서 '"$RUN_TAG"'","chunks":[{"content":"공모 과제: PRJ-2022-001 소형 무인기용 항재밍 데이터링크 개발"}]}'
-check "과제번호로 과제 1에 '실린 과제'로 연결" 'any(.linked_projects[]; .project_id == 1 and .link_role == "LISTED" and .match_method == "PROJECT_NO")'
-api "과제 1 자료 사슬" 200 GET /planning/projects/1/chain "$PLANNER"
-check "공모서 단계에 문서 있음" 'any(.chain[]; .code == "PROGRAM_NOTICE" and (.documents | length) >= 1)'
-
-section "⑯ 통합기획 검토 (후보 검토표 → 자료 초안 → 회의 결정)"
-api "검토표 만들기는 기획자만 (검수자)" 403 POST /review-sheets "$REVIEWER" '{"sheet_scope":"CUSTOM"}'
-api "통합기획 회의 만들기" 201 POST /meetings "$PLANNER" '{"title":"스모크 통합기획 회의 '"$RUN_TAG"'","department_ids":[1,3]}'
-MEET_ID=$(pick '.id')
-api "검토표 만들기 (전체 후보)" 201 POST /review-sheets "$PLANNER" '{"sheet_scope":"CUSTOM","per_target":3,"meeting_id":'"${MEET_ID:-null}"'}'
-SHEET_ID=$(pick '.id')
-[[ -n "$SHEET_ID" ]] || abort "검토표 id 를 받지 못함"
-api "검토표 보기 (검수자)" 200 GET "/review-sheets/$SHEET_ID" "$REVIEWER"
-check "후보·근거·담당부서·검토율" '(.items | length) >= 1 and (.items[0].snapshot | has("evidence") and has("owner_departments")) and (.summary | has("final_review_rate_pct"))'
-REC_IN_SHEET=$(pick '.items[0].recommendation_id')
-api "회의 결정 기록" 201 POST "/meetings/$MEET_ID/decisions" "$PLANNER" \
-    '{"decision":"후속 과제 기획 착수","recommendation_id":'"$REC_IN_SHEET"',"follow_up_action":"기획서 초안 작성","owner_dept_id":3}'
-api "통합기획 자료 초안 만들기" 201 POST "/review-sheets/$SHEET_ID/drafts" "$PLANNER"
-DRAFT_ID=$(pick '.id')
-api "초안 보기" 200 GET "/planning-drafts/$DRAFT_ID" "$REVIEWER"
-check "초안 문서·회의 결정 포함" '(.content_md | startswith("# 통합기획 검토자료")) and (.content_md | contains("후속 과제 기획 착수"))'
-api "검토표 확정" 204 POST "/review-sheets/$SHEET_ID/finalize" "$PLANNER"
-api "확정 후 후보 빼기 거부" 422 DELETE "/review-sheets/$SHEET_ID/items/$REC_IN_SHEET" "$PLANNER"
-api "검토표는 관리자만 (전문가)" 403 GET /review-sheets "$EXPERT"
-
-section "⑰ 연계 실행 결과·순환 (채택 → 실행 → 이어진 과제 → 검증 사례)"
-api "채택 후보 (검수자)" 200 GET /executions/candidates "$REVIEWER"
-ADOPTED=$(pick '.[0].recommendation_id')
-api "실행 기록은 기획자·담당부서 검수자만 (전문가)" 403 POST /executions "$EXPERT" '{"execution_type":"NEW_PROJECT"}'
-if [[ -n "$ADOPTED" ]]; then
-    api "연계 실행 기록 (이어진 새 과제)" 201 POST /executions "$PLANNER" \
-        '{"recommendation_id":'"$ADOPTED"',"execution_type":"NEW_PROJECT","status":"IN_PROGRESS","new_project":{"project_no":"PRJ-SMK-'"$RUN_TAG"'","title":"스모크 후속 과제"}}'
-    check "과제 관계 남김" '.project_relation_id != null'
-    EX_ID=$(pick '.id')
-    api "완료로 바꾸기" 200 PATCH "/executions/$EX_ID" "$PLANNER" '{"status":"COMPLETED","result_note":"후속 과제 선정"}'
-    check "실제 연계 사례 검증 케이스" '.eval_case_id != null'
-    api "순환 지표" 200 GET /executions/kpi "$REVIEWER"
-    check "채택·실행·검증 사례" '.adopted >= 1 and .executions >= 1 and .eval_cases >= 1'
-    CARD_OF_EX=$(curl -sS -H "X-User-Id: $PLANNER" "$BASE_URL/executions" | jq -r ".[] | select(.id == $EX_ID) | .source_card_id")
-    api "이어달리기 계보" 200 GET "/executions/lineage/cards/$CARD_OF_EX" "$PLANNER"
-    check "이어진 과제" 'any(.descendants[]; .resulting_project_no | startswith("PRJ-SMK-"))'
-else
-    skip "채택된 추천이 없어 실행 기록 건너뜀"
-fi
-section "⑱ PoC 효과 측정 (업무시간·만족도)"
-api "업무시간 기록 (수작업)" 201 POST /measurements/work-time "$PLANNER" '{"task_type":"RESEARCH","method":"MANUAL","minutes":240,"candidates_found":2,"note":"스모크"}'
-MW1=$(pick '.id')
-api "업무시간 기록 (AX)" 201 POST /measurements/work-time "$PLANNER" '{"task_type":"RESEARCH","method":"AX","minutes":50,"candidates_found":5,"note":"스모크"}'
-MW2=$(pick '.id')
-api "0분은 거부" 422 POST /measurements/work-time "$PLANNER" '{"task_type":"RESEARCH","method":"AX","minutes":0}'
-api "만족도 응답" 201 POST /measurements/surveys "$EXPERT" '{"score":4,"aspects":{"usefulness":4,"evidence":5}}'
-api "집계 (검수자)" 200 GET /measurements/summary "$REVIEWER"
-check "조사 업무 단축률·목표" 'any(.tasks[]; .task_type == "RESEARCH" and .reduction_pct != null and .target_pct == 70) and .survey.n >= 1'
-api "집계는 기획자·검수자만 (전문가)" 403 GET /measurements/summary "$EXPERT"
-api "남의 기록 삭제 거부" 404 DELETE "/measurements/work-time/$MW1" "$EXPERT"
-api "내 기록 삭제" 204 DELETE "/measurements/work-time/$MW1" "$PLANNER"
-api "내 기록 삭제" 204 DELETE "/measurements/work-time/$MW2" "$PLANNER"
-
-section "⑲ 국방기술 용어 사전 (동의어로 매칭 보정)"
-SYN_A="스모크표준어$RUN_TAG"; SYN_B="SMKTERM$RUN_TAG"
-api "용어 넣기 (자료 담당)" 201 POST /synonyms "$CURATOR" '{"canonical_term":"'"$SYN_A"'","synonym":"'"$SYN_B"'","relation":"ABBREVIATION"}'
-SYN_ID=$(pick '.id')
-api "용어 넣기는 기획자·자료 담당만 (전문가)" 403 POST /synonyms "$EXPERT" '{"canonical_term":"가","synonym":"나"}'
-api "사전 보기 (열람자)" 200 GET "/synonyms?q=$SYN_B" "$VIEWER"
-check "약어로 들어감" 'length == 1 and .[0].relation_name == "약어" and .[0].used_in_matching'
-api "넓혀 보기" 200 GET "/synonyms/expand?text=$SYN_B%20%EC%8B%9C%ED%97%98" "$VIEWER"
-check "다른 말이 덧붙음" '.expanded | contains("관련 용어: '"$SYN_A"'")'
-api "적용은 기획자·자료 담당만 (전문가)" 403 POST /synonyms/apply "$EXPERT"
-api "용어 끄기" 204 PATCH "/synonyms/$SYN_ID" "$CURATOR" '{"is_active":false}'
-api "스모크 용어 지우기" 204 DELETE "/synonyms/$SYN_ID" "$CURATOR"
 summary

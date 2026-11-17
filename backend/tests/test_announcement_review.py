@@ -9,7 +9,7 @@ from app.services import requirement_extract as rx
 from app.services.llm import LLMError
 from tests.conftest import TEST_URL, as_user
 
-PLANNER, VIEWER = 1, 5
+STAFF, VIEWER = 1, 2
 
 NOTICE = """’26-9차 방산 부품 시험평가 지원사업 참여기업 모집 공고
 사업 개요
@@ -128,32 +128,32 @@ def clean(database, monkeypatch):
 
 
 async def test_register_extract_review_publish(client, clean):
-    r = await client.post("/navigator/announcements/text", headers=as_user(PLANNER), json={
+    r = await client.post("/navigator/announcements/text", headers=as_user(STAFF), json={
         "announcement_no": "TXT-1", "title": "방산 부품 시험평가 지원사업", "body_text": NOTICE})
     assert r.status_code == 201, r.text
     ann = r.json()["id"]
-    dup = await client.post("/navigator/announcements/text", headers=as_user(PLANNER), json={
+    dup = await client.post("/navigator/announcements/text", headers=as_user(STAFF), json={
         "announcement_no": "TXT-1", "title": "x", "body_text": NOTICE})
     assert dup.status_code == 409
     assert (await client.post("/navigator/announcements/text", headers=as_user(VIEWER), json={
         "title": "x", "body_text": NOTICE})).status_code == 403
 
-    src = (await client.get(f"/navigator/announcements/{ann}/source", headers=as_user(PLANNER))).json()
+    src = (await client.get(f"/navigator/announcements/{ann}/source", headers=as_user(STAFF))).json()
     assert src["body_text"] == NOTICE and src["attachments"] == []
 
-    ex = (await client.post(f"/navigator/announcements/{ann}/extract", headers=as_user(PLANNER))).json()
+    ex = (await client.post(f"/navigator/announcements/{ann}/extract", headers=as_user(STAFF))).json()
     assert ex["extractor"] == "rules" and len(ex["requirements"]) == 7
 
-    pending = (await client.get("/navigator/announcements", headers=as_user(PLANNER),
+    pending = (await client.get("/navigator/announcements", headers=as_user(STAFF),
                                 params={"review": "PENDING", "q": "시험평가"})).json()
     assert [a["id"] for a in pending] == [ann]
 
     reqs = [{k: s[k] for k in ("req_type_code", "rule", "is_mandatory", "description", "source_quote")}
             | {"origin": "AI_EXTRACTED"} for s in ex["requirements"]]
-    no_req = await client.put(f"/navigator/announcements/{ann}/review", headers=as_user(PLANNER),
+    no_req = await client.put(f"/navigator/announcements/{ann}/review", headers=as_user(STAFF),
                               json={"requirements": [], "publish": True})
     assert no_req.status_code == 422
-    r = await client.put(f"/navigator/announcements/{ann}/review", headers=as_user(PLANNER), json={
+    r = await client.put(f"/navigator/announcements/{ann}/review", headers=as_user(STAFF), json={
         "fields": ex["fields"], "requirements": reqs, "tech_needs": [{"tech_name": "환경시험"}], "publish": True})
     assert r.status_code == 204, r.text
 
@@ -161,12 +161,12 @@ async def test_register_extract_review_publish(client, clean):
     assert a["status"] == "PUBLISHED" and a["support_amount_krw"] == 50_000_000 and "body_text" not in a
     assert len(a["requirements"]) == 7 and {x["origin"] for x in a["requirements"]} == {"AI_EXTRACTED"}
     assert a["requirements_confirmed_at"] and a["tech_need_count"] == 1
-    done = (await client.get("/navigator/announcements", headers=as_user(PLANNER),
+    done = (await client.get("/navigator/announcements", headers=as_user(STAFF),
                              params={"review": "DONE", "q": "시험평가"})).json()
     assert [x["id"] for x in done] == [ann]
 
     # 다시 저장하면 통째로 바뀜
-    r = await client.put(f"/navigator/announcements/{ann}/review", headers=as_user(PLANNER),
+    r = await client.put(f"/navigator/announcements/{ann}/review", headers=as_user(STAFF),
                          json={"requirements": reqs[:2], "confirm": False})
     assert r.status_code == 204
     a = (await client.get(f"/navigator/announcements/{ann}")).json()
@@ -174,7 +174,7 @@ async def test_register_extract_review_publish(client, clean):
 
 
 async def test_requirement_types(client, database):
-    r = await client.get("/navigator/announcements/requirement-types", headers=as_user(PLANNER))
+    r = await client.get("/navigator/announcements/requirement-types", headers=as_user(STAFF))
     assert r.status_code == 200
     body = r.json()
     assert {"COMPANY_SIZE", "NO_DISQUALIFICATION", "OTHER"} <= {t["code"] for t in body["types"]}

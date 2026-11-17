@@ -8,7 +8,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    database_url: str = "postgresql://localhost:5432/relay_ax"
+    database_url: str = "postgresql://localhost:5432/navigator"
     db_pool_min: int = 1
     db_pool_max: int = 10
 
@@ -23,23 +23,11 @@ class Settings(BaseSettings):
     embedding_offline: bool = False             # true = 네트워크 없이 캐시·로컬 폴더에서만 로드 (폐쇄망)
     embedding_cache_dir: str | None = None      # 모델 캐시 위치 (기본: ~/.cache/huggingface)
 
-    # 문서 업로드 (POST /documents/upload, /documents/parse)
+    # 공고문 업로드 (POST /announcements/upload)
     upload_max_mb: int = 30           # 파일 크기 상한
     pdf_max_pages: int = 1000         # PDF 쪽 수 상한
     chunk_max_chars: int = 1000       # 청크 최대 글자 수 (청크는 쪽 경계를 넘지 않음)
 
-    # 매칭
-    match_top_k: int = 20             # 최종 추천 수
-    match_facet_k: int = 30           # 패싯별 후보 수
-    match_min_score: float = 0.35     # 미만이면 is_excluded 로 보존
-    hnsw_ef_search: int = 100
-    rag_evidence_k: int = 3           # 추천당 RAG 근거 청크 수
-
-    # 연계이유 문장: "template"(기본) = 규칙 템플릿만, 외부 전송 없음
-    #   "auto" = API 키가 있으면 LLM, 없으면 템플릿 / "llm" = 항상 LLM 시도
-    # LLM(anthropic·openai)은 외부 API 로 수요·카드 정보와 근거 인용문을 보내므로 명시적으로 켤 때만 쓴다.
-    # LLM 실패·근거 검증 탈락 시에는 추천별로 템플릿 문장을 쓴다
-    rationale_generator: str = "template"
     # 공고 지원 조건 뽑기: "auto"(기본) = LLM 자격증명이 있으면 LLM, 없으면 규칙 / "llm" / "rules"
     # 공개 공고문 글자만 보낸다 (기업 정보는 보내지 않음)
     requirement_extractor: str = "auto"
@@ -49,21 +37,17 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 4000        # 사고(thinking) 토큰 포함 상한
     llm_timeout_s: float = 60.0
     llm_max_retries: int = 2
-    llm_concurrency: int = 4          # 한 매칭 실행에서 동시에 보낼 요청 수
     llm_server_fallback: bool = True  # 거절 시 서버측 대체 모델 (Claude API 전용, Bedrock 등에서는 false)
-    llm_evidence_max_security: str = "INTERNAL"  # 이 등급을 넘는 문서의 원문은 외부 LLM 에 보내지 않음
     anthropic_api_key: str | None = None  # 비우면 SDK 가 ANTHROPIC_API_KEY 환경변수 등에서 찾음
     openai_api_key: str | None = None     # 비우면 SDK 가 OPENAI_API_KEY 환경변수에서 찾음
 
-    # 갭 분석: 새 해외 수요 등록·새 국내 성과 검수 확정 뒤 자동 실행
-    gap_auto_run: bool = True
-
-    # Navigator
+    # 기업·공고
     navigator_public_base_url: str = "http://localhost:5173"  # 관리 링크 base URL
     navigator_link_ttl_days: int = 30
     navigator_rate_limit_per_minute: int = 60  # 공개 API, IP당
     navigator_dev_expose_link: bool = False    # 응답에 관리 링크 포함 (로컬 전용)
     navigator_match_candidate_k: int = 50
+    hnsw_ef_search: int = 100
     navigator_ranking: str = "vector"   # vector = 판정 후 벡터 유사도 순 (A안) / weighted = 이전 가중합
     navigator_past_years: int = 2          # 참여할 수 있었던 사업: 마감 후 몇 년까지 볼지
     # 관련도 높음·보통 경계 (총점). 임베더마다 점수 폭이 달라 따로 둔다. 비우면 아래 기본값

@@ -151,7 +151,6 @@ export interface RndHistory {
   amount_krw: number | null
   role: 'LEAD' | 'PARTICIPANT'
   summary: string | null
-  internal_project_title: string | null
   origin: string
   is_verified: boolean
 }

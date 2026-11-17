@@ -87,8 +87,6 @@ async def test_manage_view_with_link(client):
     assert p["organization_id"] == state["org_id"] and p["visibility"] == "OWNER"
     assert p["credit_ratings"][0]["grade"] == "BB+" and p["annual_revenue_krw"] == 5_300_000_000
     assert p["certifications"][0]["cert_type_name"].startswith("이노비즈")
-    # 과제번호가 내부 과제와 같으면 연결된다
-    assert p["rnd_history"][0]["internal_project_title"] == "전술 배터리 열관리 기술"
     fs = {f["field_name"]: f for f in p["field_sources"]}
     assert fs["business_status"]["any_verified"] and fs["business_status"]["preferred_value"] == "ACTIVE"
     assert fs["representative_name"]["any_verified"]               # 국세청이 확인

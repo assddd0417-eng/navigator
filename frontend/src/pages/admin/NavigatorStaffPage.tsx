@@ -19,7 +19,7 @@ const HINTS: Partial<Record<Verdict, string>> = {
 
 export function NavigatorStaffPage() {
   const { role } = useAuth()
-  const canRun = role === 'PLANNER'
+  const canRun = role === 'STAFF'
   const [state, setState] = useState('')
   const anns = useAsync(() => listAnnouncements({ receipt_state: state || undefined }), [state])
   const [selected, setSelected] = useState<number | null>(null)
@@ -62,7 +62,7 @@ export function NavigatorStaffPage() {
           {ann && (
             <Card title={ann.title} actions={
               <button className="btn btn-primary" disabled={busy || !canRun}
-                title={canRun ? '등록 기업 전체를 이 공고 조건으로 다시 판정합니다' : '기획 담당자만 실행할 수 있습니다'}
+                title={canRun ? '등록 기업 전체를 이 공고 조건으로 다시 판정합니다' : '기관 담당자만 실행할 수 있습니다'}
                 onClick={() => void rerun()}>
                 {busy ? '판정 중…' : result?.run ? '다시 판정' : '기업 판정 실행'}
               </button>
@@ -257,7 +257,7 @@ function OutreachCard({ annId, canSend }: { annId: number; canSend: boolean }) {
                 placeholder="메일에 덧붙일 말 (선택). 예: 11월 20일 대전 사업설명회, 문의 042-000-0000" />
               <div>
                 <button className="btn btn-primary" disabled={busy || !canSend || picked.size === 0} onClick={() => void send()}
-                  title={canSend ? undefined : '기획 담당자만 보낼 수 있습니다'}>
+                  title={canSend ? undefined : '기관 담당자만 보낼 수 있습니다'}>
                   {busy ? '보내는 중…' : `선택한 ${picked.size}곳에 권유 메일 보내기`}
                 </button>
               </div>

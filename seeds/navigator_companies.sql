@@ -39,7 +39,7 @@ ON CONFLICT (organization_id) DO UPDATE SET
   biz_verify_status = EXCLUDED.biz_verify_status, biz_verified_at = EXCLUDED.biz_verified_at,
   registered_email = EXCLUDED.registered_email, registration_channel = EXCLUDED.registration_channel;
 
--- 결격사유·실적 (0027)
+-- 결격사유·실적
 UPDATE company_profile SET tax_delinquent = false, insolvent = false, rnd_restricted = false,
        defense_goods = false, military_supply_krw = 0, export_krw = 1200000000, export_year = 2025 WHERE organization_id = 101;
 UPDATE company_profile SET tax_delinquent = false, insolvent = false, rnd_restricted = false,
@@ -94,9 +94,8 @@ INSERT INTO company_credit_rating (organization_id, agency, grade, rated_on, val
 
 -- R&D 이력
 INSERT INTO company_rnd_history (organization_id, project_no, title, funding_agency, start_date, end_date,
-                                 amount_krw, role, summary, internal_project_id, origin, verified_at)
-SELECT v.org, v.pno, v.title, v.agency, v.s::date, v.e::date, v.amt, v.role, v.summary,
-       (SELECT id FROM project WHERE project_no = v.pno), v.origin, CASE WHEN v.origin = 'INTERNAL' THEN now() END
+                                 amount_krw, role, summary, origin, verified_at)
+SELECT v.org, v.pno, v.title, v.agency, v.s::date, v.e::date, v.amt, v.role, v.summary, v.origin, CASE WHEN v.origin = 'INTERNAL' THEN now() END
   FROM (VALUES
     (101, 'PRJ-2022-001', '소형 무인기용 항재밍 데이터링크 개발', '국방기술연구원', '2022-01-01', '2024-12-31',
      1200000000::bigint, 'PARTICIPANT', '주파수 도약 모뎀 시제 제작 참여', 'INTERNAL'),

@@ -22,7 +22,7 @@ from app.services.navigator_matching import (
 from app.services.ratelimit import public_rate_limit
 
 router = APIRouter(prefix="/navigator", tags=["navigator-matching"])
-STAFF = ("PLANNER",)
+STAFF = ("STAFF",)
 VERDICTS = ("ELIGIBLE", "NEEDS_INFO", "INELIGIBLE")
 
 

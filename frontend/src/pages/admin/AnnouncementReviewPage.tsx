@@ -20,7 +20,7 @@ const fieldsOf = (a: AnnDetail): AnnFields => ({
 
 export function AnnouncementReviewPage() {
   const { role } = useAuth()
-  const canEdit = role === 'PLANNER'
+  const canEdit = role === 'STAFF'
   const [tab, setTab] = useState<'PENDING' | 'DONE'>('PENDING')
   const anns = useAsync(() => listAnnouncements({ review: tab }), [tab])
   const [selected, setSelected] = useState<number | null>(null)

@@ -408,7 +408,7 @@ async def extract_llm(client: LLMClient, text: str, posted_on: date | None,
 
 
 def wants_llm(settings: Settings) -> bool:
-    from app.services.rationale import llm_credentials_configured
+    from app.services.llm import llm_credentials_configured
     mode = settings.requirement_extractor.lower()
     return mode == "llm" or (mode == "auto" and llm_credentials_configured(settings))
 

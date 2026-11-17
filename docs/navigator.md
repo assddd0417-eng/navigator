@@ -1,13 +1,13 @@
 # Navigator
 
 기업이 사업자번호로 지원 가능한 공고를 찾고, 기관 담당자가 공고별로 적합 기업을 보는 기능.
-기업은 로그인 없이 쓴다. 회사 정보 화면은 사업자번호로 조회한 뒤 등록 이메일로 받은 6자리 확인 코드를 넣어야 열린다. 담당자는 기존 로그인을 쓴다.
+기업은 로그인 없이 쓴다. 회사 정보 화면은 사업자번호로 조회한 뒤 등록 이메일로 받은 6자리 확인 코드를 넣어야 열린다. 담당자는 로그인한다 (역할 `STAFF`).
 
 ## 구성
 
 | 구분 | 위치 |
 |------|------|
-| 마이그레이션 | 0019 기업 프로필(특허·인증·신용등급·R&D 이력·관리 링크), 0020 외부 출처·값 출처, 0021 공고·자격요건, 0022 임베딩·매칭 결과, 0024 알림 구독, 0025 외부 수집(기업마당 출처, 출처별 기업 식별자), 0030 국기원 공지사항 출처·공고 첨부, 0031 공고 조건 확인 표시, 0033 기업 제품·보유 기술·지원사업 이력·증빙 (0032 는 다른 작업이 사용), 0034 참여 권유, 0035 회사 정보 확인 코드 |
+| 스키마 | `db/migrations/0001_schema.sql` (기관·사용자, 공고·공고문 원문, 기업 정보, 판정·추천, 알림·권유, 외부 수집) |
 | 기업 API | `backend/app/routers/navigator.py` |
 | 공고 API | `backend/app/routers/announcements.py`, 요건 형식 `backend/app/schemas/announcements.py` (`RULE_MODELS`) |
 | 매칭 API | `backend/app/routers/navigator_matching.py` |
@@ -64,7 +64,7 @@
 | `PUT /navigator/announcements/{id}/review` | 담당자 | 확인 저장: 공고 칸 수정 + 조건·요구기술 통째 교체 + 확인 표시, `publish: true` 면 공개(조건 0개면 422) |
 | `GET /navigator/announcements/requirement-types` | 담당자 | 조건 종류·인증 코드 |
 
-담당자 = `PLANNER` 또는 `ADMIN`. 접수 상태(UPCOMING / OPEN / CLOSED)는 날짜로 계산한다 (`v_announcement`).
+담당자 = `STAFF`. 접수 상태(UPCOMING / OPEN / CLOSED)는 날짜로 계산한다 (`v_announcement`).
 
 ### 매칭 (담당자)
 
@@ -189,7 +189,6 @@
 
 `company_field_source` 에 출처(SELF / EXTERNAL / INTERNAL / STAFF)와 확인 여부를 남긴다.
 자가입력과 외부값이 다르면 둘 다 두고, `v_company_field_compare` 가 확인된 외부값을 우선하고 `differs = true` 로 표시한다.
-R&D 이력의 과제번호가 `project.project_no` 와 같으면 내부 과제와 연결한다.
 
 ## 자격요건 형식
 
@@ -222,7 +221,7 @@ R&D 이력의 과제번호가 `project.project_no` 와 같으면 내부 과제�
 - 우대 요건은 판정에 쓰지 않고 PREFERENCE 점수에만 반영.
 - 기준일은 접수 마감일 (업력, 인증·신용등급 유효기간).
 - 창업·벤처는 중소기업에 포함. 벤처 인증이 있으면 벤처, 개업 7년 이하면 창업으로도 본다.
-- R&D 이력 = 자가입력 + 성과카드 참여기업(`card_company`)으로 연결된 내부 과제. 이력이 하나도 없으면 UNKNOWN.
+- R&D 이력 = 기업이 입력했거나 외부에서 확인한 이력. 하나도 없으면 UNKNOWN.
 - 직원 수·매출은 확인된 외부값 우선.
 - TRL, 기타 요건은 보완질문. 답(`eligibility_answer`)이 있으면 그 값으로 판정하고 "자가 신고"로 표시.
 - 신용등급 값은 판정 상세·연계이유에 남기지 않고 LLM 에도 보내지 않는다. 연계이유는 템플릿 문장.
@@ -297,7 +296,7 @@ weighted 모드는 비교 대상이 없으면 0.5. 정렬 방식·가중치·규
 | `/staff/navigator` | 담당자 (메뉴 "공고별 적합 기업") | 공고 목록 → 마지막 매칭 결과(적합 / 정보부족 / 부적격 목록을 따로 총점 순, 부적격은 접힘) → 다시 매칭, 기업 프로필, 참여 권유(동의 기업 선택·메모·보낸 기록), 구독 기업 알림 현황 |
 | `/staff/sources` | 담당자 (메뉴 "외부 수집") | 출처별 모드·주기·마지막 결과, 지금 수집, 수집 기록 |
 
-외부 확인값·내부 과제 등 기업이 고칠 수 없는 항목은 "(수정 불가)"로 표시한다. 특허는 기업이 직접 고치지 않고 KIPRIS 수집으로 들어온다.
+외부 확인값 등 기업이 고칠 수 없는 항목은 "(수정 불가)"로 표시한다. 특허는 기업이 직접 고치지 않고 KIPRIS 수집으로 들어온다.
 
 ## 테스트 데이터
 
@@ -305,7 +304,7 @@ weighted 모드는 비교 대상이 없으면 0.5. 정렬 방식·가중치·규
 
 | ID | 사업자번호 | 기업 | 비고 |
 |----|-----------|------|------|
-| 101 | 999-81-00015 | (가상)한빛전자통신 | 전술통신, 대전, 중소. 확인됨, R&D 이력 1건이 PRJ-2022-001 과 연결 |
+| 101 | 999-81-00015 | (가상)한빛전자통신 | 전술통신, 대전, 중소. 확인됨, R&D 이력 1건은 기관 확인 |
 | 102 | 999-82-00026 | (가상)누리복합소재 | 복합소재, 경남, 중견. 방산업체, 매출 자가입력 1,240억 vs DART(mock) 1,198억 |
 | 103 | 999-83-00038 | (가상)새봄비전AI | 영상 AI, 경기, 창업. 미확인, 신용등급 자가입력, R&D 이력 없음 |
 
@@ -352,9 +351,9 @@ weighted 모드는 비교 대상이 없으면 0.5. 정렬 방식·가중치·규
 ## 로컬 실행
 
 ```bash
-export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/relay_ax
+export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/navigator
 ./scripts/migrate.sh
-for f in init_test_data navigator_companies navigator_announcements; do
+for f in base navigator_companies navigator_announcements navigator_past_announcements; do
   psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f seeds/$f.sql
 done
 (cd backend && NAVIGATOR_DEV_EXPOSE_LINK=true uvicorn app.main:app --reload --port 8000) &
@@ -384,7 +383,7 @@ curl -s localhost:8000/navigator/sources -H 'X-User-Id: 1' | jq '.[] | {code, mo
 2. "회사 정보 입력·수정" → (회사 정보 탭 "자동 채우기") → 확인 필요 공고 카드에서 TRL 7 저장 → 103 공고가 적합으로 바뀜
 3. 알림 탭 → 추가 → 저장 (등록 이메일은 바로 '받는 중'). 다른 주소를 추가하면 "[DEV] 확인 링크 열기"
 4. 공고를 PUBLISHED 로 등록하면 (예: 아래) 알림 탭에 새 공고가 뜬다
-5. http://localhost:5173/login 에서 기획자로 로그인 → "공고별 적합 기업" → 공고 선택 → 매칭 실행, 아래 '구독 기업 알림'
+5. http://localhost:5173/login 에서 기관 담당자로 로그인 → "공고별 적합 기업" → 공고 선택 → 매칭 실행, 아래 '구독 기업 알림'
 6. "외부 수집" → KIPRIS "지금 수집" → 한빛 특허 3건이 외부 확인으로 바뀜
 
 ```bash
