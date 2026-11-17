@@ -227,13 +227,13 @@ async def test_llm_rationale_shown_only_with_evidence_access(client, monkeypatch
     top = next(x for x in run["recommendations"] if x["source_cards"][0]["card_id"] == state["card_a"])
     assert top["rationale_source"] == "LLM"
     assert top["rationale_generation"] == {"status": "OK", "generator": "fake/test", "error": None}
-    assert top["rationale"].startswith("[후속형] 이 성과의 동기 유지 시간 6s")
+    assert top["rationale"].startswith("이 성과의 동기 유지 시간 6s")
     assert "[근거: 항재밍 데이터링크 결과보고서" in top["rationale"]
 
     # 근거 문서(통신팀 소관) 열람권이 없는 전문가에게는 규칙 문장을 보여 준다
     detail = (await client.get(f"/recommendations/{top['recommendation_id']}", headers=as_user(EXPERT))).json()
     assert detail["rationale_source"] == "TEMPLATE_RESTRICTED"
-    assert "근거:" not in detail["rationale"] and "기술 유사도" in detail["rationale"]
+    assert "근거:" not in detail["rationale"] and "성과를" in detail["rationale"]
 
 
 async def test_llm_rationale_falls_back_to_template_when_ungrounded(client, monkeypatch):

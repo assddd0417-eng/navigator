@@ -1,7 +1,7 @@
 import { Fragment, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  CRITERION_LABELS, getFitLevels, VERDICT_TONES,
+  CRITERION_LABELS, VERDICT_TONES,
   type CheckResult, type MatchEvidence, type MatchRec, type MatchRun, type Question, type Verdict,
 } from '../../api/navigator'
 
@@ -15,20 +15,10 @@ export const VERDICT_TEXT: Record<Audience, Record<Verdict, string>> = {
 export const VERDICTS: Verdict[] = ['ELIGIBLE', 'NEEDS_INFO', 'INELIGIBLE']
 
 // 총점(0~1)을 사용자가 읽을 수 있는 말로. 알림 조건(min_score)도 같은 경계를 쓴다.
-// 경계는 임베더마다 달라 서버(/navigator/fit-levels)에서 받는다. 받기 전에는 hash 기준
-export const FIT_LEVELS = [
-  { min: 0.45, label: '높음', tone: 'ok' },
-  { min: 0.25, label: '보통', tone: 'info' },
-  { min: 0, label: '낮음', tone: 'muted' },
-] as { min: number; label: string; tone: string }[]
-export async function loadFitLevels() {
-  try {
-    const r = await getFitLevels()
-    FIT_LEVELS[0].min = r.high
-    FIT_LEVELS[1].min = r.mid
-  } catch { /* 기본값 유지 */ }
-}
-export const fitLevel = (score: number) => FIT_LEVELS.find((l) => score >= l.min) ?? FIT_LEVELS[2]
+// 경계는 임베더마다 달라 서버에서 받는다 (components/levels.ts)
+import { scoreLevel, simLevel } from '../../components/levels'
+export { SIM_LEVELS as FIT_LEVELS, loadSimLevels as loadFitLevels, simLevel as fitLevel } from '../../components/levels'
+const fitLevel = simLevel
 
 // 마감 공고(참여할 수 있었던 사업)에서 쓰는 말
 export const PAST_VERDICT_TEXT: Record<Verdict, string> = { ELIGIBLE: '지원할 수 있었음', NEEDS_INFO: '확인 필요', INELIGIBLE: '지원 어려움' }
@@ -37,9 +27,12 @@ export function VerdictBadge({ verdict, audience = 'staff', text }: { verdict: V
   return <span className={`badge badge-${VERDICT_TONES[verdict]}`}>{(text ?? VERDICT_TEXT[audience])[verdict]}</span>
 }
 
-export function FitBadge({ score }: { score: number }) {
+// 관련도 구성 중 내용 유사도로 매기는 기준 (나머지는 충족 비율)
+const SIM_CRITERIA = new Set(['TECH', 'PURPOSE'])
+
+export function FitBadge({ score, bare = false }: { score: number; bare?: boolean }) {
   const l = fitLevel(score)
-  return <span className={`badge badge-${l.tone}`} title="회사 기술·실적과 공고 내용이 얼마나 가까운지">관련도 {l.label}</span>
+  return <span className={`badge badge-${l.tone}`} title={`회사 기술·실적과 공고 내용이 얼마나 가까운지 (${Math.round(score * 100)}점)`}>{bare ? '' : '관련도 '}{l.label}</span>
 }
 
 export function VerdictSummary({ run, audience = 'staff' }: { run: MatchRun; audience?: Audience }) {
@@ -149,9 +142,7 @@ export function MatchCard({ rec, audience, title, meta, onTitle, rank, questions
         </div>
         <div className="match-badges">
           <VerdictBadge verdict={rec.verdict} audience={audience} text={verdictText} />
-          {audience === 'staff'
-            ? <span className="match-score" title="회사 기술·실적과 공고의 관련도 (100점 환산)"><strong>{Math.round(rec.total_score * 100)}</strong><span className="small muted">관련도</span></span>
-            : <FitBadge score={rec.total_score} />}
+          <FitBadge score={rec.total_score} />
         </div>
       </div>
       <Summary rec={rec} audience={audience} />
@@ -220,10 +211,10 @@ function MatchDetail({ rec, audience }: { rec: MatchRec; audience: Audience }) {
           <h4>관련도 구성</h4>
           <div className="bars">
             {Object.entries(rec.scores).map(([k, s]) => (
-              <div key={k} className="bar-row" title={`반영 비율 ${Math.round(s.weight * 100)}%`}>
+              <div key={k} className="bar-row" title={`${Math.round(s.score * 100)}점 · 반영 비율 ${Math.round(s.weight * 100)}%`}>
                 <span>{CRITERION_LABELS[k] ?? k}</span>
                 <div className="bar"><div style={{ width: `${Math.round(s.score * 100)}%` }} /></div>
-                <span className="num">{Math.round(s.score * 100)}</span>
+                <span className="num">{(SIM_CRITERIA.has(k) ? simLevel : scoreLevel)(s.score).label}</span>
               </div>
             ))}
           </div>

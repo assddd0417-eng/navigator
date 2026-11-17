@@ -223,9 +223,9 @@ def assess(demand: DemandInput, near: list[NearCard], rules: dict, today: date |
         if len(partial) >= 2:
             paths.insert(0, Pathway("CONVERGENCE", "부분적으로 가까운 국내 성과를 결합해 대응",
                                     [c.card_id for c in partial]))
-        best_txt = f"{best:.2f}" if best is not None else "없음"
         add("NO_COVERAGE", sev,
-            f"국내 성과 중 이 수요와 비슷한 것이 없습니다 (가장 가까운 유사도 {best_txt}, 기준 {thr:g}).",
+            "국내 성과 중 이 수요와 비슷한 것이 없습니다. "
+            + ("가장 가까운 성과도 기준에 못 미칩니다." if best is not None else "비교할 국내 성과가 없습니다."),
             {"threshold": thr, "nearest": [{"card_id": c.card_id, "title": c.title, "similarity": round(c.similarity, 4)}
                                             for c in ref]},
             [FindingCard(c.card_id, round(c.similarity, 4), "NEAREST") for c in ref], paths)

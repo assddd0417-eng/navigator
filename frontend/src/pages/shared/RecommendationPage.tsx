@@ -226,7 +226,8 @@ export function RecommendationPage() {
           <h4>항목별 점수</h4>
           <div className="bars">
             {r.score_details.map((s) => (
-              <ScoreBar key={s.criterion} label={CRITERIA_LABELS[s.criterion] ?? s.criterion} value={s.score} />
+              <ScoreBar key={s.criterion} label={CRITERIA_LABELS[s.criterion] ?? s.criterion} value={s.score}
+                sim={s.method.startsWith('cosine')} unknown={s.method === 'neutral'} />
             ))}
           </div>
           {r.development_needs && <><h4>더 개발해야 할 것</h4><p>{r.development_needs}</p></>}

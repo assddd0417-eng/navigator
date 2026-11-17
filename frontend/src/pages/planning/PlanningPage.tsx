@@ -7,7 +7,7 @@ import {
 import { useAuth } from '../../auth/AuthContext'
 import { canAccessPath } from '../../auth/roles'
 import { useToast } from '../../components/Toast'
-import { Card, Empty, More, PageHeader, RoleHint, Steps, useAction, useAsync } from '../../components/ui'
+import { Card, Empty, More, PageHeader, RoleHint, SimBadge, Steps, useAction, useAsync } from '../../components/ui'
 import { GAP_STATUS } from '../gaps/gapText'
 
 /** 동향 종류 (backend planning_brief.DEMAND_KIND_KO 와 같은 이름) */
@@ -119,7 +119,7 @@ function ProjectBlock({ p }: { p: BriefProject }) {
         <strong>{p.title}</strong>
         <span className="muted small">{[p.project_no, p.program_name, p.period, p.department].filter(Boolean).join(' · ')}</span>
         <span className="gap-item-right">
-          <span className="badge badge-muted" title="이 동향과 비슷한 정도">비슷한 정도 {Math.round(p.similarity * 100)}%</span>
+          <SimBadge value={p.similarity} title="이 동향과 비슷한 정도" />
           <span className={`badge badge-${p.outcome_is_failure ? 'bad' : p.outcome_code ? 'ok' : 'muted'}`}
             title={p.outcome_note ?? undefined}>{p.outcome_name ?? '결과 미확인'}</span>
         </span>
@@ -257,9 +257,9 @@ function BriefView({ trendId, wide, onWide }: { trendId: number; wide: boolean; 
       )}
 
       <Card title={`관련 과거 과제 ${b.projects.length}건`}
-        actions={<label className="pl-check small"><input type="checkbox" checked={wide} onChange={(e) => onWide(e.target.checked)} /> 덜 비슷한 과제도 보기</label>}>
+        actions={<label className="pl-check small"><input type="checkbox" checked={wide} onChange={(e) => onWide(e.target.checked)} /> 관련이 약한 과제도 보기</label>}>
         {b.projects.length === 0 ? (
-          <Empty>이 동향과 가까운 과거 과제를 찾지 못했습니다. ‘덜 비슷한 과제도 보기’를 켜거나, 새 과제로 기획하세요.</Empty>
+          <Empty>이 동향과 가까운 과거 과제를 찾지 못했습니다. ‘관련이 약한 과제도 보기’를 켜거나, 새 과제로 기획하세요.</Empty>
         ) : <ul className="pl-projects">{b.projects.map((p) => <ProjectBlock key={p.project_id} p={p} />)}</ul>}
       </Card>
 

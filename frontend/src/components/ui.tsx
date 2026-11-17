@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { ROLES, type RoleCode } from '../auth/roles'
 import type { Num } from '../api/endpoints'
+import { scoreLevel, simLevel } from './levels'
 
 /** 비동기 조회 상태. reload 로 다시 불러온다. 오류 토스트는 API 클라이언트가 띄운다. */
 export function useAsync<T>(fn: () => Promise<T>, deps: unknown[] = []) {
@@ -50,35 +51,43 @@ export const score = (v: Num | null | undefined) => (v == null ? '–' : Number(
 /** 0~1 점수를 사람이 읽는 백분율로 (0.823 → 82%) */
 export const pct100 = (v: Num | null | undefined) => (v == null ? '–' : `${Math.round(Number(v) * 100)}%`)
 
-/**
- * 적합도 등급 (화면 표시용 눈금, 판정 규칙 아님).
- * 0.70 이상 높음 · 0.50 이상 보통 · 그 아래 낮음
- */
-export function fitLevel(v: Num | null | undefined): { label: string; tone: 'ok' | 'warn' | 'muted' } {
-  const n = v == null ? 0 : Number(v)
-  if (n >= 0.7) return { label: '높음', tone: 'ok' }
-  if (n >= 0.5) return { label: '보통', tone: 'warn' }
-  return { label: '낮음', tone: 'muted' }
+/** 적합도 등급 (화면 표시용 눈금, 판정 규칙 아님). 0.70 이상 높음 · 0.50 이상 보통 · 그 아래 낮음 */
+export function fitLevel(v: Num | null | undefined): { label: string; tone: string } {
+  return scoreLevel(v == null ? 0 : Number(v))
 }
 
-/** 적합도: 82% + 높음/보통/낮음 배지 */
+/** 적합도: 높음/보통/낮음 배지. 값은 마우스를 올리면 */
 export function Fit({ value, big = false }: { value: Num | null | undefined; big?: boolean }) {
   const lv = fitLevel(value)
   return (
-    <span className={`fit ${big ? 'fit-big' : ''}`} title="AI가 계산한 적합도 (100%에 가까울수록 잘 맞음)">
-      <strong>{pct100(value)}</strong> <span className={`badge badge-${lv.tone}`}>{lv.label}</span>
+    <span className={`fit ${big ? 'fit-big' : ''}`} title={`적합도 ${pct100(value)}`}>
+      <span className={`badge badge-${lv.tone}`}>{lv.label}</span>
     </span>
   )
 }
 
-/** 0~1 점수 막대 한 줄 */
-export function ScoreBar({ label, value, help }: { label: string; value: Num | null | undefined; help?: string }) {
+/** 내용이 얼마나 가까운지: 관련도 높음/보통/낮음. 경계는 임베더별 (levels.ts) */
+export function SimBadge({ value, title = '내용이 비슷한 정도', bare = false }: { value: Num | null | undefined; title?: string; bare?: boolean }) {
+  if (value == null) return <span className="muted">–</span>
+  const lv = simLevel(Number(value))
+  return <span className={`badge badge-${lv.tone}`} title={`${title} ${pct100(value)}`}>{bare ? '' : '관련도 '}{lv.label}</span>
+}
+
+/** 추천 기준 점수 한 칸: 내용 유사도로 매기는 기준은 유사도 눈금, 나머지는 적합도 눈금 */
+const SIM_CRITERIA = new Set(['TECH', 'ENVIRONMENT', 'PURPOSE'])
+export const scoreText = (criterion: string, v: Num | null | undefined) =>
+  v == null ? '–' : (SIM_CRITERIA.has(criterion) ? simLevel : scoreLevel)(Number(v)).label
+
+/** 0~1 점수 막대 한 줄. sim = 내용 유사도 기준, unknown = 비교 자료가 없어 중간값으로 둔 것 */
+export function ScoreBar({ label, value, help, sim = false, unknown = false }: {
+  label: string; value: Num | null | undefined; help?: string; sim?: boolean; unknown?: boolean
+}) {
   const n = value == null ? 0 : Number(value)
   return (
-    <div className="bar-row" title={help}>
+    <div className="bar-row" title={[help, pct100(value)].filter(Boolean).join(' · ')}>
       <span>{label}</span>
       <div className="bar"><div style={{ width: `${Math.round(n * 100)}%` }} /></div>
-      <span className="num">{pct100(value)}</span>
+      <span className="num">{unknown ? '자료 없음' : value == null ? '–' : (sim ? simLevel : scoreLevel)(n).label}</span>
     </div>
   )
 }

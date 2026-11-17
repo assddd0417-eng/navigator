@@ -7,6 +7,8 @@
 """
 from datetime import date
 
+from app.services.levels import score_word
+
 SCOPE_KO = {
     "COMPLETED_PROJECT_UTILIZATION": "종료과제 활용 후보",
     "CROSS_PROGRAM": "사업트랙·부서 간 연계 후보",
@@ -191,18 +193,18 @@ def render_draft(sheet: dict, items: list[dict], decisions: list[dict]) -> tuple
     if demands:
         lines += ["대상 신규 기획수요: " + ", ".join(demands), ""]
     lines += ["## 2. 후보 요약", "",
-              "| 번호 | 기존 성과 | 연계 대상 | 연계유형 | 종합점수 | 담당부서 | 검토 상태 |",
+              "| 번호 | 기존 성과 | 연계 대상 | 연계유형 | 적합도 | 담당부서 | 검토 상태 |",
               "|---|---|---|---|---|---|---|"]
     for n, s in enumerate(snaps, start=1):
         target = s["demand_title"] or s["target_program_name"] or ""
-        lines.append(f"| {n} | {_cell(_cards_text(s))} | {_cell(target)} | {_linkage(s)} | {s['total_score']:.2f} | "
+        lines.append(f"| {n} | {_cell(_cards_text(s))} | {_cell(target)} | {_linkage(s)} | {score_word(s['total_score'])} | "
                      f"{', '.join(s['owner_departments']) or '미지정'} | {_decision(live.get(s['recommendation_id'], s))} |")
     lines += ["", "연계유형별: " + ", ".join(f"{k} {v}건" for k, v in sorted(by_type.items(), key=lambda x: -x[1])), "",
               "## 3. 후보별 검토 내용", ""]
     for n, s in enumerate(snaps, start=1):
         lv = live.get(s["recommendation_id"], s)
         lines += [f"### 3.{n} {_cards_text(s)} → {s['demand_title'] or s['target_program_name'] or ''}", "",
-                  f"- 연계유형: {_linkage(s)} (종합점수 {s['total_score']:.2f})"]
+                  f"- 연계유형: {_linkage(s)} (적합도 {score_word(s['total_score'])})"]
         for c in s["source_cards"]:
             if c["project_status"] == "COMPLETED":
                 state = f"{c['end_date']} 종료" if c["end_date"] else "종료"
