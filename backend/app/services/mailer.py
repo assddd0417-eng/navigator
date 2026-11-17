@@ -71,6 +71,15 @@ def _message(to: str, subject: str, body: str, reply_to: str | None = None) -> E
     return msg
 
 
+def _tls_context() -> ssl.SSLContext:
+    """맥의 python.org 파이썬은 시스템 인증서를 못 읽어 Gmail 접속이 실패한다. certifi 가 있으면 그 목록을 쓴다."""
+    try:
+        import certifi
+    except ImportError:
+        return ssl.create_default_context()
+    return ssl.create_default_context(cafile=certifi.where())
+
+
 def _send_smtp(to: str, subject: str, body: str, reply_to: str | None = None) -> None:
     s = get_settings()
     if not s.smtp_host:
@@ -80,12 +89,12 @@ def _send_smtp(to: str, subject: str, body: str, reply_to: str | None = None) ->
     try:
         if security == "ssl":
             server: smtplib.SMTP = smtplib.SMTP_SSL(s.smtp_host, s.smtp_port, timeout=s.smtp_timeout_s,
-                                                    context=ssl.create_default_context())
+                                                    context=_tls_context())
         else:
             server = smtplib.SMTP(s.smtp_host, s.smtp_port, timeout=s.smtp_timeout_s)
         with server:
             if security == "starttls":
-                server.starttls(context=ssl.create_default_context())
+                server.starttls(context=_tls_context())
             if s.smtp_user:
                 server.login(s.smtp_user, s.smtp_password)
             server.send_message(msg)
