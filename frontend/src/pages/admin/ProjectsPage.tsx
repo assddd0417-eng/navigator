@@ -6,7 +6,7 @@ import {
 } from '../../api/endpoints'
 import { useToast } from '../../components/Toast'
 import {
-  Card, CRITERIA_LABELS, Empty, Fit, fmtDate, LINKAGE_HELP, More, PageHeader, pct100, RoleHint, StatusBadge, Steps,
+  Card, CRITERIA_LABELS, Empty, Fit, fmtDate, LINKAGE_HELP, More, PageHeader, pct100, RoleHint, scoreText, SimBadge, StatusBadge, Steps,
   trlText, useAction, useAsync,
 } from '../../components/ui'
 
@@ -102,7 +102,7 @@ function TopThree({ recs }: { recs: RecommendationOverview[] }) {
             {r.scores && (
               <div className="top3-scores">
                 {Object.entries(CRITERIA_LABELS).map(([k, label]) => (
-                  <span key={k}>{label} <b>{pct100(r.scores?.[k] ?? null)}</b></span>
+                  <span key={k} title={pct100(r.scores?.[k] ?? null)}>{label} <b>{scoreText(k, r.scores?.[k])}</b></span>
                 ))}
               </div>
             )}
@@ -249,7 +249,7 @@ function OutcomeSearch() {
             <li key={h.chunk_id}>
               <div className="evidence-src">
                 📄 {h.document_title}{h.heading && ` · ${h.heading}`}{h.page_start && ` · ${h.page_start}쪽`}
-                <span className="pill" title="검색어와 뜻이 비슷한 정도">비슷한 정도 {pct100(h.similarity)}</span>
+                <SimBadge value={h.similarity} title="검색어와 뜻이 비슷한 정도" />
               </div>
               <blockquote>{h.content}</blockquote>
             </li>

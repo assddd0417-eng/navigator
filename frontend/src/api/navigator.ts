@@ -4,7 +4,7 @@ import { api } from './client'
 export type Verdict = 'ELIGIBLE' | 'NEEDS_INFO' | 'INELIGIBLE'
 export type CheckResult = 'MET' | 'UNMET' | 'UNKNOWN'
 
-export const VERDICT_LABELS: Record<Verdict, string> = { ELIGIBLE: '적합', NEEDS_INFO: '정보부족', INELIGIBLE: '부적격' }
+export const VERDICT_LABELS: Record<Verdict, string> = { ELIGIBLE: '적합', NEEDS_INFO: '확인 필요', INELIGIBLE: '부적격' }
 export const VERDICT_TONES: Record<Verdict, string> = { ELIGIBLE: 'ok', NEEDS_INFO: 'warn', INELIGIBLE: 'bad' }
 export const CRITERION_LABELS: Record<string, string> = {
   TECH: '기술 적합도', IPC: '특허 분류 일치', PURPOSE: '사업목적', PREFERENCE: '우대 요건',

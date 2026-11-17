@@ -96,7 +96,7 @@ async def test_company_to_outreach_flow(client, fresh):
 
     # 4. 알림: 메일과 화면 알림, 담당자 발송 현황
     alert = _mails(EMAIL, n)
-    assert len(alert) == 1 and "(적합)" in alert[0].subject
+    assert len(alert) == 1 and "(지원 가능)" in alert[0].subject
     assert "회사 정보 입력·수정" in alert[0].body and "받은 링크" not in alert[0].body
     assert re.search(r"/navigator/unsubscribe#t=\S+", alert[0].body)
     mine = (await client.get("/navigator/manage/alerts", headers=h)).json()

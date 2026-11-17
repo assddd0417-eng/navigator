@@ -48,13 +48,13 @@ async def test_writer_grounded_text_cites_evidence_label():
     llm, coro = _write("수요가 요구하는 동기 유지 시간 10s 에 대해 이 성과는 6s 를 달성해 후속 개발이 필요하다 [E1]. "
                        "기술 유사도 0.81, TRL 적합도 1.00 이다.")
     res = await coro
-    assert res.text.startswith("[후속형] ")
+    assert res.text.startswith("수요가 요구하는")
     assert "[근거: 항재밍 결과보고서 4.3 p.88]" in res.text and "[E1]" not in res.text
     assert res.document_ids == [100] and res.evidence_ids == [11]
     system, user = llm.calls[0]
     assert "지어내" in system or "추정하거나 덧붙이지 않는다" in system
     assert '<E1 source="항재밍 결과보고서 4.3 p.88"' in user and "동기 유지 시간: 요구 10s, 달성 6s" in user
-    assert "운용환경 적합도 0.50 (neutral)" in user
+    assert "운용환경 적합도: 확인 필요" in user
 
 
 async def test_writer_rejects_invented_number():

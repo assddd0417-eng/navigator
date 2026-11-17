@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from app.services.levels import sim_word
+
 CRITERIA = ("TECH", "PERFORMANCE", "TRL", "ENVIRONMENT", "PURPOSE")
 SINGLE_CARD_TYPES = ("FOLLOW_UP", "ADVANCEMENT", "TRANSITION", "UTILIZATION", "COMMERCIALIZATION")
 # 사업화형 가산을 받는 사업트랙 (linkage_rule.conditions.COMMERCIALIZATION.bonus_program_types 로 바꿀 수 있음).
@@ -181,18 +183,18 @@ def classify(c: CardCandidate, d: DemandContext, scores: dict[str, CriterionScor
     fu_min = conditions.get("FOLLOW_UP", {}).get("min_facet_similarity", 0.55)
     if issue is not None and c.open_issues:
         signals["FOLLOW_UP"] = issue if issue >= fu_min else issue * 0.5
-        reasons["FOLLOW_UP"] = f"미해결 기술 유사도 {issue:.2f} (기준 {fu_min})"
+        reasons["FOLLOW_UP"] = f"남은 숙제(미해결 기술)와 관련 {sim_word(issue)}"
     else:
         signals["FOLLOW_UP"] = 0.0
         reasons["FOLLOW_UP"] = "미해결 기술 항목 없음"
 
     signals["ADVANCEMENT"] = core * (1.0 if gaps else 0.6)
-    reasons["ADVANCEMENT"] = f"핵심기술 유사도 {core:.2f}" + (f", 성능 격차 {len(gaps)}건" if gaps else "")
+    reasons["ADVANCEMENT"] = f"핵심기술 관련 {sim_word(core)}" + (f", 모자란 성능 {len(gaps)}건" if gaps else "")
 
     diff_ws = bool(d.weapon_system_ids and c.weapon_system_ids and d.weapon_system_ids.isdisjoint(c.weapon_system_ids))
     diff_prog = bool(d.target_program_type and c.program_type and d.target_program_type != c.program_type)
     signals["TRANSITION"] = principle * (1.0 if (diff_ws or diff_prog) else 0.4)
-    reasons["TRANSITION"] = (f"기술원리 유사도 {principle:.2f}"
+    reasons["TRANSITION"] = (f"기술 원리 관련 {sim_word(principle)}"
                              + (", 다른 무기체계" if diff_ws else "") + (", 다른 사업트랙" if diff_prog else ""))
 
     min_trl = conditions.get("UTILIZATION", {}).get("min_trl", 6)
@@ -200,7 +202,8 @@ def classify(c: CardCandidate, d: DemandContext, scores: dict[str, CriterionScor
     util = conditions.get("UTILIZATION", {})
     unknown = util.get("unknown_performance_factor", UTILIZATION_UNKNOWN_PERF)
     signals["UTILIZATION"] = tech * (1.0 if mature and all_met else unknown if mature and all_met is None else 0.2)
-    reasons["UTILIZATION"] = f"TRL {c.trl} (기준 {min_trl})" + (", 요구성능 충족" if all_met else "")
+    reasons["UTILIZATION"] = (f"바로 쓸 수 있는 성숙도(TRL {min_trl} 이상) {'맞음' if mature else '아님'}"
+                             + (", 요구 성능 충족" if all_met else ""))
 
     com = conditions.get("COMMERCIALIZATION", {})
     commercial = d.target_program_type in com.get("bonus_program_types", COMMERCIAL_PROGRAM_TYPES)

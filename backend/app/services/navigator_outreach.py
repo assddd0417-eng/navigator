@@ -16,12 +16,12 @@ from app.errors import Conflict, NotFound
 from app.services import mailer
 from app.services.access_link import hash_token
 from app.services.bizno import format_bizno
+from app.services.eligibility import COMPANY_VERDICT_KO, VERDICT_KO
 
 log = logging.getLogger("app.navigator_outreach")
 
-VERDICT_KO = {"ELIGIBLE": "적합", "NEEDS_INFO": "확인 필요"}
 SKIP_KO = {
-    "NOT_IN_RESULT": "매칭 결과에 없음",
+    "NOT_IN_RESULT": "판정 결과에 없음",
     "INELIGIBLE": "부적격",
     "NO_CONSENT": "권유 메일 동의 안 함",
     "NO_EMAIL": "등록 이메일 없음",
@@ -99,7 +99,7 @@ def _mail(ann: dict, rec: dict, sender: dict, note: str | None, token: str) -> t
         "",
         f"공고: {ann['title']}",
         f"접수: {period}",
-        f"판정: {VERDICT_KO[rec['verdict']]} (필수 조건 {rec['mandatory_met']}/{rec['mandatory_total']} 충족)",
+        f"판정: {COMPANY_VERDICT_KO[rec['verdict']]} (필수 조건 {rec['mandatory_met']}/{rec['mandatory_total']} 충족)",
     ]
     if note:
         lines += ["", "담당자 메모:", note.strip()]

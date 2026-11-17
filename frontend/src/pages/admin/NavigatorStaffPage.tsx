@@ -5,7 +5,7 @@ import {
 } from '../../api/navigator'
 import { useAuth } from '../../auth/AuthContext'
 import { Card, Empty, fmtDate, PageHeader, useAction, useAsync } from '../../components/ui'
-import { AGENCY_LABELS, bizStatus, fmtBrn, fmtDay, fmtKrw, GroupedMatches, MatchCard, VerdictBadge, VerdictSummary } from '../navigator/components'
+import { AGENCY_LABELS, bizStatus, fmtBrn, fmtDay, fmtKrw, FitBadge, GroupedMatches, MatchCard, VerdictBadge, VerdictSummary } from '../navigator/components'
 import { RadarChart } from '../../components/RadarChart'
 
 const STATES: [string, string][] = [['', '전체'], ['OPEN', '접수중'], ['UPCOMING', '접수전'], ['CLOSED', '마감']]
@@ -239,7 +239,7 @@ function OutreachCard({ annId, canSend }: { annId: number; canSend: boolean }) {
                     checked={picked.has(c.organization_id)} onChange={() => toggle(c.organization_id)} /></td>
                   <td>{c.company_name}</td>
                   <td><VerdictBadge verdict={c.verdict} /></td>
-                  <td className="num">{Math.round(c.total_score * 100)}</td>
+                  <td><FitBadge score={c.total_score} bare /></td>
                   <td>{c.consent ? <span className="badge badge-ok">동의</span> : <span className="muted small">안 함</span>}</td>
                   <td className="nowrap">
                     {c.sent_status ? <>
@@ -305,7 +305,7 @@ function AlertsCard({ ann }: { ann: AnnouncementRow }) {
                 <td>{n.company_name}</td>
                 <td className="small">{n.email}</td>
                 <td><VerdictBadge verdict={n.verdict} /></td>
-                <td className="num">{Math.round(n.total_score * 100)}</td>
+                <td><FitBadge score={n.total_score} bare /></td>
                 <td><span className={`badge badge-${ALERT_STATUS[n.status][1]}`}>{ALERT_STATUS[n.status][0]}</span></td>
                 <td className="nowrap">{fmtDate(n.sent_at ?? n.created_at)}</td>
               </tr>

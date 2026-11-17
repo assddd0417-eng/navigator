@@ -7,7 +7,7 @@ import {
 import { useAuth } from '../../auth/AuthContext'
 import { SimpleMarkdown } from '../../components/SimpleMarkdown'
 import { useToast } from '../../components/Toast'
-import { Card, DEPT_NAMES, Empty, fmtDate, LINKAGE_HELP, PageHeader, RoleHint, score, useAction, useAsync } from '../../components/ui'
+import { Card, DEPT_NAMES, Empty, Fit, fmtDate, LINKAGE_HELP, PageHeader, RoleHint, useAction, useAsync } from '../../components/ui'
 
 const DECISION_STATUS: Record<MeetingDecision['status'], string> = { OPEN: '진행', DONE: '완료', DROPPED: '취소' }
 const DRAFT_STATUS: Record<string, string> = { DRAFT: '초안', REVIEWED: '검토함', FINAL: '최종' }
@@ -92,7 +92,7 @@ export function ReviewSheetDetailPage() {
         {s.items.length === 0 ? <Empty>볼 수 있는 후보가 없습니다.</Empty> : (
           <div className="table-scroll">
             <table className="table rs-table">
-              <thead><tr><th>#</th><th>기존 성과</th><th>연계 대상</th><th>연계유형</th><th className="num">점수</th>
+              <thead><tr><th>#</th><th>기존 성과</th><th>연계 대상</th><th>연계유형</th><th>적합도</th>
                 <th>연계이유·원문 근거</th><th>담당부서</th><th>검토 상태</th>{editable && <th />}</tr></thead>
               <tbody>
                 {s.items.map((it, n) => {
@@ -109,7 +109,7 @@ export function ReviewSheetDetailPage() {
                       <td title={LINKAGE_HELP[sn.linkage_type_code]}>{lv.final_linkage_type_name && lv.final_linkage_type_name !== sn.linkage_type_name
                         ? <>{lv.final_linkage_type_name}<div className="muted small">추천 {sn.linkage_type_name}</div></>
                         : sn.linkage_type_name}</td>
-                      <td className="num">{score(sn.total_score)}</td>
+                      <td><Fit value={sn.total_score} /></td>
                       <td className="rs-why">
                         <div>{sn.rationale}</div>
                         {sn.development_needs && <div className="small"><strong>개발 필요:</strong> {sn.development_needs}</div>}

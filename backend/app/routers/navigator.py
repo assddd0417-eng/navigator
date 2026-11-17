@@ -1,6 +1,7 @@
 """Navigator 기업 프로필 (공개 API). 수정·민감정보 조회는 관리 링크(X-Manage-Token) 필요."""
 import hashlib
 import logging
+from datetime import timedelta, timezone
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Response, UploadFile, status
 from pydantic import BaseModel, Field
@@ -23,6 +24,7 @@ from app.services.ratelimit import public_rate_limit
 
 router = APIRouter(prefix="/navigator", tags=["Navigator 기업 프로필 (로그인 없음)"])
 log = logging.getLogger(__name__)
+KST = timezone(timedelta(hours=9))
 
 
 def _bizno(raw: str) -> str:
@@ -42,12 +44,12 @@ async def _send_link(email: str, company_name: str, link: access_link.IssuedLink
             log.warning("등록 메일 실패: %s", e)
         return LinkSent(sent_to=mailer.mask_email(email), expires_at=link.expires_at.isoformat(),
                         dev_management_link=link.url if get_settings().navigator_dev_expose_link else None)
-    what = "관리 링크를 다시 보내 드립니다"
+    until = link.expires_at.astimezone(KST)
     try:
-        await mailer.send_async(email, f"[Navigator] {company_name} 관리 링크",
-                                f"{company_name} 기업 프로필 {what}.\n\n아래 주소에서 회사 정보를 고치고 신용정보를 볼 수 있습니다.\n"
-                                f"{link.url}\n\n유효기간: {link.expires_at:%Y-%m-%d %H:%M} (UTC) 까지. "
-                                "만료되면 사업자번호로 다시 요청하세요.\n본인이 요청하지 않았다면 이 메일을 무시하세요.")
+        await mailer.send_async(email, f"[Navigator] {company_name} 회사 정보 화면 링크",
+                                f"{company_name} 회사 정보 화면 링크입니다.\n\n아래 주소에서 회사 정보를 고치고 신용정보를 볼 수 있습니다.\n"
+                                f"{link.url}\n\n{until:%Y-%m-%d %H:%M}까지 열 수 있습니다. "
+                                "기간이 지나면 사업자번호로 다시 요청하세요.\n본인이 요청하지 않았다면 이 메일을 무시하세요.")
     except mailer.MailError as e:
         log.warning("관리 링크 메일 실패: %s", e)
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "메일을 보내지 못했습니다. 잠시 후 다시 시도하세요") from None

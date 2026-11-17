@@ -138,7 +138,7 @@ async def test_publish_alerts_subscribed_companies_only(client):
     assert not _mails_to("late@hanbit.example", n) and not _mails_to("rnd@nuri.example", n)
     assert not _mails_to("hello@saebom.example", n)
     mail = _mails_to("team@hanbit.example", n)[0]
-    assert "적합" in mail.subject and "/navigator/unsubscribe#t=" in mail.body
+    assert "지원 가능" in mail.subject and "/navigator/unsubscribe#t=" in mail.body
     assert not re.search(r"\b(A|B|C)+[+-]?\b", mail.body)      # 신용등급 값 없음
 
     # 구독 기업만 판정한 실행은 담당자 화면의 마지막 결과로 쓰지 않는다
@@ -148,7 +148,7 @@ async def test_publish_alerts_subscribed_companies_only(client):
     # 화면 알림: 공고당 하나
     a = (await client.get("/navigator/manage/alerts", headers=hanbit)).json()
     assert a["unread"] == 1 and a["alerts"][0]["announcement_id"] == ann_id
-    assert a["alerts"][0]["verdict_label"] == "적합"
+    assert a["alerts"][0]["verdict_label"] == "지원 가능"
     assert (await client.post("/navigator/manage/alerts/read", headers=hanbit, json={})).status_code == 204
     assert (await client.get("/navigator/manage/alerts", headers=hanbit)).json()["unread"] == 0
     assert (await client.get("/navigator/manage/alerts", headers=nuri)).json()["alerts"] == []

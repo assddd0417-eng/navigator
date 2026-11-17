@@ -5,7 +5,7 @@ import { useAuth } from '../../auth/AuthContext'
 import { SEED_USERS } from '../../auth/roles'
 import { useToast } from '../../components/Toast'
 import {
-  Card, Empty, fmtDate, LINKAGE_HELP, PageHeader, pct100, RoleHint, useAction, useAsync,
+  Card, Empty, fmtDate, LINKAGE_HELP, PageHeader, RoleHint, SimBadge, useAction, useAsync,
 } from '../../components/ui'
 import { DEMAND_KIND, GAP_STATUS, GAP_TYPES, urgency } from './gapText'
 
@@ -77,7 +77,7 @@ export function GapDetailPage() {
         <Card title="왜 갭인가요?">
           {items.length > 0 ? <ul className="plain-list">{items.map((t) => <li key={t}>{t}</li>)}</ul> : <p>{f.summary}</p>}
           {f.best_similarity != null && (
-            <p className="muted small">가장 비슷한 국내 성과와 내용이 겹치는 정도: {pct100(f.best_similarity)}</p>
+            <p className="muted small">가장 비슷한 국내 성과와의 관련도: <SimBadge value={f.best_similarity} bare /></p>
           )}
           {(f.detail?.unchecked?.length ?? 0) > 0 && (
             <p className="muted small">자료가 없어 비교하지 못한 항목: {f.detail.unchecked!.join(', ')}</p>
@@ -106,14 +106,14 @@ export function GapDetailPage() {
         <Card title={`비교한 국내 성과 ${f.cards.length}건`}>
           {f.cards.length === 0 ? <Empty>비슷한 국내 성과가 없습니다.</Empty> : (
             <table className="table">
-              <thead><tr><th>국내 성과</th><th>기술 성숙도</th><th>겹치는 정도</th></tr></thead>
+              <thead><tr><th>국내 성과</th><th>기술 성숙도</th><th>관련도</th></tr></thead>
               <tbody>
                 {f.cards.map((c) => (
                   <tr key={c.card_id}>
                     <td>{c.title}{c.project_title && <div className="muted small">{c.project_title}</div>}
                       {c.note && <div className="small warn-text">{c.note}</div>}</td>
                     <td>{c.trl == null ? '–' : `${c.trl}단계`}</td>
-                    <td>{pct100(c.similarity)}</td>
+                    <td><SimBadge value={c.similarity} bare /></td>
                   </tr>
                 ))}
               </tbody>
