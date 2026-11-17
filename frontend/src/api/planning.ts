@@ -56,6 +56,8 @@ export interface BriefProject {
   outcome_is_failure: boolean
   outcome_note: string | null
   similarity: number
+  /** 자료 사슬: 사업 기획서 → 공모서 → 연구개발계획서 → 결과보고서 → 평가서 */
+  chain: { code: string; name: string; documents: { document_id: number; title: string; authored_at: string | null; via: 'SUBJECT' | 'LISTED' | 'PROGRAM'; match_method: string | null }[] }[]
   cards: {
     card_id: number
     title: string

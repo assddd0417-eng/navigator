@@ -467,6 +467,13 @@ PD_ID=$(pick '.demand_id')
 api "기획수요에 붙은 참고서 사본" 200 GET "/planning/demands/$PD_ID/brief" "$REVIEWER"
 check "참고서 문서" '.content_md | startswith("# 기획 참고서")'
 
+section "⑮ 기획서·공모서 과제번호 연결"
+api "공모서 올리기 (과제 지정 없음)" 201 POST /documents "$PLANNER" \
+    '{"doc_type_code":"PROGRAM_NOTICE","title":"스모크 공모서 '"$RUN_TAG"'","chunks":[{"content":"공모 과제: PRJ-2022-001 소형 무인기용 항재밍 데이터링크 개발"}]}'
+check "과제번호로 과제 1에 '실린 과제'로 연결" 'any(.linked_projects[]; .project_id == 1 and .link_role == "LISTED" and .match_method == "PROJECT_NO")'
+api "과제 1 자료 사슬" 200 GET /planning/projects/1/chain "$PLANNER"
+check "공모서 단계에 문서 있음" 'any(.chain[]; .code == "PROGRAM_NOTICE" and (.documents | length) >= 1)'
+
 section "⑯ 통합기획 검토 (후보 검토표 → 자료 초안 → 회의 결정)"
 api "검토표 만들기는 기획자만 (검수자)" 403 POST /review-sheets "$REVIEWER" '{"sheet_scope":"CUSTOM"}'
 api "통합기획 회의 만들기" 201 POST /meetings "$PLANNER" '{"title":"스모크 통합기획 회의 '"$RUN_TAG"'","department_ids":[1,3]}'

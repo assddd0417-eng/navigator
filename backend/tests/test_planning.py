@@ -79,6 +79,7 @@ async def test_brief(client, ready):
 
     proj = next(p for p in b["projects"] if p["project_id"] == PROJECT)
     assert proj["outcome_name"] == "전환 실패" and proj["outcome_is_failure"]
+    assert [st["name"] for st in proj["chain"]][:2] == ["사업 기획서", "공모서"]
     assert proj["evaluations"][0]["grade"] == "미흡"
     card = next(c for c in proj["cards"] if c["card_id"] == ready["card"])
     assert {lim["issue_type_name"] for lim in card["limits"]} == {"후속 연구 필요", "목표 미달"}

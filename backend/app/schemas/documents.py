@@ -44,6 +44,7 @@ class DocumentCreated(BaseModel):
     id: int
     chunk_ids: list[int]
     embedded: int
+    linked_projects: list[dict] = []   # 본문의 과제번호·과제명으로 연결한 과제 (0032)
 
 
 class ChunkSearch(BaseModel):

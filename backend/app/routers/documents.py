@@ -12,6 +12,7 @@ from app.schemas.documents import (ChunkIn, ChunkSearch, DocumentCreate, Documen
                                    ParsePreview)
 from app.services.document_parser import ParsedDocument, ParseError, parse_upload
 from app.services.embedding import active_model_id, embed_query, sha256, sync_chunk_embeddings
+from app.services.project_linker import link_document
 
 router = APIRouter(prefix="/documents", tags=["원문 문서·RAG"])
 
@@ -23,8 +24,14 @@ async def create_document(body: DocumentCreate, user: CurrentUser = Depends(requ
 
 
 async def _store_document(body: DocumentCreate, user: CurrentUser, rid: str) -> DocumentCreated:
+    """이어달리기 문서 등록: 저장 후 본문의 과제번호·과제명으로 과제에 연결한다 (0032)."""
     async with transaction(user.id, rid) as conn:
-        return await store_document(conn, body)
+        created = await store_document(conn, body)
+        created.linked_projects = await link_document(conn, created.id)
+        # 대상 과제를 못 찾은 문서(공모서 등)는 올린 사람 부서 소관
+        await conn.execute("UPDATE ax.source_document SET owner_dept_id = %s WHERE id = %s AND owner_dept_id IS NULL",
+                           (user.department_id, created.id))
+        return created
 
 
 async def store_document(conn: AsyncConnection, body: DocumentCreate) -> DocumentCreated:
