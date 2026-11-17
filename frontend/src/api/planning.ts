@@ -102,8 +102,8 @@ export interface Brief {
   planning_demand: { id: number; demand_no: string; status: string } | null
 }
 
-/** 관련도 기준: 기본 0.45, '덜 비슷한 과제도 보기' 0.35 */
-const sim = (wide: boolean) => ({ min_sim: wide ? 0.35 : undefined })
+/** 관련도 기준은 서버가 임베더별로 정한다 (hash 0.45/0.35, bge-m3 0.55/0.50). wide = '덜 비슷한 과제도 보기' */
+const sim = (wide: boolean) => ({ wide: wide || undefined })
 
 export const listTrends = () => api<TrendRow[]>('/planning/trends')
 export const createTrend = (body: TrendIn) => api<{ id: number }>('/planning/trends', { method: 'POST', body })

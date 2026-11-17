@@ -9,8 +9,19 @@
 """
 from __future__ import annotations
 
+from app.config import get_settings
 from app.services.gap_rules import NearCard
 from app.services.scoring import Performance, _norm, performance_fit
+
+# 기획 참고서에 넣을 관련 성과의 유사도 기준 (기본, '덜 비슷한 과제도 보기').
+# 임베더마다 점수 폭이 달라 따로 둔다. bge-m3 는 2026-11-17 gap_eval sims 실측:
+# 전차·파워팩 동향과 무관한 카드의 중앙 0.43·상위 10% 0.50·0.55 이상 1%, K2 파워팩 카드는 동력 동향에서 0.61~0.74.
+BRIEF_SIM = {"hash": (0.45, 0.35), "bge_m3": (0.55, 0.50)}
+
+
+def brief_min_sim(wide: bool = False) -> float:
+    base, loose = BRIEF_SIM.get(get_settings().embedder, BRIEF_SIM["hash"])
+    return loose if wide else base
 
 DEMAND_KIND_KO = {
     "ROADMAP": "해외 기술로드맵", "CALL": "해외 공모", "EXPORT_REQ": "수출 요구",
