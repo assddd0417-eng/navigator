@@ -97,6 +97,16 @@ app/
 | GET | `/portfolio/overview`·`/areas`·`/domestic`·`/actions` | PLANNER, DEPT_REVIEWER, VIEWER (보안등급별) | 기관 포트폴리오: 숫자·분야별 대조표·무기체계별 국내 성과·정책 기획 후보 (`include_draft`, `area`) |
 | GET | `/portfolio/export.xlsx` | PLANNER, DEPT_REVIEWER, VIEWER | 위 내용을 엑셀로 (분야별 대조·국내 성과 분포·기획 후보·작성기준) |
 | POST | `/portfolio/actions/{갭id}/to-demand` | PLANNER | 확정된 갭 → 신규 기획수요(OPEN). 이미 넘긴 갭이면 200 + 기존 기획수요 (0028) |
+| POST | `/review-sheets` | PLANNER | 이어달리기 후보 검토표 만들기 (범위: 전체·종료과제 활용·사업트랙/부서 간·기획수요, 부서·회의 선택). 열람 가능한 최근 추천을 사본으로 저장 (0036) |
+| GET | `/review-sheets`·`/review-sheets/{id}` | PLANNER, DEPT_REVIEWER (보안등급별) | 검토표 목록·상세 (항목 사본 + 지금 검토 상태 + 담당부서 최종 검토율·원문 근거 연결) |
+| PATCH·DELETE | `/review-sheets/{id}`·`/review-sheets/{id}/items/{추천id}` | PLANNER | 회의에 올리기·제목, 확정 전 후보 빼기 |
+| POST | `/review-sheets/{id}/finalize` | PLANNER | 검토표 확정 (이후 항목 변경 불가, DB 가 막음) |
+| GET | `/review-sheets/{id}/export.xlsx` | PLANNER, DEPT_REVIEWER | 회의자료 엑셀 (검토표·회의 결정·작성기준) |
+| POST | `/review-sheets/{id}/drafts` | PLANNER | 통합기획 자료 초안 (Markdown, 원문 근거 각주, 다시 만들면 판 올림) |
+| GET·PATCH | `/planning-drafts/{id}`·`/planning-drafts/{id}/export.md` | 보기 PLANNER·DEPT_REVIEWER, 상태 PLANNER | 초안 보기·내려받기·검토함/최종 표시 |
+| POST·GET·PATCH | `/meetings`·`/meetings/{id}` | 만들기 PLANNER, 보기 PLANNER·DEPT_REVIEWER | 통합기획 회의 (참석 부서, 올린 검토표, 결정) |
+| POST | `/meetings/{id}/decisions` | PLANNER | 회의 결정·후속조치 (추천에 대한 결정은 회의에 올린 검토표의 후보만) |
+| PATCH | `/meeting-decisions/{id}` | PLANNER 또는 담당 부서 DEPT_REVIEWER | 후속조치 상태 (진행·완료·취소) |
 | POST | `/planning/trends` | PLANNER, CURATOR | 동향 직접 입력 (해외 3종 + 국내 계획·성능개량·국산화/단종 대응). 출처 메모 필수, 저장 즉시 갭 분석 |
 | GET | `/planning/trends` | PLANNER, DEPT_REVIEWER, CURATOR | 동향 목록 (해외 수요 + 직접 입력), 만든 기획수요 번호 |
 | GET | `/planning/brief/{동향id}` | PLANNER, DEPT_REVIEWER, CURATOR | 기획 참고서: 관련 과거 과제(결과 구분·한계·평가 의견)·요구 성능 비교·새 기획에 넣을 것 (`k`, `min_sim`) |
