@@ -51,8 +51,8 @@ export const score = (v: Num | null | undefined) => (v == null ? '–' : Number(
 /** 0~1 점수를 사람이 읽는 백분율로 (0.823 → 82%) */
 export const pct100 = (v: Num | null | undefined) => (v == null ? '–' : `${Math.round(Number(v) * 100)}%`)
 
-/** 기관 화면에서 라벨 옆에 붙이는 원래 값 (0.61). 기업 화면·메일에는 쓰지 않는다 */
-export const dec = (v: Num | null | undefined) => (v == null ? '' : Number(v).toFixed(2))
+/** 기관 화면에서 라벨 옆에 붙이는 값 (0.61 → 61%). 기업 화면·메일에는 쓰지 않는다 */
+export const dec = (v: Num | null | undefined) => (v == null ? '' : `${Math.round(Number(v) * 100)}%`)
 
 /** 적합도 등급 (화면 표시용 눈금, 판정 규칙 아님). 0.70 이상 높음 · 0.50 이상 보통 · 그 아래 낮음 */
 export function fitLevel(v: Num | null | undefined): { label: string; tone: string } {
@@ -63,7 +63,7 @@ export function fitLevel(v: Num | null | undefined): { label: string; tone: stri
 export function Fit({ value, big = false }: { value: Num | null | undefined; big?: boolean }) {
   const lv = fitLevel(value)
   return (
-    <span className={`fit ${big ? 'fit-big' : ''}`} title="적합도 (1에 가까울수록 잘 맞음)">
+    <span className={`fit ${big ? 'fit-big' : ''}`} title="적합도 (100%에 가까울수록 잘 맞음)">
       <span className={`badge badge-${lv.tone}`}>{lv.label} · {dec(value)}</span>
     </span>
   )
