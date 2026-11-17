@@ -27,11 +27,15 @@ function readToken(): string | null {
   try { return sessionStorage.getItem(TOKEN_KEY) } catch { return null }
 }
 
-type Tab = 'matches' | 'past' | 'alerts' | 'profile'
+type Tab = 'matches' | 'past' | 'alerts' | 'manage'
+/** 관리 탭 안의 화면 */
+type ManageView = 'profile' | 'recipients' | 'consent'
 
 export function CompanyManagePage() {
   const [token] = useState(readToken)
   const [tab, setTab] = useState<Tab>('matches')
+  const [manageView, setManageView] = useState<ManageView>('profile')
+  const openProfile = () => { setTab('manage'); setManageView('profile') }
   const [profile, setProfile] = useState<FullProfile | null>(null)
   const [invalid, setInvalid] = useState<string | null>(token ? null : '회사가 선택되지 않았습니다.')
   const [matches, setMatches] = useState<MatchRun | null>(null)
@@ -105,8 +109,8 @@ export function CompanyManagePage() {
         <button role="tab" className={tab === 'alerts' ? 'on' : ''} onClick={() => setTab('alerts')}>
           알림 {unread > 0 && <span className="tab-count">{unread}</span>}
         </button>
-        <button role="tab" className={tab === 'profile' ? 'on' : ''} onClick={() => setTab('profile')}>
-          회사 정보 {missing.length > 0 && <span className="tab-count">{missing.length}</span>}
+        <button role="tab" className={tab === 'manage' ? 'on' : ''} onClick={() => setTab('manage')}>
+          관리 {missing.length > 0 && <span className="tab-count">{missing.length}</span>}
         </button>
       </div>
 
@@ -117,7 +121,7 @@ export function CompanyManagePage() {
           {missing.length > 0 && (
             <div className="notice small">
               회사 정보에 비어 있는 항목({missing.join(', ')})이 있어 일부 공고는 판정하지 못했습니다.{' '}
-              <button className="link-btn" onClick={() => setTab('profile')}>회사 정보 채우기</button>
+              <button className="link-btn" onClick={openProfile}>회사 정보 채우기</button>
             </div>
           )}
           {!matches ? <div className="page-loading">불러오는 중…</div> : matches.recommendations.length === 0 ? (
@@ -128,22 +132,39 @@ export function CompanyManagePage() {
               renderCard={(r) => (
                 <MatchCard rec={r} audience="company" title={<strong>{r.announcement_title}</strong>}
                   meta={<>{r.agency_name} · <Deadline end={r.receipt_end} state={r.receipt_state} /></>}
-                  questions={questions ?? []} onAnswer={answer} onEditProfile={() => setTab('profile')} />
+                  questions={questions ?? []} onAnswer={answer} onEditProfile={openProfile} />
               )} />
           )}
         </Card>
       )}
 
       {tab === 'past' && (
-        <PastPanel key={profileKey} token={token!} onOpenCurrent={() => setTab('matches')} onEditProfile={() => setTab('profile')} />
+        <PastPanel key={profileKey} token={token!} onOpenCurrent={() => setTab('matches')} onEditProfile={openProfile} />
       )}
 
-      {tab === 'alerts' && <>
-        <OutreachConsent token={token!} profile={profile} onChange={(at) => setProfile({ ...profile, outreach_consent_at: at })} />
-        <AlertsPanel token={token!} onUnread={setUnread} />
-      </>}
+      {tab === 'alerts' && <AlertsPanel token={token!} onUnread={setUnread} part="alerts" />}
 
-      {tab === 'profile' && (
+      {tab === 'manage' && (
+        <div className="seg sub-tabs" role="tablist">
+          <button role="tab" className={manageView === 'profile' ? 'on' : ''} onClick={() => setManageView('profile')}>
+            회사 정보 {missing.length > 0 && <span className="tab-count">{missing.length}</span>}
+          </button>
+          <button role="tab" className={manageView === 'recipients' ? 'on' : ''} onClick={() => setManageView('recipients')}>
+            알림 받는 사람
+          </button>
+          <button role="tab" className={manageView === 'consent' ? 'on' : ''} onClick={() => setManageView('consent')}>
+            참여 권유 동의
+          </button>
+        </div>
+      )}
+
+      {tab === 'manage' && manageView === 'recipients' && <AlertsPanel token={token!} onUnread={setUnread} part="recipients" />}
+
+      {tab === 'manage' && manageView === 'consent' && (
+        <OutreachConsent token={token!} profile={profile} onChange={(at) => setProfile({ ...profile, outreach_consent_at: at })} />
+      )}
+
+      {tab === 'manage' && manageView === 'profile' && (
         <ProfilePanel key={profileKey} token={token!} profile={profile} missing={missing} onSaved={(p) => {
           setProfile(p)
           setProfileKey((k) => k + 1)

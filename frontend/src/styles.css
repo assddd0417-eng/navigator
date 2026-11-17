@@ -68,6 +68,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary-sof
 .whoami { padding: 10px 12px; margin-bottom: 12px; border-radius: var(--radius); background: var(--primary-soft); }
 .whoami-name { font-weight: 700; }
 .whoami-role { font-size: 13px; }
+.nav-section + .nav-section { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); }
+.nav-section-title { padding: 0 12px 4px; font-size: 12px; font-weight: 700; color: var(--muted); }
 .nav-item { display: flex; gap: 8px; padding: 9px 12px; border-radius: 8px; color: var(--text); font-weight: 500; }
 .nav-item:hover { background: var(--bg); text-decoration: none; }
 .nav-item.active { background: var(--primary); color: #fff; }
@@ -188,7 +190,8 @@ blockquote { margin: 4px 0 0; padding: 6px 10px; border-left: 3px solid var(--pr
 @media (max-width: 900px) {
   .body { flex-direction: column; }
   .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 4px; }
-  .whoami, .sidebar-can { display: none; }
+  .whoami, .sidebar-can, .nav-section-title { display: none; }
+  .nav-section { display: contents; }
   .content { padding: 16px; }
   .grid-side { grid-template-columns: 1fr; }
   .grid-2 { grid-template-columns: 1fr; }
@@ -337,3 +340,4 @@ label.check input { width: auto; }
 /* 참여할 수 있었던 사업 */
 .past-tag { margin-left: 6px; }
 .past-next { display: block; margin-top: 4px; }
+.sub-tabs { margin: 0 0 12px; align-self: flex-start; }

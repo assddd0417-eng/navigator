@@ -19,7 +19,12 @@ function subState(s: Subscription): { label: string; tone: string } {
   return { label: '받는 중', tone: 'ok' }
 }
 
-export function AlertsPanel({ token, onUnread }: { token: string; onUnread: (n: number) => void }) {
+/** part: 'alerts' = 받은 알림 목록, 'recipients' = 알림 받는 사람 설정(관리 탭) */
+export function AlertsPanel({ token, onUnread, part }: {
+  token: string
+  onUnread: (n: number) => void
+  part: 'alerts' | 'recipients'
+}) {
   const [alerts, setAlerts] = useState<AlertItem[] | null>(null)
   const [subs, setSubs] = useState<Subscription[] | null>(null)
   const [registered, setRegistered] = useState('')
@@ -76,8 +81,7 @@ export function AlertsPanel({ token, onUnread }: { token: string; onUnread: (n: 
   const unread = alerts?.filter((a) => !a.is_read).length ?? 0
   const hasRegistered = subs?.some((s) => s.email === registered.toLowerCase()) ?? false
 
-  return (
-    <>
+  if (part === 'alerts') return (
       <Card title="새 공고 알림" actions={unread > 0 &&
         <button className="btn btn-sm" disabled={busy} onClick={() => void readAll()}>모두 읽음</button>}>
         {!alerts ? <div className="page-loading">불러오는 중…</div> : alerts.length === 0 ? (
@@ -99,7 +103,9 @@ export function AlertsPanel({ token, onUnread }: { token: string; onUnread: (n: 
           </ul>
         )}
       </Card>
+  )
 
+  return (
       <Card title="알림 받는 사람" actions={
         editing === null && (subs?.length ?? 0) < max &&
         <button className="btn btn-sm" onClick={() => setEditing('new')}>추가</button>
@@ -158,7 +164,6 @@ export function AlertsPanel({ token, onUnread }: { token: string; onUnread: (n: 
           })}
         </ul>
       </Card>
-    </>
   )
 }
 
