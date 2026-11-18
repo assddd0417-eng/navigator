@@ -8,8 +8,9 @@ frontend/        Vite + React 화면. 기업 화면(로그인 없음) + 기관 �
 db/migrations/   PostgreSQL 16 + pgvector 스키마 (파일별 단일 트랜잭션)
 db/tests/        SQL 스모크 테스트 (샘플 데이터 → 흐름 확인 → ROLLBACK)
 seeds/           base.sql (담당자 계정·사업), navigator_*.sql (가상 기업·공고), navigator_eval/ (검증 데이터)
-scripts/         migrate.sh (체크섬 검증), smoke_test.sh (curl API 스모크), mac_autostart.sh
-docs/            navigator.md (API·판정 규칙), navigator_ux.md (화면 표기), navigator_eval.md (검증 결과)
+scripts/         migrate.sh (체크섬 검증), smoke_test.sh (curl API 스모크), mac_autostart.sh, clear_demo_data.sql (가상 데이터 비우기)
+deploy/          내부망 서버용 systemd·nginx 설정
+docs/            install_internal.md (내부망 서버 설치), navigator.md (API·판정 규칙), navigator_ux.md (화면 표기), navigator_eval.md (검증 결과)
 ```
 
 ## 로컬 실행
@@ -33,3 +34,7 @@ BASE_URL=http://localhost:8000 ./scripts/smoke_test.sh                       # 4
 ```
 
 API 는 `/api/*`, 나머지는 빌드된 화면 (`backend/app/site.py`). 자동 실행 없이 한 번만: `cd frontend && npm run build` 후 `cd backend && uvicorn app.site:site --port 8000`.
+
+## 내부망 서버 설치
+
+[docs/install_internal.md](docs/install_internal.md): DB·마이그레이션, `.env`(SMTP 등), systemd 자동 시작, nginx 담당자 비밀번호, 가상 데이터 비우기와 실데이터 입력.
