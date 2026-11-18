@@ -123,8 +123,7 @@
 - KRIT 연결 부품(`services/external/krit.py`)과 수집 코드는 남겨 두었다. 다시 쓰려면 `UPDATE ax.external_source SET is_active = true WHERE code = 'KRIT';`. 국기원 공고는 담당자가 "공고 등록·조건 확인"에서 붙여넣어 등록한다.
 
 - 한 번 실행 = `external_fetch_job` 1행, 받은 원본은 `external_raw_record` 에 그대로. 실패하면 반영은 롤백하고 FAILED 와 오류를 남긴다.
-- 자동 수집: 서버가 `COLLECT_AUTO_MINUTES`(기본 60)분마다 주기가 된 출처를 수집한다 (출처별 마지막 주기 실행 뒤 `fetch_interval` 이 지난 것만: 국세청·DART 30일, KIPRIS 7일, 기업마당 1일). 0 이면 끔(시연 주소는 0). 서버 없이 돌릴 때는 `python -m app.collect --due` 를 cron 으로.
-- 화면의 "지금 수집"은 주기를 기다리지 않고 바로 가져올 때 쓴다.
+- 자동 수집: 서버가 `COLLECT_AUTO_MINUTES`(기본 60)분마다 주기가 된 출처를 수집한다 (출처별 마지막 주기 실행 뒤 `fetch_interval` 이 지난 것만: 국세청·DART 30일, KIPRIS 7일, 기업마당 1일). 0 이면 끔. 화면에는 수동 실행 버튼이 없다 (필요하면 `POST /navigator/sources/{code}/run` 또는 `python -m app.collect --source <코드>`). 서버 없이 돌릴 때는 `python -m app.collect --due` 를 cron 으로.
 - KIPRIS 는 사업자번호 검색이 없어 출원인 이름이 정확히 같은 것만 가져오고, 처음 찾은 특허고객번호를 저장해 다음부터 그 번호로 찾는다.
 - DART 는 회사명으로 후보를 찾고 `company.json` 의 사업자번호가 같은 것을 고유번호로 저장한다. 상장·외부감사 대상만 있다.
 - 기업마당 공고는 `NAVIGATOR_ANNOUNCEMENT_KEYWORDS` 가 제목·요약·해시태그에 있는 것만. 공고번호는 `BIZINFO-<공고ID>`, 작성중일 때만 갱신.
@@ -299,7 +298,7 @@ weighted 모드는 비교 대상이 없으면 0.5. 정렬 방식·가중치·규
 | `/navigator/subscriptions/confirm#t=…`, `/navigator/unsubscribe#t=…`, `/navigator/outreach/optout#t=…` | 메일 수신자 | 수신 확인, 알림 수신 거부, 참여 권유 수신 거부 |
 | `/staff/announcements` | 담당자 (메뉴 "공고 등록·조건 확인") | 확인 전 / 확인 완료 공고 → 왼쪽 원문(본문·첨부 글자), 오른쪽 조건 뽑기 → 접수기간·지원 한도·조건·요구기술 고치기 → 확인 저장 또는 공개. 공고문 붙여넣기 등록 |
 | `/staff/navigator` | 담당자 (메뉴 "공고별 적합 기업") | 공고 목록 → 마지막 매칭 결과(적합 / 정보부족 / 부적격 목록을 따로 총점 순, 부적격은 접힘) → 다시 매칭, 기업 프로필, 참여 권유(동의 기업 선택·메모·보낸 기록), 구독 기업 알림 현황 |
-| `/staff/sources` | 담당자 (메뉴 "외부 수집") | API 로 연결되는 출처만: 출처별 모드·주기·마지막 결과, 지금 수집, 수집 기록 |
+| `/staff/sources` | 담당자 (메뉴 "외부 수집") | API 로 연결되는 출처만: 출처별 모드·주기·마지막 결과·다음 자동 수집, 수집 기록 |
 
 외부 확인값 등 기업이 고칠 수 없는 항목은 "(수정 불가)"로 표시한다. 특허는 기업이 직접 고치지 않고 KIPRIS 수집으로 들어온다.
 
@@ -390,7 +389,7 @@ curl -s localhost:8000/navigator/sources -H 'X-User-Id: 1' | jq '.[] | {code, mo
 3. 알림 탭 → 추가 → 저장 (등록 이메일은 바로 '받는 중'). 다른 주소를 추가하면 "[DEV] 확인 링크 열기"
 4. 공고를 PUBLISHED 로 등록하면 (예: 아래) 알림 탭에 새 공고가 뜬다
 5. http://localhost:5173/login 에서 기관 담당자로 로그인 → "공고별 적합 기업" → 공고 선택 → 매칭 실행, 아래 '구독 기업 알림'
-6. "외부 수집" → KIPRIS "지금 수집" → 한빛 특허 3건이 외부 확인으로 바뀜
+6. 서버를 켜고 30초쯤 뒤 "외부 수집" → KIPRIS 자동 수집 성공 → 한빛 특허 3건이 외부 확인으로 바뀜
 
 ```bash
 curl -s -X POST localhost:8000/navigator/announcements -H 'X-User-Id: 1' -H 'Content-Type: application/json' -d '{
