@@ -33,3 +33,8 @@ BASE_URL=http://localhost:8000 ./scripts/smoke_test.sh                       # 4
 ```
 
 API 는 `/api/*`, 나머지는 빌드된 화면 (`backend/app/site.py`). 자동 실행 없이 한 번만: `cd frontend && npm run build` 후 `cd backend && uvicorn app.site:site --port 8000`.
+
+
+## 시연 주소
+
+링크 하나로 보여 줄 때: `docs/demo_link.md` (Render 무료 호스팅 또는 맥 + 임시 주소, 가상 데이터·비밀번호·메일 끔).

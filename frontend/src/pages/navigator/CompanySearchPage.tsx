@@ -151,7 +151,7 @@ export function CompanySearchPage() {
               <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => void askCode()}>코드 다시 받기</button>
             </form>
           )}
-          {codeSent?.dev_code && <div className="small muted">로컬 시연: 코드를 미리 채워 두었습니다.</div>}
+          {codeSent?.dev_code && <div className="small muted">시연용 주소라 메일은 보내지 않고 코드를 미리 채웠습니다.</div>}
           {codeError && <div className="notice notice-warn small">{codeError}</div>}
         </Card>
       )}
