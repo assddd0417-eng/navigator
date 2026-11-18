@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { listFetchJobs, listSources, runSource, type FetchJob, type RunResult, type SourceRow } from '../../api/navigator'
-import { Card, Empty, fmtDate, PageHeader, useAction, useAsync } from '../../components/ui'
+import { listFetchJobs, listSources, type FetchJob } from '../../api/navigator'
+import { Card, Empty, fmtDate, PageHeader, useAsync } from '../../components/ui'
 
 const KIND_LABELS: Record<string, string> = {
   BIZ_STATUS: '휴·폐업', PATENT: '특허', CREDIT: '신용등급', FINANCE: '재무', RND: 'R&D 과제',
@@ -27,35 +27,23 @@ export function NavigatorSourcesPage() {
   const sources = useAsync(listSources, [])
   const [filter, setFilter] = useState<string | null>(null)
   const jobs = useAsync(() => listFetchJobs(filter ?? undefined), [filter])
-  const [last, setLast] = useState<RunResult | null>(null)
-  const { busy, run } = useAction()
   const auto = sources.data?.[0]?.auto_minutes ?? 0
-
-  const runNow = (s: SourceRow) => run(async () => {
-    setLast(await runSource(s.code))
-    sources.reload(); jobs.reload()
-  })
 
   return (
     <>
       <PageHeader title="외부 수집" subtitle="공공 API로 기업 정보와 공고를 가져온 기록" />
-      {last && (
-        <div className={`notice ${last.status === 'SUCCEEDED' ? 'notice-ok' : ''}`}>
-          {last.source} {last.status === 'SUCCEEDED' ? `수집 완료: ${fmtResult(last.counts)}` : `수집 실패: ${last.error}`}
-        </div>
-      )}
       <Card title="출처">
         <p className="small muted">
           API로 연결되는 출처만 표시합니다. ‘시험 데이터’는 키를 넣기 전이라 가상 자료로 동작하는 출처입니다.{' '}
           {auto
-            ? `자동 수집: ${fmtEvery(auto)}마다 확인해서 주기가 된 출처를 가져옵니다. ‘지금 수집’은 주기를 기다리지 않고 바로 가져올 때만 씁니다.`
-            : '자동 수집이 꺼져 있습니다 (시연용). 필요할 때 ‘지금 수집’으로 가져옵니다.'}
+            ? `서버가 ${fmtEvery(auto)}마다 확인해서 주기가 된 출처를 자동으로 가져옵니다.`
+            : '자동 수집이 꺼져 있습니다.'}
         </p>
         {sources.loading ? <div className="page-loading">불러오는 중…</div> : !sources.data?.length ? <Empty>출처가 없습니다.</Empty> : (
           <div className="table-wrap">
             <table className="table">
               <thead>
-                <tr><th>출처</th><th>데이터</th><th>연결</th><th>주기</th><th>마지막 수집</th><th>결과</th><th>다음 수집</th><th /></tr>
+                <tr><th>출처</th><th>데이터</th><th>연결</th><th>주기</th><th>마지막 수집</th><th>결과</th><th>다음 수집</th></tr>
               </thead>
               <tbody>
                 {sources.data.map((s) => (
@@ -83,11 +71,6 @@ export function NavigatorSourcesPage() {
                     </td>
                     <td className="small">{s.last_error ? <span className="bad-text">{s.last_error}</span> : fmtResult(s.last_result)}</td>
                     <td className="nowrap small">{auto && s.implemented && s.fetch_interval ? (s.next_due_at ? fmtDate(s.next_due_at) : '다음 실행 때') : '–'}</td>
-                    <td>
-                      {s.implemented && (
-                        <button className="btn btn-sm" disabled={busy} onClick={() => void runNow(s)}>지금 수집</button>
-                      )}
-                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -17,5 +17,5 @@ COPY seeds seeds
 COPY scripts scripts
 COPY deploy/demo_start.sh deploy/
 COPY --from=web /web/dist frontend/dist
-ENV EMBEDDER=hash MAILER=mock NAVIGATOR_DEV_EXPOSE_LINK=true COLLECT_AUTO_MINUTES=0 PORT=8000
+ENV EMBEDDER=hash MAILER=mock NAVIGATOR_DEV_EXPOSE_LINK=true PORT=8000
 CMD ["./deploy/demo_start.sh"]
