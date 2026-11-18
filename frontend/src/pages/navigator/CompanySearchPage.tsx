@@ -8,7 +8,8 @@ import {
 import { Card, useAction } from '../../components/ui'
 import { bizStatus, CompanyShell, Deadline, GroupedMatches, MatchCard } from './components'
 
-// 시연용 가상 기업 (seeds/navigator_companies.sql)
+// 시연용 가상 기업 (seeds/navigator_companies.sql). 실데이터 서버는 VITE_HIDE_DEMO=true 로 빌드해 숨긴다
+const SHOW_DEMO = import.meta.env.VITE_HIDE_DEMO !== 'true'
 const DEMO = [
   { brn: '999-81-00015', name: '(가상)한빛전자통신' },
   { brn: '999-82-00026', name: '(가상)누리복합소재' },
@@ -94,14 +95,14 @@ export function CompanySearchPage() {
             inputMode="numeric" aria-label="사업자등록번호" />
           <button className="btn btn-primary" disabled={busy}>{busy ? '조회 중…' : '조회'}</button>
         </form>
-        <div className="chips">
+        {SHOW_DEMO && <div className="chips">
           <span className="small muted">시연용 기업:</span>
           {DEMO.map((d) => (
             <button key={d.brn} type="button" className="chip" onClick={() => { setBrn(d.brn); void search(d.brn) }}>
               {d.name}
             </button>
           ))}
-        </div>
+        </div>}
       </section>
 
       {!found && (

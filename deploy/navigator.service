@@ -1,0 +1,18 @@
+# /etc/systemd/system/navigator.service
+# 설치 경로 /opt/navigator, 실행 계정 navigator 기준. 다르면 경로와 User 를 고친다.
+[Unit]
+Description=Navigator (API + 화면)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+User=navigator
+Group=navigator
+WorkingDirectory=/opt/navigator/backend
+# 설정은 backend/.env 에서 읽는다
+ExecStart=/opt/navigator/backend/.venv/bin/uvicorn app.site:site --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
