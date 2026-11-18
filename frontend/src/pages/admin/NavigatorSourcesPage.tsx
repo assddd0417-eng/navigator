@@ -36,14 +36,14 @@ export function NavigatorSourcesPage() {
 
   return (
     <>
-      <PageHeader title="외부 수집" subtitle="기업 정보와 공고를 공공데이터에서 가져온 기록" />
+      <PageHeader title="외부 수집" subtitle="공공 API로 기업 정보와 공고를 가져온 기록" />
       {last && (
         <div className={`notice ${last.status === 'SUCCEEDED' ? 'notice-ok' : ''}`}>
           {last.source} {last.status === 'SUCCEEDED' ? `수집 완료: ${fmtResult(last.counts)}` : `수집 실패: ${last.error}`}
         </div>
       )}
       <Card title="출처">
-        <p className="small muted">‘시험 데이터’는 연결 전이라 가상 자료로 동작하는 출처입니다. 주기가 있는 출처는 정해진 간격으로 자동 수집합니다.</p>
+        <p className="small muted">API로 연결되는 출처만 표시합니다. ‘시험 데이터’는 키를 넣기 전이라 가상 자료로 동작하는 출처입니다. 주기가 있는 출처는 정해진 간격으로 자동 수집합니다.</p>
         {sources.loading ? <div className="page-loading">불러오는 중…</div> : !sources.data?.length ? <Empty>출처가 없습니다.</Empty> : (
           <div className="table-wrap">
             <table className="table">
@@ -86,9 +86,6 @@ export function NavigatorSourcesPage() {
               </tbody>
             </table>
           </div>
-        )}
-        {sources.data?.some((s) => !s.implemented) && (
-          <p className="small muted">미연결: 유료 계약(NICE·KED) 또는 비용 확인(NTIS) 후 연결합니다. 그 전까지는 기업이 직접 입력한 값과 증빙을 씁니다.</p>
         )}
       </Card>
 

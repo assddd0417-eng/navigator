@@ -115,14 +115,19 @@
 | `KIPRIS` | KIPRIS Plus | 7일 | `company_patent` (origin EXTERNAL, 확인됨). 같은 출원번호의 자가입력 행은 외부값으로 바뀜 |
 | `DART` | OpenDART | 30일 | 매출·직원 수·기준연도를 값 출처(확인됨)로. 판정은 확인된 외부값 우선 |
 | `BIZINFO` | 기업마당 지원사업 | 1일 | `announcement` 작성중(DRAFT, source_kind EXTERNAL). 담당자가 요건 입력 후 공개하면 알림 |
-| `KRIT` | 국방기술진흥연구소 공지사항 (www.krit.re.kr) | 1일 | `announcement` 작성중 + 본문(`body_text`)·게시일·묶음 키, 첨부 글자는 `announcement_attachment` |
+| `KRIT` (꺼 둠) | 국방기술진흥연구소 공지사항 (www.krit.re.kr) | 1일 | `announcement` 작성중 + 본문(`body_text`)·게시일·묶음 키, 첨부 글자는 `announcement_attachment` |
+
+외부 수집은 실제 API 로 연결되는 출처(국세청·KIPRIS·DART·기업마당)만 쓴다. API 가 없는 출처는 `0002_external_source_api_only.sql` 에서 `external_source.is_active = false` 로 꺼 두었고, 꺼진 출처는 화면 목록·수집 기록·주기 실행·지금 수집에서 모두 빠진다(행과 지난 기록은 남음).
+
+- 꺼 둔 출처: NICE·KED(유료 계약), NTIS(비용 확인), 인증서 PDF 업로드(연결 부품 없음, 기업 화면의 증빙 올리기는 그대로), KRIT(API 없이 홈페이지를 읽음).
+- KRIT 연결 부품(`services/external/krit.py`)과 수집 코드는 남겨 두었다. 다시 쓰려면 `UPDATE ax.external_source SET is_active = true WHERE code = 'KRIT';`. 국기원 공고는 담당자가 "공고 등록·조건 확인"에서 붙여넣어 등록한다.
 
 - 한 번 실행 = `external_fetch_job` 1행, 받은 원본은 `external_raw_record` 에 그대로. 실패하면 반영은 롤백하고 FAILED 와 오류를 남긴다.
 - 주기 실행: `python -m app.collect --due` 를 cron 으로 (예: 매시간). 출처별 마지막 주기 실행 뒤 `fetch_interval` 이 지난 것만 돈다.
 - KIPRIS 는 사업자번호 검색이 없어 출원인 이름이 정확히 같은 것만 가져오고, 처음 찾은 특허고객번호를 저장해 다음부터 그 번호로 찾는다.
 - DART 는 회사명으로 후보를 찾고 `company.json` 의 사업자번호가 같은 것을 고유번호로 저장한다. 상장·외부감사 대상만 있다.
 - 기업마당 공고는 `NAVIGATOR_ANNOUNCEMENT_KEYWORDS` 가 제목·요약·해시태그에 있는 것만. 공고번호는 `BIZINFO-<공고ID>`, 작성중일 때만 갱신.
-- 국기원 공지사항은 키 없이 게시판을 읽는다. 제목으로 기업 대상 모집 공고만 고르고(결과·설명회·대학·채용 등 제외) 공고번호는 `KRIT-<게시글 번호>`.
+- (꺼 둠) 국기원 공지사항은 키 없이 게시판을 읽는다. 제목으로 기업 대상 모집 공고만 고르고(결과·설명회·대학·채용 등 제외) 공고번호는 `KRIT-<게시글 번호>`.
   - 신청기간은 본문의 "신청기간 : ’26. 11. 5.(목) ~ 11. 12.(목)" 같은 줄에서, 본문에 없으면 첨부 글자에서 찾는다.
   - 첨부는 HWP·HWPX·PDF 만 받아 글자를 뽑는다(`app/services/hwp_text.py`). 원본 파일은 저장하지 않는다. zip·xlsx·이미지는 SKIPPED, 배포용 HWP·스캔 PDF 는 UNSUPPORTED.
   - `series_key` 는 제목에서 차수·연도·재공고·연장 표시를 지운 값. 같은 사업의 여러 공고를 묶는다.
@@ -139,7 +144,6 @@
 - 실제 국기원 공고 19건에 규칙을 돌려 보면 대부분 기업규모·휴폐업·결격사유가 나오고, 방산혁신클러스터 공고는 지역이 나온다. "다음 각 호 중 하나" 같은 조건은 규칙으로 못 뽑으니 '기타'로 직접 넣는다.
 
 - live 연결 부품은 공개 문서의 응답 모양으로 해석을 테스트했지만 실제 키로는 아직 호출해 보지 않았다 (개발 환경에서 외부 API 차단). 키를 받으면 `SOURCE_<코드>=live` 로 한 출처씩 확인한다.
-- NICE·KED(유료 계약), NTIS(비용 확인), 인증서 PDF 는 연결 부품이 없다. 화면에 "미연결"로 표시.
 
 ## 등록 규칙
 
@@ -294,7 +298,7 @@ weighted 모드는 비교 대상이 없으면 0.5. 정렬 방식·가중치·규
 | `/navigator/subscriptions/confirm#t=…`, `/navigator/unsubscribe#t=…`, `/navigator/outreach/optout#t=…` | 메일 수신자 | 수신 확인, 알림 수신 거부, 참여 권유 수신 거부 |
 | `/staff/announcements` | 담당자 (메뉴 "공고 등록·조건 확인") | 확인 전 / 확인 완료 공고 → 왼쪽 원문(본문·첨부 글자), 오른쪽 조건 뽑기 → 접수기간·지원 한도·조건·요구기술 고치기 → 확인 저장 또는 공개. 공고문 붙여넣기 등록 |
 | `/staff/navigator` | 담당자 (메뉴 "공고별 적합 기업") | 공고 목록 → 마지막 매칭 결과(적합 / 정보부족 / 부적격 목록을 따로 총점 순, 부적격은 접힘) → 다시 매칭, 기업 프로필, 참여 권유(동의 기업 선택·메모·보낸 기록), 구독 기업 알림 현황 |
-| `/staff/sources` | 담당자 (메뉴 "외부 수집") | 출처별 모드·주기·마지막 결과, 지금 수집, 수집 기록 |
+| `/staff/sources` | 담당자 (메뉴 "외부 수집") | API 로 연결되는 출처만: 출처별 모드·주기·마지막 결과, 지금 수집, 수집 기록 |
 
 외부 확인값 등 기업이 고칠 수 없는 항목은 "(수정 불가)"로 표시한다. 특허는 기업이 직접 고치지 않고 KIPRIS 수집으로 들어온다.
 
@@ -329,7 +333,7 @@ weighted 모드는 비교 대상이 없으면 0.5. 정렬 방식·가중치·규
 | `KIPRIS_ACCESS_KEY` | - | KIPRIS Plus |
 | `DART_API_KEY` | - | OpenDART |
 | `BIZINFO_API_KEY` | - | 기업마당 |
-| `SOURCE_KRIT` | `mock` | `live` 면 국기원 공지사항을 직접 읽음 (키 불필요) |
+| `SOURCE_KRIT` | `mock` | `live` 면 국기원 공지사항을 직접 읽음 (키 불필요). 출처를 꺼 둬서 다시 켜기 전에는 안 씀 |
 | `KRIT_MAX_PAGES` | `3` | 한 번에 읽을 쪽 수 (쪽당 10건). 처음 채울 때 61 |
 | `KRIT_REQUEST_DELAY_S` | `0.5` | 국기원 요청 사이 대기 |
 | `NAVIGATOR_PAST_YEARS` | `2` | 참여할 수 있었던 사업에서 볼 마감 공고 기간(년) |
