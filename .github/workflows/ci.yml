@@ -93,3 +93,36 @@ jobs:
 
       - name: 타입 검사 + 빌드
         run: npm run build
+
+  demo-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: navigator_demo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 시연 이미지 빌드
+        run: docker build -t navigator-demo .
+
+      - name: 시연 이미지 실행 (비밀번호 확인)
+        run: |
+          docker run -d --name demo --network host \
+            -e DATABASE_URL=postgresql://postgres:postgres@localhost:5432/navigator_demo \
+            -e SITE_PASSWORD=ci-pass -e PORT=8100 navigator-demo
+          for i in $(seq 60); do curl -sf http://localhost:8100/api/health >/dev/null && break; sleep 2; done
+          curl -sf http://localhost:8100/api/health || { docker logs demo; exit 1; }
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8100/navigator)" = 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' -u navigator:ci-pass http://localhost:8100/navigator)" = 200
+          curl -sf -u navigator:ci-pass http://localhost:8100/api/navigator/announcements | grep -q '가상'

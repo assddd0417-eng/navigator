@@ -114,7 +114,7 @@ export function AlertsPanel({ token, onUnread, part }: {
           등록 이메일({registered})은 바로 받기 시작합니다. 다른 주소는 그 주소로 간 확인 메일을 열어야 시작됩니다. 최대 {max}명.
         </p>
         {devLink && (
-          <div className="notice small">개발 환경: <a href={devLink.replace(/^https?:\/\/[^/]+/, '')}>확인 링크 바로 열기</a></div>
+          <div className="notice small">시연용 주소라 메일은 보내지 않습니다. <a href={devLink.replace(/^https?:\/\/[^/]+/, '')}>확인 링크 바로 열기</a></div>
         )}
         {editing === 'new' && (
           <SubForm initial={{ email: hasRegistered ? '' : registered }} withEmail busy={busy}
