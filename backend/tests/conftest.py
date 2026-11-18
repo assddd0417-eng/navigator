@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 os.environ["DATABASE_URL"] = TEST_URL
 os.environ.setdefault("EMBEDDER", "hash")
+os.environ["COLLECT_AUTO_MINUTES"] = "0"
 
 SEED = """
 SET search_path = ax, public;

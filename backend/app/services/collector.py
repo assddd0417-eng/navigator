@@ -292,6 +292,7 @@ COLLECTORS: dict[str, tuple[Collector, str, bool]] = {
     kipris.SOURCE_CODE: (collect_kipris, "source_kipris", True),
     dart.SOURCE_CODE: (collect_dart, "source_dart", True),
     bizinfo.SOURCE_CODE: (collect_bizinfo, "source_bizinfo", False),
+    # 국기원 공지사항은 API 가 아니라 홈페이지를 읽는다. 출처를 꺼 둠 (external_source.is_active = false, 0002)
     krit.SOURCE_CODE: (collect_krit, "source_krit", False),
 }
 
@@ -373,11 +374,13 @@ async def source_overview(conn: AsyncConnection) -> list[dict]:
              FROM ax.external_source s
              LEFT JOIN LATERAL (SELECT * FROM ax.external_fetch_job j WHERE j.source_id = s.id
                                  ORDER BY j.started_at DESC, j.id DESC LIMIT 1) j ON true
+            WHERE s.is_active
             ORDER BY s.id""")).fetchall()
     for r in rows:
         r["implemented"] = r["code"] in COLLECTORS
         r["mode"] = source_mode(r["code"])
         r["per_company"] = COLLECTORS[r["code"]][2] if r["implemented"] else False
+        r["auto_minutes"] = get_settings().collect_auto_minutes
     return rows
 
 
@@ -388,5 +391,5 @@ async def recent_jobs(conn: AsyncConnection, code: str | None, limit: int) -> li
                   j.started_at, j.finished_at
              FROM ax.external_fetch_job j JOIN ax.external_source s ON s.id = j.source_id
              LEFT JOIN ax.organization o ON o.id = j.organization_id
-            WHERE (%(code)s::text IS NULL OR s.code = %(code)s)
+            WHERE s.is_active AND (%(code)s::text IS NULL OR s.code = %(code)s)
             ORDER BY j.started_at DESC, j.id DESC LIMIT %(limit)s""", {"code": code, "limit": limit})).fetchall()

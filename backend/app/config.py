@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     smtp_timeout_s: float = 15
 
     # 외부 수집. SOURCE_<CODE>=mock|live, 키는 live 에서만 필요
+    collect_auto_minutes: int = 60          # 서버가 몇 분마다 주기가 된 출처를 수집할지. 0 이면 자동 수집 끔
     source_nts_biz: str = "mock"
     source_kipris: str = "mock"
     source_dart: str = "mock"

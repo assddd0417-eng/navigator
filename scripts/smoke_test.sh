@@ -200,7 +200,7 @@ api "국세청 휴·폐업 재확인" 200 POST /navigator/sources/NTS_BIZ/run "$
 api "KIPRIS 특허 (한빛)" 200 POST "/navigator/sources/KIPRIS/run?organization_id=101" "$STAFF"
 api "DART 재무 (누리)" 200 POST "/navigator/sources/DART/run?organization_id=102" "$STAFF"
 api "기업마당 공고" 200 POST /navigator/sources/BIZINFO/run "$STAFF"
-api "국기원 공지사항 공고" 200 POST /navigator/sources/KRIT/run "$STAFF"
+api "국기원 공지사항은 꺼 둠" 404 POST /navigator/sources/KRIT/run "$STAFF"
 api "공고는 기업별 수집 안 됨" 422 POST "/navigator/sources/BIZINFO/run?organization_id=101" "$STAFF"
 api "연결 안 된 출처" 404 POST /navigator/sources/NICE/run "$STAFF"
 api "수집 기록" 200 GET "/navigator/sources/jobs?limit=5" "$STAFF"

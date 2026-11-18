@@ -1,6 +1,6 @@
 """외부 수집 실행.
 
-    python -m app.collect --due              # 주기가 된 출처만 (cron 에서 매시간 등)
+    python -m app.collect --due              # 주기가 된 출처만 (서버가 COLLECT_AUTO_MINUTES 마다 알아서 돌림)
     python -m app.collect --source KIPRIS    # 한 출처 지금
     python -m app.collect --source DART --org 101
 """

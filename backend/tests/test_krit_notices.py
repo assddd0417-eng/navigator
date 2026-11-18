@@ -1,4 +1,7 @@
-"""국기원 공지사항 공고 수집 테스트 (mock 픽스처 + 실제 화면 모양의 HTML 조각)."""
+"""국기원 공지사항 공고 수집 테스트 (mock 픽스처 + 실제 화면 모양의 HTML 조각).
+
+출처는 꺼져 있다 (0002). 수집 동작 테스트는 잠시 켜고 돌린 뒤 다시 끈다.
+"""
 import io
 import struct
 import zipfile
@@ -27,7 +30,9 @@ def _q(sql: str, *args):
 def clean(database):
     limiter.reset()
     _q("DELETE FROM ax.announcement WHERE announcement_no LIKE 'KRIT-%%'")
+    _q("UPDATE ax.external_source SET is_active = true WHERE code = 'KRIT'")
     yield
+    _q("UPDATE ax.external_source SET is_active = false WHERE code = 'KRIT'")
     _q("DELETE FROM ax.announcement WHERE announcement_no LIKE 'KRIT-%%'")
 
 
@@ -60,10 +65,10 @@ async def test_collect_company_recruitments_with_attachments(client, clean):
     assert again["counts"].get("inserted", 0) == 0 and again["counts"]["unchanged"] == 4
 
 
-async def test_overview_lists_krit(client):
+async def test_krit_off_by_default(client):
     ov = (await client.get("/navigator/sources", headers=as_user(STAFF))).json()
-    k = next(s for s in ov if s["code"] == "KRIT")
-    assert k["implemented"] and not k["requires_key"] and k["mode"] == "mock"
+    assert "KRIT" not in {s["code"] for s in ov}
+    assert (await client.post("/navigator/sources/KRIT/run", headers=as_user(STAFF))).status_code == 404
 
 
 def test_live_mode_name_check(monkeypatch):

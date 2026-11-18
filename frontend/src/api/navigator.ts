@@ -481,6 +481,7 @@ export interface SourceRow {
   implemented: boolean
   mode: 'mock' | 'live' | null
   per_company: boolean
+  auto_minutes: number
   last_job_id: number | null
   last_status: 'RUNNING' | 'SUCCEEDED' | 'FAILED' | null
   last_started_at: string | null

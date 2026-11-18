@@ -1,4 +1,6 @@
 """Navigator 외부 수집 테스트 (mock 연결 부품)."""
+import asyncio
+
 import psycopg
 import pytest
 
@@ -121,14 +123,14 @@ async def test_registration_with_live_nts_without_key_is_unverified(client, monk
 async def test_due_sources_and_overview(client):
     _q("DELETE FROM ax.external_fetch_job WHERE trigger_kind = 'SCHEDULED'")
     first = await collector.run_due()
-    assert {r["source"] for r in first} == {"NTS_BIZ", "KIPRIS", "DART", "BIZINFO", "KRIT"}
+    assert {r["source"] for r in first} == {"NTS_BIZ", "KIPRIS", "DART", "BIZINFO"}
     assert all(r["status"] == "SUCCEEDED" for r in first)
     assert await collector.run_due() == []                                  # 주기 안에는 다시 안 돎
 
     ov = (await client.get("/navigator/sources", headers=as_user(STAFF))).json()
     by = {s["code"]: s for s in ov}
     assert by["KIPRIS"]["implemented"] and by["KIPRIS"]["mode"] == "mock" and by["KIPRIS"]["next_due_at"]
-    assert not by["NICE"]["implemented"] and by["NICE"]["mode"] is None
+    assert set(by) == {"NTS_BIZ", "KIPRIS", "DART", "BIZINFO"}                # API 없는 출처는 목록에서 빠짐
     assert (await client.post("/navigator/sources/NICE/run", headers=as_user(STAFF))).status_code == 404
 
 
@@ -213,3 +215,21 @@ def test_bizinfo_keyword_filter():
     hit = _record({"pblancId": "A", "pblancNm": "2026년 방위산업 육성 기술협업 프로그램 참가기업 모집"})
     miss = _record({"pblancId": "B", "pblancNm": "[경남] 밀양시 2026년 2차 주방위생환경개선 사업 모집 공고"})
     assert matches_keywords(hit, kw) and not matches_keywords(miss, kw)
+
+
+async def test_auto_collect_runs_due_sources(monkeypatch):
+    from app import main
+    monkeypatch.setattr(get_settings(), "collect_auto_minutes", 1)
+    calls = []
+
+    async def fake_due(rid=None):
+        calls.append(rid)
+        return [{"source": "BIZINFO", "status": "SUCCEEDED", "counts": {}}]
+
+    async def no_wait(_):
+        if calls:
+            raise asyncio.CancelledError
+    monkeypatch.setattr("app.services.collector.run_due", fake_due)
+    with pytest.raises(asyncio.CancelledError):
+        await main._auto_collect(no_wait)
+    assert calls == ["auto"]

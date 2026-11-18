@@ -9,7 +9,7 @@ command -v cloudflared >/dev/null || { echo "cloudflared 가 없습니다: brew 
 
 export DATABASE_URL="${DEMO_DATABASE_URL:-postgresql://localhost:5432/navigator_demo}"
 export SITE_PASSWORD SITE_USER="${SITE_USER:-navigator}" PORT=8100
-export EMBEDDER=hash MAILER=mock NAVIGATOR_DEV_EXPOSE_LINK=true
+export EMBEDDER=hash MAILER=mock NAVIGATOR_DEV_EXPOSE_LINK=true COLLECT_AUTO_MINUTES=0
 psql "${DATABASE_URL%/*}/postgres" -X -qAtc "SELECT 1 FROM pg_database WHERE datname = 'navigator_demo'" | grep -q 1 \
   || createdb navigator_demo
 (cd frontend && npm ci --silent && npm run build >/dev/null)
