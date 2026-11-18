@@ -19,6 +19,7 @@ const fmtInterval = (v: string | null) => {
   const m = v.match(/^(\d+) days?$/)
   return m ? `${m[1]}일` : v
 }
+const fmtEvery = (m: number) => (m % 60 === 0 ? `${m / 60}시간` : `${m}분`)
 const fmtResult = (r: Record<string, number> | null) =>
   r && Object.keys(r).length ? Object.entries(r).map(([k, n]) => `${RESULT_LABELS[k] ?? k} ${n}`).join(' · ') : '–'
 
@@ -28,6 +29,7 @@ export function NavigatorSourcesPage() {
   const jobs = useAsync(() => listFetchJobs(filter ?? undefined), [filter])
   const [last, setLast] = useState<RunResult | null>(null)
   const { busy, run } = useAction()
+  const auto = sources.data?.[0]?.auto_minutes ?? 0
 
   const runNow = (s: SourceRow) => run(async () => {
     setLast(await runSource(s.code))
@@ -43,7 +45,12 @@ export function NavigatorSourcesPage() {
         </div>
       )}
       <Card title="출처">
-        <p className="small muted">API로 연결되는 출처만 표시합니다. ‘시험 데이터’는 키를 넣기 전이라 가상 자료로 동작하는 출처입니다. 주기가 있는 출처는 정해진 간격으로 자동 수집합니다.</p>
+        <p className="small muted">
+          API로 연결되는 출처만 표시합니다. ‘시험 데이터’는 키를 넣기 전이라 가상 자료로 동작하는 출처입니다.{' '}
+          {auto
+            ? `자동 수집: ${fmtEvery(auto)}마다 확인해서 주기가 된 출처를 가져옵니다. ‘지금 수집’은 주기를 기다리지 않고 바로 가져올 때만 씁니다.`
+            : '자동 수집이 꺼져 있습니다 (시연용). 필요할 때 ‘지금 수집’으로 가져옵니다.'}
+        </p>
         {sources.loading ? <div className="page-loading">불러오는 중…</div> : !sources.data?.length ? <Empty>출처가 없습니다.</Empty> : (
           <div className="table-wrap">
             <table className="table">
@@ -75,7 +82,7 @@ export function NavigatorSourcesPage() {
                       ) : '–'}
                     </td>
                     <td className="small">{s.last_error ? <span className="bad-text">{s.last_error}</span> : fmtResult(s.last_result)}</td>
-                    <td className="nowrap small">{s.implemented && s.fetch_interval ? (s.next_due_at ? fmtDate(s.next_due_at) : '다음 실행 때') : '–'}</td>
+                    <td className="nowrap small">{auto && s.implemented && s.fetch_interval ? (s.next_due_at ? fmtDate(s.next_due_at) : '다음 실행 때') : '–'}</td>
                     <td>
                       {s.implemented && (
                         <button className="btn btn-sm" disabled={busy} onClick={() => void runNow(s)}>지금 수집</button>

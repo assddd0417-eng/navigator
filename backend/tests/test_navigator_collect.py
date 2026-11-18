@@ -1,4 +1,6 @@
 """Navigator 외부 수집 테스트 (mock 연결 부품)."""
+import asyncio
+
 import psycopg
 import pytest
 
@@ -213,3 +215,21 @@ def test_bizinfo_keyword_filter():
     hit = _record({"pblancId": "A", "pblancNm": "2026년 방위산업 육성 기술협업 프로그램 참가기업 모집"})
     miss = _record({"pblancId": "B", "pblancNm": "[경남] 밀양시 2026년 2차 주방위생환경개선 사업 모집 공고"})
     assert matches_keywords(hit, kw) and not matches_keywords(miss, kw)
+
+
+async def test_auto_collect_runs_due_sources(monkeypatch):
+    from app import main
+    monkeypatch.setattr(get_settings(), "collect_auto_minutes", 1)
+    calls = []
+
+    async def fake_due(rid=None):
+        calls.append(rid)
+        return [{"source": "BIZINFO", "status": "SUCCEEDED", "counts": {}}]
+
+    async def no_wait(_):
+        if calls:
+            raise asyncio.CancelledError
+    monkeypatch.setattr("app.services.collector.run_due", fake_due)
+    with pytest.raises(asyncio.CancelledError):
+        await main._auto_collect(no_wait)
+    assert calls == ["auto"]

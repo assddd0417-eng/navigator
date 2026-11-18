@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import Depends, FastAPI, Request
 
@@ -27,8 +27,26 @@ async def lifespan(app: FastAPI):
     if st["reindex_needed"]:
         log.warning("활성 모델 %s 의 벡터가 없는 항목: 청크 %s · 기업 %s · 공고 %s → `python -m app.reembed` 실행 필요",
                     st["model"], st["chunks_missing"], st["companies_missing"], st["announcements_missing"])
+    auto = asyncio.create_task(_auto_collect()) if get_settings().collect_auto_minutes > 0 else None
     yield
+    if auto:
+        auto.cancel()
+        with suppress(asyncio.CancelledError):
+            await auto
     await close_pool()
+
+
+async def _auto_collect(sleep=asyncio.sleep) -> None:
+    """주기가 된 출처를 서버가 알아서 수집한다 (출처별 주기는 external_source.fetch_interval)."""
+    from app.services.collector import run_due
+    await sleep(30)                    # 서버가 뜬 직후 요청과 겹치지 않게
+    while True:
+        try:
+            for r in await run_due("auto"):
+                log.info("자동 수집 %s %s %s", r["source"], r["status"], r.get("error") or r["counts"])
+        except Exception:  # noqa: BLE001  한 번 실패해도 다음 주기에 다시
+            log.exception("자동 수집 실패")
+        await sleep(get_settings().collect_auto_minutes * 60)
 
 
 app = FastAPI(

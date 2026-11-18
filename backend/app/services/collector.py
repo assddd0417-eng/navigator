@@ -380,6 +380,7 @@ async def source_overview(conn: AsyncConnection) -> list[dict]:
         r["implemented"] = r["code"] in COLLECTORS
         r["mode"] = source_mode(r["code"])
         r["per_company"] = COLLECTORS[r["code"]][2] if r["implemented"] else False
+        r["auto_minutes"] = get_settings().collect_auto_minutes
     return rows
 
 
