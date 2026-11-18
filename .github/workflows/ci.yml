@@ -61,6 +61,7 @@ jobs:
       - name: 시드 적용 (2회, 재실행 안전 확인) + API 스모크 테스트 (curl)
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/navigator_ci
+          COLLECT_AUTO_MINUTES: "0"
         run: |
           psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -f seeds/base.sql
           psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -f seeds/base.sql
