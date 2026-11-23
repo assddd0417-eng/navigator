@@ -308,7 +308,7 @@ async def update(conn: AsyncConnection, cid: int, *, report: dict[str, str] | No
 def _mail_body(c: dict) -> str:
     return (f"{c['company_name']} 담당자님께\n\n"
             f"{c['created_at'][:10]} 상담 결과가 확정되었습니다.\n"
-            "기업 정보 관리 화면의 '상담' 메뉴에서 상담결과서와 추천 지원사업을 볼 수 있습니다. "
+            "회사 정보 화면의 '상담·결과 안내' 탭에서 상담결과서와 추천 지원사업을 볼 수 있습니다. "
             "관리 링크가 만료되었으면 사업자번호로 다시 요청하세요.\n\n" + NOTICE)
 
 

@@ -17,7 +17,7 @@ export function CompanyRegisterPage() {
       <div className="page-header">
         <div>
           <h1>회사 등록</h1>
-          <p>회사 정보를 모두 여기서 입력합니다. 채울수록 지원 가능 공고를 정확하게 판정합니다.</p>
+          <p>회사 정보를 여기서 입력합니다. 비어 있는 항목이 있으면 일부 공고는 판정하지 못합니다.</p>
         </div>
         <Link to="/navigator" className="btn btn-ghost">취소</Link>
       </div>

@@ -16,9 +16,9 @@ const DEMO = [
 ]
 
 const STEPS = [
-  ['사업자번호로 조회', '공개 정보로 지원 가능한 공고를 먼저 보여 드립니다.'],
-  ['회사 정보 보완', '공공데이터로 자동으로 채우고, 인증·R&D 이력은 바로 입력하면 판정이 정확해집니다.'],
-  ['새 공고 알림', '조건에 맞는 공고가 올라오면 이메일로 알려 드립니다.'],
+  ['사업자번호로 조회', '공개 정보로 지원 가능한 공고를 먼저 보여 줍니다.'],
+  ['회사 정보 보완', '특허·매출은 공공데이터로 자동으로 채우고, 인증·R&D 이력은 직접 입력합니다.'],
+  ['새 공고 알림', '조건에 맞는 공고가 올라오면 이메일로 알립니다.'],
 ]
 
 export function CompanySearchPage() {
@@ -90,7 +90,7 @@ export function CompanySearchPage() {
     <CompanyShell>
       <section className="hero">
         <h1>우리 회사가 지원할 수 있는 국방 사업 공고</h1>
-        <p className="muted">사업자등록번호만 넣으면 지원 조건과 회사 정보를 비교해 드립니다.</p>
+        <p className="muted">사업자등록번호를 넣으면 공고 지원 조건과 회사 정보를 비교합니다.</p>
         <form className="search-row hero-search" onSubmit={submit}>
           <input value={brn} onChange={(e) => setBrn(e.target.value)} placeholder="사업자등록번호 (예: 123-45-67890)"
             inputMode="numeric" aria-label="사업자등록번호" />
@@ -118,7 +118,7 @@ export function CompanySearchPage() {
       {notFound && (
         <Card title="등록되지 않은 사업자번호입니다">
           <p className="muted">{notFound}</p>
-          <p>회사를 등록하면 지원 가능한 공고를 바로 볼 수 있습니다. 1분 정도 걸립니다.</p>
+          <p>회사를 등록하면 지원 가능한 공고를 바로 볼 수 있습니다.</p>
           <Link className="btn btn-primary" to={`/navigator/register?brn=${encodeURIComponent(brn)}`}>회사 등록</Link>
         </Card>
       )}

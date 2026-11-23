@@ -30,7 +30,7 @@ export function SubscriptionLinkPage({ mode }: { mode: 'confirm' | 'unsubscribe'
     <CompanyShell>
       <Card title={title}>
         {error ? <p>{error}</p> : !done ? <p className="muted">처리 중…</p> : mode === 'confirm' ? (
-          <p>{done.company_name}의 새 공고 알림을 {done.email} 로 보내 드립니다.</p>
+          <p>{done.company_name}의 새 공고 알림을 {done.email} 로 보냅니다.</p>
         ) : mode === 'unsubscribe' ? (
           <p>{done.email} 로 가던 {done.company_name}의 공고 알림을 더 이상 보내지 않습니다.</p>
         ) : (
