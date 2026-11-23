@@ -2,6 +2,7 @@
 --   D-STATE 보완 답변: 101 한빛(방산진입 준비), 102 누리(수출 확장), 103 새봄(기초역량 정비)
 --   공고 NAV-2026-107 방산 중소기업 컨설팅(가상, id 는 순번 그대로): 평가항목·배점, 기업부담, 제출서류, 신청제한(중복수혜·부정당제재)
 --   공고 101 평가항목
+--   상담 요청 2건 (101 한빛, 103 새봄)
 -- 재실행 가능: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f seeds/navigator_consult.sql
 \set ON_ERROR_STOP on
 BEGIN;
@@ -85,5 +86,13 @@ INSERT INTO announcement_eval_item (announcement_id, name, points, kind, areas, 
   (101, '양산·공급 능력', 20, 'CAPABILITY', '{PRODUCTION,QUALITY}', NULL, 1),
   (101, '사업 목적 부합', 20, 'PURPOSE', '{}', NULL, 2),
   (101, '개발계획 적정성', 30, 'APPLICATION', '{}', NULL, 3);
+
+-- 상담 요청 (가상)
+DELETE FROM consult_request WHERE organization_id IN (101, 102, 103);
+INSERT INTO consult_request (organization_id, concern, interest, contact_name, origin, created_at) VALUES
+  (101, '전술통신 장비 기술은 있는데 군 수요처를 어떻게 찾아야 할지 모르겠습니다. 품질인증도 준비가 안 되어 있습니다.',
+   '국방벤처센터 협약, 방산 컨설팅', '(가상)박담당', 'SELF', now() - interval '1 day'),
+  (103, '방산 분야에 처음 진입하려고 합니다. 지금 신청할 수 있는 사업이 있는지 알고 싶습니다.',
+   NULL, '(가상)이담당', 'SELF', now() - interval '3 hours');
 
 COMMIT;

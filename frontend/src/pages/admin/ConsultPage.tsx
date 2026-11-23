@@ -1,18 +1,20 @@
 import { useEffect, useState } from 'react'
 import {
+  createConsultation, createConsultRequest, getConsultation, getConsultationHistory, listConsultRequests, setConsultRequestStatus,
   getDiagnosisHistory, getDstateRules, growthRoute, previewDstate, reviewEligibility, runDstate, saveStaffDstateValues, searchConsultCompanies,
-  type ConsultCompany, type DstateResult, type EligibilityReview, type DstateVariable, type GrowthRoute,
+  type ConsultCompany, type Consultation, type ConsultRequest, type DstateResult, type EligibilityReview, type DstateVariable, type GrowthRoute,
 } from '../../api/navigator'
 import { changedValues, DstateInput } from '../../components/DstateInput'
 import { RadarChart } from '../../components/RadarChart'
 import { useToast } from '../../components/Toast'
+import { ConsultReportPanel } from './ConsultReportPanel'
 import { EligibilityPanel } from './EligibilityPanel'
 import { RoutePanel } from './RoutePanel'
 import { RouteRulesCard } from './RouteRulesCard'
 import { Card, Empty, fmtDate, PageHeader, useAction, useAsync } from '../../components/ui'
 
 type Task = 'A' | 'B' | 'C'
-type ResultTab = 'dstate' | 'qualify' | 'route'
+type ResultTab = 'dstate' | 'qualify' | 'route' | 'report'
 
 const TASKS: { code: Task; label: string; ready: boolean }[] = [
   { code: 'A', label: 'A. D-STATE 진단', ready: true },
@@ -23,6 +25,7 @@ const RESULT_TABS: { code: ResultTab; label: string; ready: boolean }[] = [
   { code: 'dstate', label: 'D-STATE 진단결과', ready: true },
   { code: 'qualify', label: '자격요건 검토', ready: true },
   { code: 'route', label: 'D-ROUTE 성장경로', ready: true },
+  { code: 'report', label: '상담결과서', ready: true },
 ]
 
 const fmtDelta = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `${n}` : '변동 없음')
@@ -40,12 +43,16 @@ export function ConsultPage() {
   const [elig, setElig] = useState<EligibilityReview | null>(null)
   const [route, setRoute] = useState<GrowthRoute | null>(null)
   const [histKey, setHistKey] = useState(0)
+  const [consultation, setConsultation] = useState<Consultation | null>(null)
+  const [requestId, setRequestId] = useState<number | null>(null)
+  const [consultKey, setConsultKey] = useState(0)
+  const requests = useAsync(() => listConsultRequests(), [])
   const { busy, run } = useAction()
   const toast = useToast()
 
   useEffect(() => {
     if (orgId == null) return
-    setResult(null); setElig(null); setRoute(null)
+    setResult(null); setElig(null); setRoute(null); setConsultation(null)
     void run(async () => setResult(await previewDstate(orgId)))
   }, [orgId, run])
 
@@ -65,18 +72,38 @@ export function ConsultPage() {
     toast.show({ kind: 'success', title: '진단을 저장했습니다', message: '진단 이력에서 볼 수 있습니다.' })
   })
 
+  const saveDraft = () => run(async () => {
+    const c = await createConsultation(orgId!, { task, concern: concern.trim() || undefined, request_id: requestId ?? undefined })
+    setConsultation(c)
+    setTab('report')
+    setConsultKey((k) => k + 1)
+    void requests.reload()
+    toast.show({ kind: 'success', title: '상담결과서 초안을 저장했습니다', message: '내용을 고친 뒤 확정합니다.' })
+  })
+  const openConsultation = (id: number) => run(async () => {
+    setConsultation(await getConsultation(id))
+    setTab('report')
+  })
+  const pickRequest = (r: ConsultRequest) => {
+    setOrgId(r.organization_id)
+    setConcern(r.concern)
+    setRequestId(r.id)
+  }
+
   return (
     <>
       <PageHeader title="기업 상담" subtitle="기업과 검토 업무를 고르고 실행하면 상담에 쓸 결과가 나옵니다." />
       <div className="grid-side">
         <Card title="기업 및 검토 업무 선택">
+          <RequestList items={requests.data} loading={requests.loading} orgId={orgId} company={company}
+            onPick={pickRequest} onChanged={() => void requests.reload()} />
           <form className="form-row" style={{ marginBottom: 10 }} onSubmit={(e) => { e.preventDefault(); setQuery(q.trim()) }}>
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="상호 또는 사업자번호" aria-label="기업 검색" />
           </form>
           {companies.loading ? <div className="page-loading">불러오는 중…</div> : !companies.data?.length ? <Empty>기업이 없습니다.</Empty> : (
             <ul className="select-list">
               {companies.data.map((c) => <CompanyButton key={c.organization_id} c={c} on={c.organization_id === orgId}
-                onClick={() => setOrgId(c.organization_id)} />)}
+                onClick={() => { setOrgId(c.organization_id); setRequestId(null) }} />)}
             </ul>
           )}
           <div className="small muted" style={{ margin: '14px 0 6px' }}>검토 업무</div>
@@ -89,7 +116,8 @@ export function ConsultPage() {
               </li>
             ))}
           </ul>
-          {(task === 'B' || task === 'C') && (
+          {requestId != null && <div className="small muted" style={{ marginTop: 10 }}>상담 요청 {requestId}번에 연결됩니다.</div>}
+          {(
             <label className="small muted" style={{ display: 'block', margin: '14px 0 6px' }}>상담 내용 (애로사항·관심분야)
               <textarea rows={3} value={concern} onChange={(e) => setConcern(e.target.value)}
                 placeholder="사업 목적 부합 평가에 씁니다. 비워도 됩니다." />
@@ -109,6 +137,11 @@ export function ConsultPage() {
         <div className="stack">
           {orgId == null ? <Card><Empty>왼쪽에서 상담할 기업을 고르세요.</Empty></Card> : (
             <>
+              {result && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button className="btn btn-primary" disabled={busy} onClick={() => void saveDraft()}>결과 저장 · 상담결과서 초안</button>
+                </div>
+              )}
               <div className="seg tabs" role="tablist">
                 {RESULT_TABS.map((t) => (
                   <button key={t.code} role="tab" className={tab === t.code ? 'on' : ''} disabled={!t.ready}
@@ -122,6 +155,11 @@ export function ConsultPage() {
                 : <Card><Empty>검토 업무 B를 고르고 실행하면 결과가 나옵니다.</Empty></Card>)}
               {tab === 'route' && (route ? <RoutePanel data={route} />
                 : <Card><Empty>검토 업무 C를 고르고 실행하면 결과가 나옵니다.</Empty></Card>)}
+              {tab === 'report' && (consultation && consultation.organization_id === orgId
+                ? <ConsultReportPanel key={`${consultation.id}-${consultKey}`} data={consultation}
+                  onChange={(c) => { setConsultation(c); setConsultKey((k) => k + 1) }} />
+                : <Card><Empty>결과를 저장하거나 아래 상담 이력에서 고르면 상담결과서가 열립니다.</Empty></Card>)}
+              <ConsultHistoryCard key={`c-${orgId}-${consultKey}`} orgId={orgId} onOpen={(id) => void openConsultation(id)} />
               {tab === 'dstate' && <HistoryCard key={`${orgId}-${histKey}`} orgId={orgId} />}
             </>
           )}
@@ -333,6 +371,88 @@ function RulesCard() {
             <p className="small muted">기준 버전 {rules.data.rule_version}</p>
           </>
         )}
+    </Card>
+  )
+}
+
+const STATUS_TONE: Record<string, string> = { REQUESTED: 'warn', IN_PROGRESS: 'info', DONE: 'ok', CANCELED: 'muted' }
+
+function RequestList({ items, loading, orgId, company, onPick, onChanged }: {
+  items: ConsultRequest[] | null; loading: boolean; orgId: number | null; company: ConsultCompany | null
+  onPick: (r: ConsultRequest) => void; onChanged: () => void
+}) {
+  const [adding, setAdding] = useState(false)
+  const [concern, setConcern] = useState('')
+  const [interest, setInterest] = useState('')
+  const { busy, run } = useAction()
+  const toast = useToast()
+  const open = (items ?? []).filter((r) => r.status === 'REQUESTED' || r.status === 'IN_PROGRESS')
+  const add = () => run(async () => {
+    await createConsultRequest(orgId!, { concern: concern.trim(), interest: interest.trim() || undefined })
+    setConcern(''); setInterest(''); setAdding(false)
+    onChanged()
+    toast.show({ kind: 'success', title: '상담 요청을 등록했습니다' })
+  })
+  const cancel = (id: number) => run(async () => {
+    await setConsultRequestStatus(id, 'CANCELED')
+    onChanged()
+  })
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span className="small muted">상담 요청</span>
+        <button className="link-btn small" disabled={orgId == null} onClick={() => setAdding(!adding)}
+          title={orgId == null ? '기업을 먼저 고르세요' : undefined}>{adding ? '닫기' : '요청 등록'}</button>
+      </div>
+      {adding && (
+        <div className="stack" style={{ margin: '6px 0' }}>
+          <div className="small muted">{company?.name ?? '선택한 기업'}의 요청으로 등록합니다.</div>
+          <textarea rows={2} value={concern} onChange={(e) => setConcern(e.target.value)} placeholder="애로사항 (필수)" aria-label="애로사항" />
+          <input value={interest} onChange={(e) => setInterest(e.target.value)} placeholder="관심 지원사업" aria-label="관심 지원사업" />
+          <button className="btn btn-sm" disabled={busy || !concern.trim()} onClick={() => void add()}>등록</button>
+        </div>
+      )}
+      {loading ? <div className="small muted">불러오는 중…</div> : !open.length ? <div className="small muted">대기 중인 요청이 없습니다.</div> : (
+        <ul className="select-list" style={{ maxHeight: 220, marginTop: 6 }}>
+          {open.map((r) => (
+            <li key={r.id}>
+              <button onClick={() => onPick(r)}>
+                <span>{r.company_name} <span className={`badge badge-${STATUS_TONE[r.status]}`}>{r.status_label}</span></span>
+                <span className="small muted">{r.concern.split('\n')[0]}</span>
+              </button>
+              <button className="link-btn small" style={{ width: 'auto', padding: '0 10px' }} disabled={busy}
+                onClick={() => void cancel(r.id)}>취소</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function ConsultHistoryCard({ orgId, onOpen }: { orgId: number; onOpen: (id: number) => void }) {
+  const hist = useAsync(() => getConsultationHistory(orgId), [orgId])
+  return (
+    <Card title="상담 이력">
+      {hist.loading ? <div className="page-loading">불러오는 중…</div> : !hist.data?.length ? <Empty>저장된 상담이 없습니다.</Empty> : (
+        <table className="table">
+          <thead><tr><th>일시</th><th>업무</th><th>상태</th><th className="num">종합</th><th>상태유형</th><th className="num">신청 가능</th><th>수정</th><th>담당자</th></tr></thead>
+          <tbody>
+            {hist.data.map((h) => (
+              <tr key={h.id} style={{ cursor: 'pointer' }} onClick={() => onOpen(h.id)}>
+                <td>{fmtDate(h.created_at)}</td>
+                <td>{h.task_label}</td>
+                <td><span className={`badge badge-${h.status === 'CONFIRMED' ? 'ok' : 'warn'}`}>{h.status_label}</span></td>
+                <td className="num">{h.total_score ?? '–'}</td>
+                <td>{h.state_label ?? '–'}</td>
+                <td className="num">{h.eligible_count ?? '–'}</td>
+                <td className="small">판정 {h.override_count}건, 결과서 항목 {h.edited_sections.length}개</td>
+                <td>{h.created_by_name ?? '–'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </Card>
   )
 }

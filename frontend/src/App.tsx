@@ -6,6 +6,7 @@ import { Layout } from './components/Layout'
 import { ToastProvider } from './components/Toast'
 import { AnnouncementReviewPage } from './pages/admin/AnnouncementReviewPage'
 import { ConsultPage } from './pages/admin/ConsultPage'
+import { ConsultReviewPage } from './pages/admin/ConsultReviewPage'
 import { NavigatorSourcesPage } from './pages/admin/NavigatorSourcesPage'
 import { NavigatorStaffPage } from './pages/admin/NavigatorStaffPage'
 import { LoginPage } from './pages/LoginPage'
@@ -38,6 +39,7 @@ export default function App() {
             {/* 기관 담당자 화면: 로그인 */}
             <Route element={<RequireRole roles={STAFF_ROLES}><Layout /></RequireRole>}>
               <Route path="/staff/consult" element={<ConsultPage />} />
+              <Route path="/staff/consult/review" element={<ConsultReviewPage />} />
               <Route path="/staff/navigator" element={<NavigatorStaffPage />} />
               <Route path="/staff/announcements" element={<AnnouncementReviewPage />} />
               <Route path="/staff/sources" element={<NavigatorSourcesPage />} />

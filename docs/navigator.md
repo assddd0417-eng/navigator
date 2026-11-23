@@ -47,6 +47,8 @@
 | `POST /navigator/manage/answers` | 관리 링크 | `{"answers":[{"requirement_id":1,"value":7}]}` 저장 후 재판정 결과 반환 |
 | `GET /navigator/manage/dstate` | 관리 링크 | D-STATE 진단 보완 질문과 지금 값. 점수는 보여 주지 않음 |
 | `PUT /navigator/manage/dstate` | 관리 링크 | 진단 보완 답변 `{"values":{...}}` 저장 (출처 SELF). `null` 이면 지움 |
+| `GET /navigator/manage/consultations` | 관리 링크 | 기업 화면: 확정한 상담결과 최근 10건 (적합도는 등급만)과 내 상담 요청 목록 |
+| `POST /navigator/manage/consult-requests` | 관리 링크 | 상담 요청 `{concern, interest, contact_name, contact_phone}`. 출처는 SELF |
 
 관리 링크는 `X-Manage-Token` 헤더로 보낸다.
 
@@ -99,6 +101,15 @@
 | `GET /navigator/consult/route/rules` | 성장단계와 지원사업 연계 기준표. 연계 기준이 없는 사업도 함께 나온다 |
 | `PUT /navigator/consult/route/programs/{program_id}` | 사업의 연계 기준 저장 (`stage_code`, `next_program_ids`, `entry_condition`, `entry_min_scores`, `prep_tasks`, `expected_output`, `repeatable`, `sort_order`). 응답은 기준표 전체 |
 | `DELETE /navigator/consult/route/programs/{program_id}` | 사업의 연계 기준 삭제. 사업 자체는 남는다. 204 |
+| `GET /navigator/consult/requests?status=` | 상담 요청 목록. `REQUESTED` 가 먼저 나온다 |
+| `POST /navigator/consult/companies/{org_id}/requests` | 전화·방문 요청을 담당자가 대신 등록 `{concern, interest, contact_name, contact_phone}`. 출처는 STAFF |
+| `PATCH /navigator/consult/requests/{req_id}` | 요청 상태 `{status}`: `REQUESTED`, `IN_PROGRESS`, `DONE`, `CANCELED` |
+| `GET /navigator/consult/companies/{org_id}/consultations` | 상담 이력 (최신 순): 과업, 상태, 총점, 판정 집계, 판정·결과서 수정 여부, 의견 |
+| `POST /navigator/consult/companies/{org_id}/consultations` | 요청 본문 `{task, concern, request_id}`. `task` 는 A(진단), B(자격검토 추가), C(성장경로 추가), 기본 C. 진단을 저장하고 결과 스냅샷과 결과서 초안을 남긴다. `request_id` 를 넣으면 요청이 상담 중으로 바뀐다. 자세한 내용은 [상담 이력과 상담결과서](#상담-이력과-상담결과서) |
+| `GET /navigator/consult/consultations/{cid}` | 상담 한 건: 스냅샷, 결과서 초안 `draft` 와 고친 본 `report`, 판정 수정 `overrides`, 직전 상담과 비교 `compare` |
+| `PUT /navigator/consult/consultations/{cid}` | 담당자 수정 `{report, overrides, feedback}`. 확정 전에만 된다. 판정 수정은 사유 필수. 확정 후에는 409 |
+| `POST /navigator/consult/consultations/{cid}/confirm` | 확정 `{notify}`. 기업 화면에 보이고 요청은 `DONE` 이 된다. `notify: true` 면 등록 이메일로 안내. 되돌릴 수 없다 |
+| `GET /navigator/consult/review-log?limit=` | 이력 점검: 판정을 바꾸거나 결과서를 고치거나 의견을 남긴 상담 (최대 500건) |
 
 ### 알림
 
@@ -538,6 +549,50 @@ D-STATE 상태유형으로 정한다.
 
 가상 시드 `seeds/navigator_route.sql` 은 `navigator_consult.sql` 다음에 실행한다. 사업 3개를 더한다 (국방벤처 혁신기술 지원 `P-INNOV`, 방산 중소수출길 지원 `P-EXPORT`, 방산전시회 참가 지원 `P-EXPO`). 세 사업에 근거 공고 1건씩 (NAV-2027-108, NAV-2026-109, NAV-2025-110) 을 넣고, 단계별 연계 기준 8건 (방산진입 2, 기술개발 4, 양산·수출 2) 과 유사 사례 지원 이력 4건 (102 누리 3건, 103 새봄 1건) 을 넣는다. 시드는 `program_route` 를 전부 지우고 다시 넣으므로, 담당자가 입력한 연계 기준도 함께 사라진다. 운영 DB 에서는 돌리지 않는다.
 
+## 상담 이력과 상담결과서
+
+상담 한 번이 `ax.consultation` 한 줄이다 (`services/consultation.py`, 스키마 `db/migrations/0006_consultation.sql`). 상담 요청은 `ax.consult_request` 에 둔다. 결과서는 상담 참고자료이고, 최종 판단과 확정은 기업지원 담당자가 한다.
+
+### 흐름
+
+1. 기업이 관리 링크로 상담 요청을 남긴다. 담당자가 전화나 방문 요청을 대신 등록할 수도 있다. 요청은 `REQUESTED` 로 시작한다.
+2. 담당자가 상담을 실행한다. 진단을 저장하고, 과업에 따라 자격요건 검토와 성장경로를 더한다. 요청에서 실행하면 요청은 `IN_PROGRESS` 가 된다.
+3. 결과서 초안이 만들어진다. 항목은 7개다: 기업 개요, 성장준비도 진단, 지원사업 검토 결과, 추천 성장경로, 보완 요청 사항, 담당자 의견, 유의사항.
+4. 담당자가 문장을 고치고, 공고별 판정을 바꾸고, 의견을 남긴다. 판정을 바꾸면 사유를 꼭 적는다.
+5. 담당자가 확정한다. 요청은 `DONE` 이 된다. 확정한 상담은 고칠 수 없다. 다시 고쳐야 하면 새로 상담한다.
+6. 기업 화면에 확정한 상담이 보인다. 확정할 때 `notify` 를 켜면 등록 이메일로 안내 메일을 보낸다. 이메일이 없으면 보내지 않고 사유를 응답에 남긴다.
+7. 같은 기업을 다시 상담하면 직전 상담과 비교한다. 영역 점수 변화, 총점, 상태유형, 판정이 바뀐 공고를 보여 준다.
+8. 담당자와 AX 주관부서가 이력을 점검한다. 판정을 바꾼 상담, 결과서를 고친 상담, 의견이 남은 상담을 모아 기준 보정에 쓴다 (`GET /navigator/consult/review-log`).
+
+### 역할
+
+기업지원 담당자는 `STAFF` 역할이다.
+
+| 단계 | 담당 | 내용 |
+|------|------|------|
+| 상담 요청 | 기업 | 관리 링크로 애로사항과 관심 사업을 남긴다. 기업지원 담당자가 대신 등록할 수도 있다 |
+| 진단·판정·경로·초안 작성 | 시스템 | 참고자료로 만든다. 결과서 문장은 템플릿이다 |
+| 결과 검토·수정·확정 | 기업지원 담당자 | 문장과 판정을 고치고 의견을 남긴 뒤 확정한다 |
+| 결과 안내 수신 | 기업 | 확정한 상담만 본다. 이메일 안내는 선택이다 |
+| 상담이력 기록 | 시스템 | 실행자, 확정자, 시각을 남긴다. 변경은 감사 로그에도 기록한다 |
+| 이력 점검·기준 보정 | 기업지원 담당자, AX 주관부서 | 수정 사례를 모아 진단 기준과 판정 기준을 고친다 |
+
+### 결과서 규칙
+
+- `draft` 는 처음 만든 초안을 그대로 남긴다. `report` 는 담당자가 고친 본이다. 두 값이 다른 항목은 `edited_sections` 에 나온다.
+- 판정 수정 `overrides` 는 공고마다 원래 판정 `from`, 바뀐 판정 `verdict`, 사유 `reason` 을 남긴다. 사유는 필수다. 이번 상담에서 검토한 공고만 바꿀 수 있다. 원래 판정과 같게 바꾸면 기록하지 않는다.
+- `PUT` 에 `overrides` 를 주면 목록을 통째로 바꾼다. `report` 는 보낸 항목만 바꾸고, 빠진 항목은 그대로 둔다.
+- 확정은 되돌릴 수 없다. 확정한 상담을 다시 고치거나 다시 확정하면 409 를 준다.
+- 결과서 문장은 모두 템플릿이다. 점수, 공고 건수, 단계 이름 등을 끼워 넣는다.
+
+### 기업 화면
+
+- 확정한 상담만 보인다. 최근 10건까지다.
+- 신청 불가로 판정한 공고는 안내하지 않는다. 나머지 공고는 신청 가능 여부와 적합도 등급만 보인다. 점수는 보이지 않는다.
+- 보완 포인트는 공고마다 3개까지 보인다.
+- 결과서는 담당자가 확정한 문장 그대로다. 비어 있는 항목은 뺀다.
+- 기업은 자기 상담 요청 목록도 함께 본다.
+
 ## 화면
 
 | 주소 | 대상 | 내용 |
@@ -573,6 +628,8 @@ D-STATE 상태유형으로 정한다.
 | 105 하반기 국방 R&D (마감) | 정보부족 (보안측정) | 정보부족 (보안측정) | 정보부족 (주관 이력·휴폐업·보안측정) |
 
 `seeds/navigator_past_announcements.sql` 은 시연용으로 106(101 의 이전 회차, 2025-12-15 마감, 요건 같음)을 넣고 101 과 같은 `series_key` 로 묶는다. 한빛의 "참여할 수 있었던 사업"에 106 이 적합으로, 다음 회차로 101 이 나온다.
+
+`seeds/navigator_consult.sql` 은 상담용 가상 데이터다 (`navigator_companies.sql` 다음에 실행). 진단 보완 답변, 공고 `NAV-2026-107` (방산 중소기업 컨설팅, 가상), 상담 요청 2건을 넣는다. 요청은 101 한빛이 군 수요처를 찾는 법과 품질인증 준비를 묻는 것, 103 새봄이 방산 분야에서 지금 신청할 수 있는 사업을 묻는 것이다. 둘 다 기업이 관리 링크로 남긴 요청이다 (`origin` SELF). 실행하면 101부터 103까지 기업의 상담 요청을 지우고 다시 넣는다. 상담 이력(`consultation`)은 지우지 않는다. 연결이 끊긴 이력은 요청 없이 남는다.
 
 ## 설정
 
@@ -663,3 +720,5 @@ curl -s -X POST localhost:8000/navigator/announcements -H 'X-User-Id: 1' -H 'Con
 - 평가표 자동 추출 (지금은 담당자가 확인 화면에서 입력)
 - LLM 추천 사유 문장 생성 (지금은 템플릿)
 - 실제 사업 연계 기준표는 기관 확인 후 입력
+- 상담결과서 LLM 문장 다듬기 (지금은 템플릿)
+- 결과서 파일 내려받기 (한글·PDF)

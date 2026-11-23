@@ -6,14 +6,14 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, field_validator
 
 from app.auth import CurrentUser, request_id, require_roles
 from app.db import transaction
 from app.errors import NotFound
 from app.routers.navigator import manage_link
-from app.services import dstate, eligibility_review, route
+from app.services import consultation, dstate, eligibility_review, route
 from app.services.bizno import format_bizno
 from app.services.ratelimit import public_rate_limit
 
@@ -61,6 +61,39 @@ class ProgramRouteIn(BaseModel):
     @classmethod
     def _tasks(cls, v: list[str]) -> list[str]:
         return [t.strip()[:200] for t in v if t.strip()]
+
+
+class ConsultRequestIn(BaseModel):
+    concern: str = Field(min_length=1, max_length=2000, description="애로사항")
+    interest: str | None = Field(default=None, max_length=500, description="관심 지원사업")
+    contact_name: str | None = Field(default=None, max_length=100)
+    contact_phone: str | None = Field(default=None, max_length=40)
+
+
+class RequestStatusIn(BaseModel):
+    status: Literal["REQUESTED", "IN_PROGRESS", "DONE", "CANCELED"]
+
+
+class ConsultRunIn(BaseModel):
+    task: Literal["A", "B", "C"] = "C"
+    concern: str | None = Field(default=None, max_length=2000)
+    request_id: int | None = None
+
+
+class VerdictOverride(BaseModel):
+    announcement_id: int
+    verdict: Literal["ELIGIBLE", "NEEDS_INFO", "INELIGIBLE"]
+    reason: str = Field(min_length=1, max_length=500, description="판정을 바꾼 사유")
+
+
+class ConsultUpdateIn(BaseModel):
+    report: dict[str, str] | None = Field(default=None, description="결과서 항목 key: 고친 문장. 없는 key 는 유지")
+    overrides: list[VerdictOverride] | None = Field(default=None, description="공고별 판정 수정. 주면 통째로 바꿈")
+    feedback: str | None = Field(default=None, max_length=2000, description="결과에 대한 담당자 의견(이력 점검용)")
+
+
+class ConfirmIn(BaseModel):
+    notify: bool = Field(default=False, description="기업 등록 이메일로 확정 안내")
 
 
 async def _require_company(conn, org_id: int) -> None:
@@ -184,6 +217,111 @@ async def delete_route(program_id: int, user: CurrentUser = Depends(require_role
                        rid: str = Depends(request_id)):
     async with transaction(user.id, rid) as conn:
         await conn.execute("DELETE FROM ax.program_route WHERE program_id = %s", (program_id,))
+
+
+@router.get("/consult/requests")
+async def consult_requests(status_: str | None = Query(default=None, alias="status"),
+                           _: CurrentUser = Depends(require_roles(*STAFF))):
+    """상담 요청 목록. 요청 상태가 먼저."""
+    async with transaction() as conn:
+        return await consultation.list_requests(conn, status=status_)
+
+
+@router.post("/consult/companies/{org_id}/requests", status_code=201)
+async def staff_request(org_id: int, body: ConsultRequestIn, user: CurrentUser = Depends(require_roles(*STAFF)),
+                        rid: str = Depends(request_id)):
+    """전화·방문 상담 요청을 담당자가 대신 등록."""
+    async with transaction(user.id, rid) as conn:
+        await _require_company(conn, org_id)
+        return await consultation.create_request(conn, org_id, body.model_dump(), "STAFF", user.id)
+
+
+@router.patch("/consult/requests/{req_id}")
+async def request_status(req_id: int, body: RequestStatusIn, user: CurrentUser = Depends(require_roles(*STAFF)),
+                         rid: str = Depends(request_id)):
+    async with transaction(user.id, rid) as conn:
+        try:
+            return await consultation.set_request_status(conn, req_id, body.status, user.id)
+        except LookupError:
+            raise NotFound("상담 요청", req_id) from None
+
+
+@router.post("/consult/companies/{org_id}/consultations", status_code=201)
+async def run_consultation(org_id: int, body: ConsultRunIn, user: CurrentUser = Depends(require_roles(*STAFF)),
+                           rid: str = Depends(request_id)):
+    """상담 실행 후 이력 저장: 진단(+자격요건 검토+성장경로)과 상담결과서 초안."""
+    async with transaction(user.id, rid) as conn:
+        await _require_company(conn, org_id)
+        try:
+            return await consultation.run(conn, org_id, task=body.task, concern=body.concern,
+                                          request_id=body.request_id, user_id=user.id)
+        except consultation.ConsultError as e:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e)) from None
+
+
+@router.get("/consult/companies/{org_id}/consultations")
+async def consultation_history(org_id: int, _: CurrentUser = Depends(require_roles(*STAFF))):
+    async with transaction() as conn:
+        await _require_company(conn, org_id)
+        return await consultation.history(conn, org_id)
+
+
+@router.get("/consult/consultations/{cid}")
+async def get_consultation(cid: int, _: CurrentUser = Depends(require_roles(*STAFF))):
+    async with transaction() as conn:
+        c = await consultation.get(conn, cid)
+    if c is None:
+        raise NotFound("상담", cid)
+    return c
+
+
+@router.put("/consult/consultations/{cid}")
+async def update_consultation(cid: int, body: ConsultUpdateIn, user: CurrentUser = Depends(require_roles(*STAFF)),
+                              rid: str = Depends(request_id)):
+    """결과서 문장, 판정 수정(사유 필수), 담당자 의견. 확정 전에만."""
+    async with transaction(user.id, rid) as conn:
+        try:
+            return await consultation.update(
+                conn, cid, report=body.report, feedback=body.feedback,
+                overrides=[o.model_dump() for o in body.overrides] if body.overrides is not None else None)
+        except LookupError:
+            raise NotFound("상담", cid) from None
+        except consultation.ConsultError as e:
+            raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from None
+
+
+@router.post("/consult/consultations/{cid}/confirm")
+async def confirm_consultation(cid: int, body: ConfirmIn, user: CurrentUser = Depends(require_roles(*STAFF)),
+                               rid: str = Depends(request_id)):
+    """확정하면 기업 화면에 보인다. notify 면 기업 등록 이메일로 안내."""
+    async with transaction(user.id, rid) as conn:
+        try:
+            return await consultation.confirm(conn, cid, user.id, body.notify)
+        except LookupError:
+            raise NotFound("상담", cid) from None
+        except consultation.ConsultError as e:
+            raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from None
+
+
+@router.get("/consult/review-log")
+async def review_log(limit: int = 100, _: CurrentUser = Depends(require_roles(*STAFF))):
+    """이력 점검: 담당자가 판정을 바꾸거나 결과서를 고친 상담."""
+    async with transaction() as conn:
+        return await consultation.review_log(conn, max(1, min(limit, 500)))
+
+
+@router.get("/manage/consultations", dependencies=[Depends(public_rate_limit)])
+async def my_consultations(link: dict = Depends(manage_link)):
+    """기업 화면: 확정된 상담결과와 내 상담 요청."""
+    async with transaction() as conn:
+        return await consultation.company_view(conn, link["organization_id"])
+
+
+@router.post("/manage/consult-requests", status_code=201, dependencies=[Depends(public_rate_limit)])
+async def my_consult_request(body: ConsultRequestIn, link: dict = Depends(manage_link),
+                             rid: str = Depends(request_id)):
+    async with transaction(None, f"{rid}|company-link:{link['link_id']}") as conn:
+        return await consultation.create_request(conn, link["organization_id"], body.model_dump(), "SELF")
 
 
 @router.get("/manage/dstate", dependencies=[Depends(public_rate_limit)])

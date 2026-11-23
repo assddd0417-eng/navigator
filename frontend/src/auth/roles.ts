@@ -17,7 +17,7 @@ export const ROLES: Record<RoleCode, RoleMeta> = {
     code: 'STAFF',
     label: '기관 담당자',
     description: '공고를 등록하고 지원 조건을 확인한 뒤, 공고마다 맞는 기업을 찾아 참여를 권합니다.',
-    can: ['기업 상담(성장 진단)', '공고 등록·조건 확인', '공고별 적합 기업 보기', '참여 권유 메일', '외부 수집 실행'],
+    can: ['기업 상담(성장 진단)', '상담 이력 점검', '공고 등록·조건 확인', '공고별 적합 기업 보기', '참여 권유 메일', '외부 수집 실행'],
   },
 }
 
@@ -47,6 +47,7 @@ export interface MenuItem {
 export const MENU: MenuItem[] = [
   { path: '/staff/consult', label: '기업 상담', icon: '🗂️', roles: STAFF_ROLES, section: 'work' },
   { path: '/staff/navigator', label: '공고별 적합 기업', icon: '🧭', roles: STAFF_ROLES, section: 'work' },
+  { path: '/staff/consult/review', label: '상담 이력 점검', icon: '📝', roles: STAFF_ROLES, section: 'manage' },
   { path: '/staff/announcements', label: '공고 등록·조건 확인', icon: '📋', roles: STAFF_ROLES, section: 'manage' },
   { path: '/staff/sources', label: '외부 수집', icon: '🔄', roles: STAFF_ROLES, section: 'manage' },
 ]
