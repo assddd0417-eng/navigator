@@ -152,6 +152,19 @@ AI 는 등급이 정한 범위 안에서만 처리한다. 결과 화면에는 �
 | `GET /navigator/consult/companies/{org_id}/access` | 기업정보 열람 부서와 지정 여부. 열람 권한이 없으면 403. 역할: `STAFF`·`PROGRAM_OWNER`·`AX_ADMIN` |
 | `PUT /navigator/consult/companies/{org_id}/access` | 열람 부서 지정 `{"department_ids": [...]}`. 빈 배열이면 모든 담당 부서가 본다. 응답은 지정 결과. 역할: `AX_ADMIN` |
 
+### 운영규정·지침 (소관부서)
+
+| 메서드·경로 | 설명 |
+|-------------|------|
+| `GET /navigator/regulations` | 규정 목록: 종류, 사업, 조문 수, 참여제한 조문 수, 확인일. 역할: `STAFF`·`PROGRAM_OWNER`·`AX_ADMIN` |
+| `GET /navigator/regulations/search?q=&program_id=` | 조문 검색 (관련도·낱말 겹침·점수). 역할: 셋 다 |
+| `GET /navigator/regulations/{id}` | 규정과 조문 전체. 역할: 셋 다 |
+| `POST /navigator/regulations/preview` | `{text}` 를 조문으로 나누고 참여제한 후보를 붙여 돌려준다. 저장 안 함. 역할: `PROGRAM_OWNER`·`AX_ADMIN` |
+| `POST /navigator/regulations` | 등록 `{title, kind, program_id, version_label, effective_on, source_url, text 또는 articles}`. 역할: `PROGRAM_OWNER`·`AX_ADMIN` |
+| `PUT /navigator/regulations/{id}` | 수정. `articles` 를 주면 조문 전체를 바꾸고 확인일을 지운다. 역할: `PROGRAM_OWNER`·`AX_ADMIN` |
+| `POST /navigator/regulations/{id}/confirm` | 소관부서 확인 (확인일 기록). 역할: `PROGRAM_OWNER`·`AX_ADMIN` |
+| `DELETE /navigator/regulations/{id}` | 삭제. 204. 역할: `PROGRAM_OWNER`·`AX_ADMIN` |
+
 ### AI 관리 (AX 주관부서)
 
 | 메서드·경로 | 설명 |
@@ -526,6 +539,16 @@ weighted 모드는 비교 대상이 없으면 0.5. 정렬 방식·가중치·규
 
 가상 공고 NAV-2026-107 ('26-1차 방산 중소기업 컨설팅 지원사업(가상)) 은 실제 공고 평가표를 본떠 만들었다. 재무상황 10 (역량 BUSINESS), 기술성 15 (역량 TECH·DEFENSE), 컨설팅 목적성 15 (사업 목적), 수행방안 40 과 기대효과 20 (신청서 기반, 상담 단계 제외), 우대 가점 국방벤처센터 협약 1.5, 방산혁신기업 100 선정 2.
 
+### 운영규정·지침과 공통 참여제한
+
+- `ax.regulation` 은 공통운영규정 (`COMMON`) 과 사업별 운영규정·지침 (`PROGRAM`, 사업 지정). `ax.regulation_article` 은 조문.
+- 등록할 때 본문을 `제N조(제목)` 단위로 나눈다. 조문 표시가 없으면 빈 줄 단위 문단으로 나눈다.
+- 조문 글에서 참여제한 후보를 찾는다: 체납, 부도·자본잠식·파산·회생, 참여제한, 부정당, 중복 지원·동일 사업 (기간은 'N년', 없으면 1년). 소관부서가 미리보기에서 고쳐 저장한다.
+- 공통 참여제한: 공통운영규정과 그 공고 사업의 운영규정에서 참여제한이 지정된 조문을 모든 공고 자격검토의 필수요건으로 더한다. 공고에 같은 결격사유 항목이나 중복수혜 요건이 이미 있으면 더하지 않는다. 더한 요건은 `requirement_id` 가 음수이고, 종류명은 '공통 참여제한', 근거는 조문 (`regulation_ref`) 이다.
+- 근거 검색: 공고 제목·필수요건·상담 내용으로 그 사업 규정과 공통운영규정의 조문을 찾는다. 벡터 관련도 0.6 과 낱말 겹침 0.4 로 다시 정렬하고 같은 사업 규정에 0.05 를 더한다. 참여제한 조문은 늘 포함한다. 결과의 `regulations` 에 상위 3건이 나오고, AI 판단을 켜면 근거 자료로 LLM 에 보낸다.
+- 조문 벡터는 등록할 때 만들고, SQL 로 넣었거나 임베딩 모델이 바뀐 조문은 처음 검색할 때 만든다.
+- 판단기준 확인일: 결과의 `criteria` 에 공고 요건 확인 시각 (`requirements_confirmed_at`), 근거 규정 확인 시각 중 가장 이른 것, 확인 전 규정 이름이 나온다. 조문을 고치면 확인일이 지워진다.
+
 ### AI 판단 (근거 인용과 계산 검증)
 
 `AI_JUDGE_MODE` 가 `llm` 이거나 `auto` 이면서 LLM 키가 있을 때만 쓴다. 기본값 `rules` 는 규칙만 쓰고 외부로 보내는 것이 없다.
@@ -619,6 +642,8 @@ D-STATE 상태유형으로 정한다.
 - 모든 응답에 안내 문구를 붙인다. "추천 경로는 상담 참고자료이며 사업 선정·지원을 보장하지 않습니다."
 
 가상 시드 `seeds/navigator_route.sql` 은 `navigator_consult.sql` 다음에 실행한다. 사업 3개를 더한다 (국방벤처 혁신기술 지원 `P-INNOV`, 방산 중소수출길 지원 `P-EXPORT`, 방산전시회 참가 지원 `P-EXPO`). 세 사업에 근거 공고 1건씩 (NAV-2027-108, NAV-2026-109, NAV-2025-110) 을 넣고, 단계별 연계 기준 8건 (방산진입 2, 기술개발 4, 양산·수출 2) 과 유사 사례 지원 이력 4건 (102 누리 3건, 103 새봄 1건) 을 넣는다. 시드는 `program_route` 를 전부 지우고 다시 넣으므로, 담당자가 입력한 연계 기준도 함께 사라진다. 운영 DB 에서는 돌리지 않는다.
+
+가상 시드 `seeds/navigator_regulation.sql` 은 그다음에 실행한다. 공통운영규정(가상) 5개 조문 (제7조 참여제한: 체납·부도·참여제한·부정당제재, 제8조 중복지원 제한 1년) 과 방산 중소기업 컨설팅 지원 운영지침(가상) 3개 조문을 넣는다. 공통운영규정은 확인된 상태, 운영지침은 확인 전 상태로 넣는다. 같은 이름의 규정을 지우고 다시 넣는다.
 
 ## 상담 이력과 상담결과서
 
@@ -741,7 +766,7 @@ D-STATE 상태유형으로 정한다.
 ```bash
 export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/navigator
 ./scripts/migrate.sh
-for f in base navigator_companies navigator_announcements navigator_past_announcements navigator_consult navigator_route; do
+for f in base navigator_companies navigator_announcements navigator_past_announcements navigator_consult navigator_route navigator_regulation; do
   psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f seeds/$f.sql
 done
 (cd backend && NAVIGATOR_DEV_EXPOSE_LINK=true uvicorn app.main:app --reload --port 8000) &

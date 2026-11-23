@@ -61,6 +61,7 @@ function ResultCard({ r, defaultOpen }: { r: EligibilityResult; defaultOpen: boo
         {r.agency_name} · {RECEIPT_KO[r.receipt_state] ?? r.receipt_state}
         {r.receipt_end ? ` · 마감 ${fmtDay(r.receipt_end)}` : ''}
       </div>
+      <CriteriaLine r={r} />
       {r.ai && <AiLine ai={r.ai} checks={r.checks} />}
       <div className="grid-2">
         <Headline label="신청 가능 여부" value={r.q1_label} tone={VERDICT_TONE[r.verdict]} />
@@ -71,6 +72,7 @@ function ResultCard({ r, defaultOpen }: { r: EligibilityResult; defaultOpen: boo
         <>
           <h4 style={{ marginTop: 16 }}>Q1. 신청할 수 있는가?</h4>
           <p>{r.q1_text}</p>
+          <RegulationBlock list={r.regulations ?? []} />
           <table className="table">
             <thead><tr><th>필수요건</th><th>결과</th><th>근거(공고문 조항)</th></tr></thead>
             <tbody>
@@ -78,6 +80,7 @@ function ResultCard({ r, defaultOpen }: { r: EligibilityResult; defaultOpen: boo
                 <tr key={c.requirement_id}>
                   <td>
                     {c.description}
+                    {c.regulation_ref && <> <span className="badge badge-info">공통 참여제한</span></>}
                     {c.reason && <div className="small muted">{c.reason}</div>}
                     <AiNote c={c} />
                     {c.question && <div className="small muted">확인 질문: {c.question}</div>}
@@ -144,7 +147,48 @@ function ResultCard({ r, defaultOpen }: { r: EligibilityResult; defaultOpen: boo
   )
 }
 
+function CriteriaLine({ r }: { r: EligibilityResult }) {
+  const cr = r.criteria
+  if (!cr) return null
+  return (
+    <div className="small muted" style={{ marginBottom: 8 }}>
+      판단기준 확인: 공고 요건 확인 {cr.requirements_confirmed_at ? fmtDay(cr.requirements_confirmed_at) : '미확인'}
+      {' · '}운영규정 확인 {cr.regulations_confirmed_at ? fmtDay(cr.regulations_confirmed_at) : '없음'}
+      {cr.unconfirmed_regulations.length > 0 && (
+        <div><span className="badge badge-warn">확인 전 규정</span> {cr.unconfirmed_regulations.join(', ')}</div>
+      )}
+    </div>
+  )
+}
+
+function RegulationBlock({ list }: { list: { ref: string; text: string; confirmed_at: string | null }[] }) {
+  if (!list.length) return null
+  return (
+    <>
+      <h4>근거 규정</h4>
+      <ul className="small">
+        {list.map((g, i) => (
+          <li key={i}>
+            <strong>{g.ref}</strong>{g.confirmed_at ? ` · 확인 ${fmtDay(g.confirmed_at)}` : ' · 확인 전'}
+            {g.text.length > 120
+              ? <details><summary>{g.text.slice(0, 120)}…</summary>{g.text}</details>
+              : <div className="muted">{g.text}</div>}
+          </li>
+        ))}
+      </ul>
+    </>
+  )
+}
+
 function Basis({ c }: { c: ReviewCheck }) {
+  if (c.regulation_ref) {
+    return (
+      <span>
+        {c.regulation_ref}
+        {c.source_quote && <div className="muted" title={c.source_quote}>{c.source_quote.length > 80 ? `${c.source_quote.slice(0, 80)}…` : c.source_quote}</div>}
+      </span>
+    )
+  }
   if (!c.has_basis) return <span className="badge badge-warn">근거 조항 없음 · 담당자 확인</span>
   const q = c.source_quote ?? ''
   return (
