@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { ReviewCheck, EligibilityResult, EligibilityReview, Tone } from '../../api/navigator'
+import type { AiJudgeInfo, ReviewCheck, EligibilityResult, EligibilityReview, Tone } from '../../api/navigator'
 import { Card } from '../../components/ui'
 import { fmtDay, fmtKrw } from '../navigator/components'
 
@@ -13,6 +13,7 @@ export function EligibilityPanel({ data }: { data: EligibilityReview }) {
   const list = all ? data.results : data.results.slice(0, SHOW_FIRST)
   return (
     <>
+      {data.ai_mode === 'rules' && <p className="small muted">AI 판단 꺼짐: 규칙으로 판정함</p>}
       <Card title={`${data.company_name ?? ''} 자격요건 검토`} actions={
         data.diagnosis && <span className="small muted">D-STATE {data.diagnosis.total_score}점 · {data.diagnosis.state_label}</span>
       }>
@@ -60,6 +61,7 @@ function ResultCard({ r, defaultOpen }: { r: EligibilityResult; defaultOpen: boo
         {r.agency_name} · {RECEIPT_KO[r.receipt_state] ?? r.receipt_state}
         {r.receipt_end ? ` · 마감 ${fmtDay(r.receipt_end)}` : ''}
       </div>
+      {r.ai && <AiLine ai={r.ai} checks={r.checks} />}
       <div className="grid-2">
         <Headline label="신청 가능 여부" value={r.q1_label} tone={VERDICT_TONE[r.verdict]} />
         <Headline label="선정 가능성(적합도)" value={fit.grade_label}
@@ -77,6 +79,7 @@ function ResultCard({ r, defaultOpen }: { r: EligibilityResult; defaultOpen: boo
                   <td>
                     {c.description}
                     {c.reason && <div className="small muted">{c.reason}</div>}
+                    <AiNote c={c} />
                     {c.question && <div className="small muted">확인 질문: {c.question}</div>}
                   </td>
                   <td><span className={`badge badge-${CHECK_TONE[c.result ?? ""] ?? 'warn'}`}>{c.result_label}</span></td>
@@ -93,6 +96,7 @@ function ResultCard({ r, defaultOpen }: { r: EligibilityResult; defaultOpen: boo
                   <li key={c.requirement_id}>
                     <span className={`badge badge-${CHECK_TONE[c.result ?? ""] ?? 'warn'}`}>{c.result_label}</span> {c.description}
                     {c.bonus_points ? <> <strong>+{c.bonus_points}점</strong></> : null}
+                    <AiNote c={c} />
                   </li>
                 ))}
               </ul>
@@ -147,5 +151,41 @@ function Basis({ c }: { c: ReviewCheck }) {
     <span title={q}>
       {q.length > 80 ? `${q.slice(0, 80)}…` : q}{c.source_page ? ` (p.${c.source_page})` : ''}
     </span>
+  )
+}
+
+function AiNote({ c }: { c: ReviewCheck }) {
+  return (
+    <>
+      {c.judged_by && c.judged_label && (
+        <div>
+          <span className={`badge badge-${c.judged_by === 'LLM' ? 'info' : c.judged_by === 'CALC' ? 'warn' : 'muted'}`}>{c.judged_label}</span>
+        </div>
+      )}
+      {c.ai_quote && <div className="small muted">AI 인용: “{c.ai_quote}”</div>}
+      {c.ai_reason && c.ai_reason !== c.reason && <div className="small muted">{c.ai_reason}</div>}
+    </>
+  )
+}
+
+function AiLine({ ai, checks }: { ai: AiJudgeInfo; checks: ReviewCheck[] }) {
+  if (ai.status === 'FALLBACK') return <div className="small muted" style={{ marginBottom: 8 }}>AI 판단 못 함, 규칙 결과 사용</div>
+  return (
+    <div className="small muted" style={{ marginBottom: 8 }}>
+      AI 판단 · 프롬프트 v{ai.prompt_version ?? '–'} · {ai.model ?? '–'}
+      {ai.blocked.length > 0 && (
+        <details>
+          <summary>결과에서 뺀 AI 판단 {ai.blocked.length}건</summary>
+          <ul>
+            {ai.blocked.map((b, i) => (
+              <li key={i}>
+                {checks.find((c) => c.requirement_id === b.requirement_id)?.description ?? `요건 ${b.requirement_id}`}
+                <div>{b.reason}</div>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
   )
 }

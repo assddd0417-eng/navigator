@@ -2,18 +2,21 @@
 
   상담 실행   D-STATE 진단(이력 저장) + 업무 B·C 면 자격요건 검토 + 업무 C 면 성장경로. 결과 스냅샷과
               상담결과서 초안을 consultation 에 저장한다.
-  결과서      템플릿 문장으로 만든 초안(draft)은 고치지 않고 남긴다. 담당자는 report 를 고친다.
+  결과서      템플릿 문장으로 초안을 만들고, AI 판단을 켜면 LLM 이 문장만 다듬는다 (새 숫자·약속 표현이 생기면
+              그 항목은 템플릿 문장을 쓴다). 초안(draft)은 고치지 않고 남긴다. 담당자는 report 를 고친다.
   판정 수정   담당자가 공고별 신청 가능 여부를 바꾸면 사유와 함께 overrides 에 남긴다.
   확정        확정한 상담만 기업 화면에 보인다. 확정 후에는 고치지 않는다 (새로 상담).
   이력 점검   초안과 다르게 고친 결과서 항목, 판정 수정 사례를 모아 기준 보정에 쓴다.
 """
 from __future__ import annotations
 
+import re
+
 from fastapi.encoders import jsonable_encoder
 from psycopg import AsyncConnection
 from psycopg.types.json import Jsonb
 
-from app.services import dstate, eligibility_review, mailer, route
+from app.services import ai_gateway, dstate, eligibility_review, mailer, route
 
 TASK_KO = {"A": "D-STATE 진단", "B": "자격요건 검토", "C": "종합 성장경로"}
 STATUS_KO = {"DRAFT": "검토 중", "CONFIRMED": "확정"}
@@ -24,6 +27,9 @@ NOTICE = ("본 결과서는 상담 참고자료이며 지원사업 선정·지�
 SECTIONS = [("overview", "기업 개요"), ("diagnosis", "성장준비도 진단"), ("eligibility", "지원사업 검토 결과"),
             ("route", "추천 성장경로"), ("request", "보완 요청 사항"), ("opinion", "담당자 의견"), ("notice", "유의사항")]
 MAX_ANN_LINES = 5
+POLISH_KEYS = ("overview", "diagnosis", "eligibility", "route", "request")
+PROMISE = re.compile(r"선정\s*(확정|보장|됩니다|될 것)|지원\s*(보장|확정)|반드시\s*선정")
+COMPANY = "[기업]"
 
 
 class ConsultError(ValueError):
@@ -80,6 +86,51 @@ def build_report(diag: dict, elig: dict | None, rt: dict | None, concern: str | 
     return [{"key": k, "title": t, "text": text[k]} for k, t in SECTIONS]
 
 
+def _numbers(t: str) -> set[str]:
+    return set(re.findall(r"\d+(?:[.,]\d+)*", t or ""))
+
+
+def check_polished(draft: list[dict], out: dict | None) -> tuple[dict[str, str], list[dict]]:
+    """LLM 이 다듬은 문장 중 쓸 것만 고른다. 돌려주는 것: {key: 문장}, 차단 목록."""
+    src = {s["key"]: s["text"] for s in draft}
+    got, blocked = {}, []
+    for x in (out or {}).get("sections", []) or []:
+        k, t = x.get("key"), x.get("text")
+        if k not in POLISH_KEYS or not isinstance(t, str) or not src.get(k):
+            continue
+        t = t.strip()
+        if not t:
+            blocked.append({"section": k, "reason": "빈 문장"})
+        elif extra := sorted(_numbers(t) - _numbers(src[k])):
+            blocked.append({"section": k, "reason": "초안에 없는 숫자", "numbers": extra[:5]})
+        elif PROMISE.search(t):
+            blocked.append({"section": k, "reason": "선정·지원 약속 표현"})
+        else:
+            got[k] = t
+    return got, blocked
+
+
+async def polish_report(conn: AsyncConnection, report: list[dict], *, org_id: int, company_name: str | None,
+                        user_id: int | None) -> tuple[list[dict], dict]:
+    """결과서 초안 문장 다듬기. 기업 이름은 [기업]으로 바꿔 보낸다. LLM 을 못 쓰면 템플릿 문장 그대로."""
+    marked = [{**s, "drafted_by": "TEMPLATE"} for s in report]
+    if ai_gateway.mode() != "llm":
+        return marked, {"status": "FALLBACK", "log_id": None, "blocked": []}
+    hide = (lambda t: t.replace(company_name, COMPANY)) if company_name else (lambda t: t)
+    send = [{"key": s["key"], "title": s["title"], "text": hide(s["text"])}
+            for s in report if s["key"] in POLISH_KEYS and s["text"]]
+    res = await ai_gateway.call(conn, purpose="REPORT_DRAFT", payload={"sections": send},
+                                refs={"sections": [s["key"] for s in send]}, org_id=org_id, user_id=user_id)
+    if res.output is None:
+        return marked, {"status": res.status, "log_id": res.log_id, "blocked": [], "error": res.error}
+    got, blocked = check_polished(send, res.output)
+    await ai_gateway.mark(conn, res.log_id, blocked)
+    show = (lambda t: t.replace(COMPANY, company_name)) if company_name else (lambda t: t)
+    out = [{**s, "text": show(got[s["key"]]), "drafted_by": "LLM"} if s["key"] in got else s for s in marked]
+    return out, {"status": "PARTIAL" if blocked and res.status == "OK" else res.status, "log_id": res.log_id,
+                 "blocked": blocked, "model": res.model, "prompt_version": res.prompt_version}
+
+
 # ---------- 상담 실행 ----------
 
 async def run(conn: AsyncConnection, org_id: int, *, task: str, concern: str | None, request_id: int | None,
@@ -95,11 +146,12 @@ async def run(conn: AsyncConnection, org_id: int, *, task: str, concern: str | N
     diag = await dstate.run(conn, org_id, save=True, user_id=user_id)
     elig = rt = None
     if task in ("B", "C"):
-        elig = await eligibility_review.review(conn, org_id, concern=concern, diagnosis=diag)
+        elig = await eligibility_review.review(conn, org_id, concern=concern, diagnosis=diag, user_id=user_id)
     if task == "C":
-        rt = await route.build(conn, org_id, concern=concern, diagnosis=diag, review=elig)
+        rt = await route.build(conn, org_id, concern=concern, diagnosis=diag, review=elig, user_id=user_id)
     snap = _diag_snapshot(diag)
-    report = build_report(snap, elig, rt, concern)
+    report, _ = await polish_report(conn, build_report(snap, elig, rt, concern), org_id=org_id,
+                                    company_name=snap.get("company_name"), user_id=user_id)
     row = await (await conn.execute(
         """INSERT INTO ax.consultation (organization_id, request_id, task, concern, diagnosis_id, diagnosis,
                                         eligibility, route, draft, report, created_by)

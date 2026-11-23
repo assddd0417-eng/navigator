@@ -716,6 +716,10 @@ export interface ReviewCheck {
   source_page: number | null
   has_basis: boolean
   bonus_points: number | null
+  judged_by?: 'RULE' | 'LLM' | 'CALC'
+  judged_label?: string
+  ai_reason?: string | null
+  ai_quote?: string | null
 }
 export interface FitItem {
   id: number
@@ -728,7 +732,23 @@ export interface FitItem {
   level_label: string
   basis: string
 }
+export interface AiBlocked {
+  requirement_id: number
+  reason: string
+  llm_result?: string | null
+  rule_result?: string | null
+  quote?: string | null
+}
+export interface AiJudgeInfo {
+  status: 'OK' | 'PARTIAL' | 'CACHED' | 'FALLBACK'
+  model: string | null
+  log_id: number | null
+  blocked: AiBlocked[]
+  error: string | null
+  prompt_version: number | null
+}
 export interface EligibilityResult {
+  ai?: AiJudgeInfo | null
   announcement_id: number
   announcement_no: string
   title: string
@@ -766,6 +786,7 @@ export interface EligibilityReview {
   diagnosis?: { total_score: number; state_label: string }
   summary: Record<'ELIGIBLE' | 'NEEDS_INFO' | 'INELIGIBLE', number>
   results: EligibilityResult[]
+  ai_mode?: 'llm' | 'rules'
   notice?: string
 }
 export const reviewEligibility = (orgId: number, body: { concern?: string; include_closed?: boolean }) =>
@@ -898,7 +919,7 @@ export const createConsultRequest = (orgId: number, body: ConsultRequestBody) =>
 export const setConsultRequestStatus = (id: number, status: RequestStatus) =>
   api<ConsultRequest>(`/navigator/consult/requests/${id}`, { method: 'PATCH', body: { status } })
 
-export interface ReportSection { key: string; title: string; text: string }
+export interface ReportSection { key: string; title: string; text: string; drafted_by?: 'LLM' | 'TEMPLATE' }
 export interface VerdictOverride { announcement_id: number; title: string; from: string; verdict: string; reason: string }
 export interface ConsultCompare {
   total_before: number
@@ -1032,3 +1053,50 @@ export interface CompanyAccess {
 export const getCompanyAccess = (orgId: number) => api<CompanyAccess>(`/navigator/consult/companies/${orgId}/access`)
 export const saveCompanyAccess = (orgId: number, department_ids: number[]) =>
   api<CompanyAccess>(`/navigator/consult/companies/${orgId}/access`, { method: 'PUT', body: { department_ids } })
+
+// ---- AI 판단 관리 (프롬프트 · 호출 기록) ----
+export type PromptCode = 'ELIGIBILITY_JUDGE' | 'REPORT_DRAFT'
+export interface AiPrompt {
+  id: number
+  code: PromptCode
+  version: number
+  title: string
+  system_text: string
+  guide_text: string
+  is_active: boolean
+  note: string | null
+  created_by_name: string | null
+  created_at: string
+}
+export interface AiPromptList { mode: string; items: AiPrompt[] }
+export const listAiPrompts = () => api<AiPromptList>('/navigator/ai/prompts')
+export const saveAiPrompt = (code: PromptCode, body: { title?: string; system_text?: string; guide_text?: string; note?: string }) =>
+  api<unknown>(`/navigator/ai/prompts/${code}`, { method: 'POST', body })
+export const activateAiPrompt = (code: PromptCode, id: number) =>
+  api<unknown>(`/navigator/ai/prompts/${code}/versions/${id}/activate`, { method: 'POST' })
+
+export interface AiCall {
+  id: number
+  purpose: string
+  organization_id: number | null
+  company_name: string | null
+  announcement_id: number | null
+  announcement_title: string | null
+  prompt_version: number | null
+  model: string | null
+  status: string
+  blocked: AiBlocked[] | null
+  error: string | null
+  latency_ms: number | null
+  created_at: string
+  created_by_name: string | null
+  input_refs: { basis?: { source?: string; ref?: string | number | null; chars?: number }[]; sections?: string[] } | null
+  output: unknown
+}
+export interface AiCallList {
+  mode: string
+  stats: { total: number; ok: number; partial: number; fallback: number; cached: number; blocked: number }
+  items: AiCall[]
+}
+export const listAiCalls = (purpose = '', limit = 100) =>
+  api<AiCallList>(`/navigator/ai/calls?limit=${limit}${purpose ? `&purpose=${encodeURIComponent(purpose)}` : ''}`)

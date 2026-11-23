@@ -123,7 +123,8 @@ def _readiness(stage_idx: int, review: dict | None, entry_unmet: list[dict]) -> 
 
 
 async def build(conn: AsyncConnection, org_id: int, *, concern: str | None = None,
-                diagnosis: dict | None = None, review: dict | None = None) -> dict:
+                diagnosis: dict | None = None, review: dict | None = None,
+                user_id: int | None = None) -> dict:
     diagnosis = diagnosis or await dstate.run(conn, org_id, save=False)
     scores = {a["code"]: a["score"] for a in diagnosis["areas"]}
     all_stages = await stages(conn)
@@ -139,7 +140,7 @@ async def build(conn: AsyncConnection, org_id: int, *, concern: str | None = Non
     current_ids = sorted({a["id"] for p in anns.values() for a in p["current"]})
     if review is None:
         review = await eligibility_review.review(conn, org_id, concern=concern, announcement_ids=current_ids or None,
-                                                 diagnosis=diagnosis) if current_ids else {"results": []}
+                                                 diagnosis=diagnosis, user_id=user_id) if current_ids else {"results": []}
     reviewed = {r["announcement_id"]: r for r in review["results"]}
 
     history = await _support(conn)

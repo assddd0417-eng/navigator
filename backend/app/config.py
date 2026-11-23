@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None  # 비우면 SDK 가 ANTHROPIC_API_KEY 환경변수 등에서 찾음
     openai_api_key: str | None = None     # 비우면 SDK 가 OPENAI_API_KEY 환경변수에서 찾음
 
+    # 상담 AI 판단 (자격 판단·사업 목적 부합·결과서 문장): "rules"(기본) = 규칙·템플릿만 / "llm" / "auto"
+    # llm·auto 는 기업정보(이름·사업자번호 제외)를 LLM 제공자에 보낸다. 기관 내부 LLM 에 붙일 때 켠다
+    ai_judge_mode: str = "rules"
+    ai_judge_max_announcements: int = 8   # 상담 한 번에 LLM 으로 판단할 공고 수 상한 (나머지는 규칙)
+    ai_cache_hours: int = 24              # 같은 입력·같은 프롬프트 버전이면 이 시간 안의 결과를 다시 씀
+
     # 기업·공고
     navigator_public_base_url: str = "http://localhost:5173"  # 관리 링크 base URL
     navigator_link_ttl_days: int = 30

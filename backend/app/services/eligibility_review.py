@@ -3,7 +3,8 @@
   Q1 신청할 수 있는가: 필수요건(신청자격·신청제한)을 기업정보와 대조. 하나라도 미충족이면 신청 불가
   Q2 선정 가능성(적합도): 평가항목·배점 x D-STATE 영역 점수 + 상담 내용과 사업 목적 (services/fit.py)
 판정은 규칙으로 하고, 요건마다 공고문 근거 조항(인용·쪽)을 붙인다. 근거가 없는 요건은 '근거 조항 없음'으로 표시해
-담당자가 확인하게 한다. 결과는 상담 참고자료이며 확정은 담당자가 한다.
+담당자가 확인하게 한다. AI 판단을 켜면 공고마다 LLM 을 한 번 불러 서술형 요건을 근거 인용으로 판단하고,
+수치 요건은 규칙 결과로 다시 확인한다 (services/ai_judge.py). 결과는 상담 참고자료이며 확정은 담당자가 한다.
 """
 from __future__ import annotations
 
@@ -11,7 +12,8 @@ from datetime import date
 
 from psycopg import AsyncConnection
 
-from app.services import dstate, fit
+from app.config import get_settings
+from app.services import ai_gateway, ai_judge, dstate, fit
 from app.services.eligibility import RESULT_KO, judge, overall
 from app.services.embedding import embed_query
 from app.services.levels import sim_levels
@@ -54,10 +56,17 @@ async def purpose_fit(conn: AsyncConnection, concern: str | None, ann_ids: list[
 async def _ann_extra(conn: AsyncConnection, ann_ids: list[int]) -> dict[int, dict]:
     rows = await (await conn.execute(
         """SELECT a.id, a.announcement_no, a.program_name, a.summary, a.support_amount_krw, a.support_period_months,
-                  a.receipt_start, a.receipt_end, a.receipt_state, x.company_burden, x.submit_documents
-             FROM ax.v_announcement a JOIN ax.announcement x ON x.id = a.id WHERE a.id = ANY(%s)""",
+                  a.receipt_start, a.receipt_end, a.receipt_state, x.company_burden, x.submit_documents,
+                  x.body_text, p.purpose
+             FROM ax.v_announcement a JOIN ax.announcement x ON x.id = a.id
+             LEFT JOIN ax.program p ON p.id = x.program_id WHERE a.id = ANY(%s)""",
         (ann_ids,))).fetchall()
-    extra = {r["id"]: {**r, "eval_items": [], "bonus": {}} for r in rows}
+    extra = {r["id"]: {**r, "eval_items": [], "bonus": {}, "attachments": []} for r in rows}
+    for t in await (await conn.execute(
+            """SELECT announcement_id, text_content FROM ax.announcement_attachment
+                WHERE announcement_id = ANY(%s) AND parse_status = 'PARSED' AND text_content IS NOT NULL
+                ORDER BY id""", (ann_ids,))).fetchall():
+        extra[t["announcement_id"]]["attachments"].append(t["text_content"])
     for e in await (await conn.execute(
             "SELECT * FROM ax.announcement_eval_item WHERE announcement_id = ANY(%s) ORDER BY sort_order, id",
             (ann_ids,))).fetchall():
@@ -71,7 +80,7 @@ async def _ann_extra(conn: AsyncConnection, ann_ids: list[int]) -> dict[int, dic
 
 async def review(conn: AsyncConnection, org_id: int, *, concern: str | None = None,
                  announcement_ids: list[int] | None = None, include_closed: bool = False,
-                 diagnosis: dict | None = None) -> dict:
+                 diagnosis: dict | None = None, user_id: int | None = None) -> dict:
     diagnosis = diagnosis or await dstate.run(conn, org_id, save=False)
     area_scores = {a["code"]: a["score"] for a in diagnosis["areas"]}
     ann_ids = announcement_ids or await _announcement_ids(conn, include_closed)
@@ -81,6 +90,9 @@ async def review(conn: AsyncConnection, org_id: int, *, concern: str | None = No
     anns = await load_announcements(conn, ann_ids)
     extra = await _ann_extra(conn, ann_ids)
     purpose = await purpose_fit(conn, concern, ann_ids)
+    use_ai = ai_gateway.mode() == "llm"
+    ai_left = get_settings().ai_judge_max_announcements
+    extra_basis = await regulation_basis(conn, concern)
 
     results = []
     for ann_id in ann_ids:
@@ -103,6 +115,19 @@ async def review(conn: AsyncConnection, org_id: int, *, concern: str | None = No
                 "has_basis": bool(meta["quote"]),
                 "bonus_points": x["bonus"].get(req.id),
             })
+        ai = None
+        ann_purpose = purpose.get(ann_id) if concern else None
+        if use_ai and ai_left > 0 and rows:
+            ai_left -= 1
+            j = await ai_judge.judge(conn, org=org, diag=diagnosis, ann_id=ann_id, title=ann.title,
+                                     purpose_text=x["purpose"] or x["summary"], rows=rows, concern=concern,
+                                     body=x["body_text"], attachments=x["attachments"], extra_basis=extra_basis,
+                                     user_id=user_id)
+            rows, ai = j["rows"], j["ai"]
+            verdict = verdict_of(rows)
+            if j["purpose"] is not None:
+                sim = (ann_purpose or {}).get("similarity")
+                ann_purpose = {**j["purpose"], "similarity": sim}
         mand = [r for r in rows if r["is_mandatory"]]
         met = sum(r["result"] == "MET" for r in mand)
         q1 = Q1_KO[verdict]
@@ -110,7 +135,7 @@ async def review(conn: AsyncConnection, org_id: int, *, concern: str | None = No
                    else f"필수요건 {len(mand)}건 중 {met}건 충족")
         bonus = [{"description": r["description"], "points": r["bonus_points"]}
                  for r in rows if not r["is_mandatory"] and r["result"] == "MET" and r["bonus_points"]]
-        f = fit.evaluate(x["eval_items"], area_scores, purpose.get(ann_id) if concern else None, bonus)
+        f = fit.evaluate(x["eval_items"], area_scores, ann_purpose, bonus)
         todo = [{"kind": "REQUIREMENT", "text": f"{r['description']}: {r['reason']}",
                  "question": r["question"]} for r in mand if r["result"] != "MET"]
         todo += [{"kind": "FIT", "text": h["text"], "question": None} for h in f["hints"][:2]]
@@ -128,6 +153,7 @@ async def review(conn: AsyncConnection, org_id: int, *, concern: str | None = No
                       "submit_documents": docs,
                       "text": _guide_text(x, docs)},
             "unsupported": [r["requirement_id"] for r in rows if not r["has_basis"]],
+            "ai": ai,
         })
     results.sort(key=lambda r: (ORDER[r["verdict"]], -(r["fit"]["score"] or -1), r["announcement_id"]))
     return {
@@ -137,7 +163,22 @@ async def review(conn: AsyncConnection, org_id: int, *, concern: str | None = No
         "summary": {k: sum(r["verdict"] == k for r in results) for k in Q1_KO},
         "results": results,
         "notice": "판정 결과는 상담 참고자료입니다. 최종 자격 판정은 담당자가 확정합니다.",
+        "ai_mode": "llm" if use_ai else "rules",
     }
+
+
+def verdict_of(rows: list[dict]) -> str:
+    mand = [r["result"] for r in rows if r["is_mandatory"]]
+    if "UNMET" in mand:
+        return "INELIGIBLE"
+    if "UNKNOWN" in mand:
+        return "NEEDS_INFO"
+    return "ELIGIBLE"
+
+
+async def regulation_basis(conn: AsyncConnection, concern: str | None) -> list[dict]:
+    """운영규정·지침 조문 근거. 조문 등록 기능이 들어오면 여기서 찾는다."""
+    return []
 
 
 def _guide_text(x: dict, docs: list[dict]) -> str:
