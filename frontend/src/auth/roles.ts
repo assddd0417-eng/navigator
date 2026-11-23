@@ -70,6 +70,8 @@ export const MENU: MenuItem[] = [
   { path: '/staff/announcements', label: '공고 등록·조건 확인', icon: '📋', roles: STAFF_OWNER, section: 'manage' },
   { path: '/staff/route-rules', label: '성장경로 기준', icon: '🛤️', roles: ALL_ROLES, section: 'manage' },
   { path: '/staff/access', label: '기업정보 열람 권한', icon: '🔐', roles: AX_ONLY, section: 'manage' },
+  { path: '/staff/prompts', label: '프롬프트 관리', icon: '✍️', roles: AX_ONLY, section: 'manage' },
+  { path: '/staff/ai-calls', label: 'AI 호출 기록', icon: '🧾', roles: AX_ONLY, section: 'manage' },
   { path: '/staff/sources', label: '외부 수집', icon: '🔄', roles: STAFF_OWNER, section: 'manage' },
   { path: '/staff/navigator', label: '공고별 적합 기업', icon: '🧭', roles: STAFF_ONLY, section: 'extra' },
 ]
@@ -82,6 +84,8 @@ const PATH_ROLES: [RegExp, RoleCode[]][] = [
   [/^\/staff\/(announcements|sources)(\/|$)/, STAFF_OWNER],
   [/^\/staff\/(service|route-rules)(\/|$)/, ALL_ROLES],
   [/^\/staff\/access(\/|$)/, AX_ONLY],
+  [/^\/staff\/prompts(\/|$)/, ALL_ROLES],
+  [/^\/staff\/ai-calls(\/|$)/, AX_ONLY],
 ]
 
 export function canAccessPath(role: RoleCode | null, pathname: string): boolean {

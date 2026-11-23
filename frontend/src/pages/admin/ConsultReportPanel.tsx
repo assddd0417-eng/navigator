@@ -98,6 +98,7 @@ export function ConsultReportPanel({ data, onChange }: { data: Consultation; onC
               <div key={s.key}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <strong>{s.title}</strong>
+                  {s.drafted_by === 'LLM' && <span className="small muted">AI 문장 다듬기</span>}
                   {edited && <span className="badge badge-info">수정함</span>}
                   {edited && !locked && (
                     <button className="btn btn-sm" onClick={() => setTexts({ ...texts, [s.key]: draftOf(s.key) })}>초안으로 되돌리기</button>

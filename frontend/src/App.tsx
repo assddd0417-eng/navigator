@@ -6,6 +6,8 @@ import { homePath, STAFF_ROLES, type RoleCode } from './auth/roles'
 import { Layout } from './components/Layout'
 import { ToastProvider } from './components/Toast'
 import { AccessPage } from './pages/admin/AccessPage'
+import { PromptsPage } from './pages/admin/PromptsPage'
+import { AiCallsPage } from './pages/admin/AiCallsPage'
 import { RouteRulesPage } from './pages/admin/RouteRulesPage'
 import { ServicePage } from './pages/admin/ServicePage'
 import { AnnouncementReviewPage } from './pages/admin/AnnouncementReviewPage'
@@ -53,6 +55,8 @@ export default function App() {
               <Route path="/staff/announcements" element={<Only roles={['STAFF', 'PROGRAM_OWNER']}><AnnouncementReviewPage /></Only>} />
               <Route path="/staff/route-rules" element={<RouteRulesPage />} />
               <Route path="/staff/access" element={<Only roles={['AX_ADMIN']}><AccessPage /></Only>} />
+              <Route path="/staff/prompts" element={<PromptsPage />} />
+              <Route path="/staff/ai-calls" element={<Only roles={['AX_ADMIN']}><AiCallsPage /></Only>} />
               <Route path="/staff/sources" element={<Only roles={['STAFF', 'PROGRAM_OWNER']}><NavigatorSourcesPage /></Only>} />
               <Route path="/staff/navigator" element={<Only roles={['STAFF']}><NavigatorStaffPage /></Only>} />
             </Route>

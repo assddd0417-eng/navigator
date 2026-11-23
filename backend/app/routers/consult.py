@@ -192,7 +192,7 @@ async def eligibility(org_id: int, body: EligibilityRequest, user: CurrentUser =
         await _require_company(conn, org_id, user)
         return await eligibility_review.review(conn, org_id, concern=body.concern,
                                                announcement_ids=body.announcement_ids,
-                                               include_closed=body.include_closed)
+                                               include_closed=body.include_closed, user_id=user.id)
 
 
 @router.post("/consult/companies/{org_id}/route")
@@ -200,7 +200,7 @@ async def growth_route(org_id: int, body: RouteRequest, user: CurrentUser = Depe
     """맞춤형 성장경로: 단기·중기·장기 단계별 목표, 추천 사업(준비상태), 준비과제, 근거, 미추천 사유. 저장하지 않는다."""
     async with transaction() as conn:
         await _require_company(conn, org_id, user)
-        return await route.build(conn, org_id, concern=body.concern)
+        return await route.build(conn, org_id, concern=body.concern, user_id=user.id)
 
 
 @router.get("/consult/route/rules")

@@ -54,7 +54,8 @@ def evaluate(items: list[dict], area_scores: dict[str, int], purpose: dict | Non
                 row["basis"] = "상담 내용이 없어 평가하지 않음"
             else:
                 row["level"] = purpose["level"]
-                row["basis"] = f"상담 내용과 사업 목적 관련도 {purpose['label']} ({purpose['similarity']:.0%})"
+                row["basis"] = (f"상담 내용과 사업 목적 비교: {purpose['reason']}" if purpose.get("reason")
+                                else f"상담 내용과 사업 목적 관련도 {purpose['label']} ({purpose['similarity']:.0%})")
         else:
             row["basis"] = "신청서 기반 항목으로 상담 단계 평가 제외"
         row["level_label"] = LEVEL_KO.get(row["level"], "-")
