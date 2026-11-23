@@ -70,7 +70,7 @@ function ResultCard({ r, rule, defaultOpen }: { r: EligibilityResult; rule?: Fit
       </div>
       {open && (
         <>
-          <h4 style={{ marginTop: 16 }}>Q1. 신청할 수 있는가?</h4>
+          <h4 style={{ marginTop: 16 }}>1. 신청할 수 있는가?</h4>
           <p>{r.q1_text}</p>
           <RegulationBlock list={r.regulations ?? []} />
           <table className="table">
@@ -106,7 +106,7 @@ function ResultCard({ r, rule, defaultOpen }: { r: EligibilityResult; rule?: Fit
             </>
           )}
 
-          <h4 style={{ marginTop: 16 }}>Q2. 선정 가능성은?</h4>
+          <h4 style={{ marginTop: 16 }}>2. 선정 가능성은?</h4>
           <p>상담 단계 적합도 : {fit.grade_label}</p>
           {fit.items.length > 0 && (
             <table className="table">

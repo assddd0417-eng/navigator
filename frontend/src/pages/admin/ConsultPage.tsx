@@ -121,7 +121,7 @@ export function ConsultPage() {
       <PageHeader eyebrow="AI 서비스 포털 › 방산기업 성장경로" title="방산기업 성장경로 상담"
         subtitle="기업과 검토 업무를 고르면 성장준비도 진단, 자격요건 검토, 단계별 성장경로를 근거와 함께 보여 줍니다." />
       <div className="grid-side">
-        <Card title={<><span className="step-label" style={{ display: 'block' }}>STEP 1</span>기업 및 수행 업무 선택</>}>
+        <Card title={<><span className="step-label" style={{ display: 'block' }}>1단계</span>기업 및 수행 업무 선택</>}>
           <RequestList items={requests.data} loading={requests.loading} orgId={orgId} company={company}
             requestId={requestId} onPick={pickRequest} onChanged={() => void requests.reload()} />
           <form className="form-row" style={{ marginBottom: 10 }} onSubmit={(e) => { e.preventDefault(); setQuery(q.trim()) }}>
@@ -167,7 +167,7 @@ export function ConsultPage() {
         </Card>
 
         <div className="stack">
-          <div className="step-label" style={{ marginBottom: -8 }}>STEP 2 결과 화면</div>
+          <div className="step-label" style={{ marginBottom: -8 }}>2단계 결과 화면</div>
           {orgId == null ? <Card><Empty>왼쪽에서 상담할 기업을 고르세요.</Empty></Card> : (
             <>
               <AccessLine orgId={orgId} name={company?.name ?? result?.company_name ?? ''} />

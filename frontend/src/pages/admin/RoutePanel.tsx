@@ -68,7 +68,7 @@ export function RoutePanel({ data }: { data: GrowthRoute }) {
         {!details.length ? <p className="muted">추천 사업이 없습니다.</p> : (
           <table className="table table-wide">
             <thead>
-              <tr><th>사업</th><th>단계</th><th>준비 상태</th><th>근거 공고</th><th>Q1 / 적합도</th>
+              <tr><th>사업</th><th>단계</th><th>준비 상태</th><th>근거 공고</th><th>신청 가능 여부 / 적합도</th>
                 <th>진입조건</th><th>준비서류</th><th>예상 산출물</th><th>유사 기업</th></tr>
             </thead>
             <tbody>
