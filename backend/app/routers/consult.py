@@ -6,14 +6,16 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel, Field, field_validator
 
 from app.auth import CurrentUser, request_id, require_roles
 from app.db import transaction
 from app.errors import NotFound
 from app.routers.navigator import manage_link
-from app.services import consultation, dstate, eligibility_review, governance, route
+from app.config import get_settings
+from app.services import (consult_evidence, consultation, criteria, dstate, eligibility_review, governance,
+                          route)
 from app.services.bizno import format_bizno
 from app.services.ratelimit import public_rate_limit
 
@@ -78,6 +80,31 @@ class ConsultRunIn(BaseModel):
     task: Literal["A", "B", "C"] = "C"
     concern: str | None = Field(default=None, max_length=2000)
     request_id: int | None = None
+    evidence_ids: list[int] | None = Field(default=None, description="이번 상담에 쓴 보완자료 (담당자 첨부·기업 제출)")
+
+
+class VariableIn(BaseModel):
+    name_ko: str | None = Field(default=None, min_length=1, max_length=50)
+    definition: str | None = Field(default=None, min_length=1, max_length=500)
+    source_desc: str | None = Field(default=None, min_length=1, max_length=200)
+    question: str | None = Field(default=None, max_length=300, description="보완 질문. 빈 문자열이면 지움")
+    option_labels: dict[str, str] | None = Field(default=None, description="선택지 코드: 새 이름")
+
+
+class CheckItemIn(BaseModel):
+    item: str = Field(min_length=1, max_length=50)
+    content: str = Field(default="", max_length=300)
+    kind: Literal["MANDATORY", "FIT", "GUIDE"]
+
+
+class CriteriaIn(BaseModel):
+    capability_full: int = Field(ge=1, le=100, description="역량 '충분' 경계 (D-STATE 영역 평균)")
+    capability_partial: int = Field(ge=1, le=100, description="역량 '부분' 경계")
+    grade_high: int = Field(ge=1, le=100, description="적합도 '상' 경계")
+    grade_mid: int = Field(ge=1, le=100, description="적합도 '중' 경계")
+    partial_ratio: int = Field(ge=1, le=99, description="'부분' 충족 비율(%)")
+    check_items: list[CheckItemIn] = Field(min_length=1, max_length=30)
+    note: str | None = Field(default=None, max_length=500, description="바꾼 이유 (소관부서 협의 내용)")
 
 
 class VerdictOverride(BaseModel):
@@ -273,7 +300,8 @@ async def run_consultation(org_id: int, body: ConsultRunIn, user: CurrentUser = 
         await _require_company(conn, org_id, user)
         try:
             return await consultation.run(conn, org_id, task=body.task, concern=body.concern,
-                                          request_id=body.request_id, user_id=user.id)
+                                          request_id=body.request_id, user_id=user.id,
+                                          evidence_ids=body.evidence_ids)
         except consultation.ConsultError as e:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e)) from None
 
@@ -397,3 +425,96 @@ async def set_company_access(org_id: int, body: AccessIn, user: CurrentUser = De
             return await governance.set_access(conn, org_id, body.department_ids, user.id)
         except ValueError as e:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e)) from None
+
+
+# ---------- 진단 변수사전·판정기준 ----------
+
+@router.get("/consult/dstate/variables")
+async def variable_list(user: CurrentUser = Depends(require_roles(*governance.CRITERIA_READ))):
+    """진단 변수사전 (고친 사람·시각 포함)."""
+    async with transaction() as conn:
+        return await dstate.variable_admin(conn)
+
+
+@router.put("/consult/dstate/variables/{code}")
+async def variable_update(code: str, body: VariableIn, user: CurrentUser = Depends(require_roles("AX_ADMIN")),
+                          rid: str = Depends(request_id)):
+    """변수명·정의·증빙 원천·보완 질문·선택지 이름 수정. 산정식과 값 유형은 그대로."""
+    async with transaction(user.id, rid) as conn:
+        try:
+            return await dstate.update_variable(conn, code, body.model_dump(exclude_unset=True), user.id)
+        except LookupError:
+            raise NotFound("진단 변수", code) from None
+        except ValueError as e:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e)) from None
+
+
+@router.get("/consult/criteria")
+async def criteria_view(user: CurrentUser = Depends(require_roles(*governance.CRITERIA_READ))):
+    """공고문 점검 항목·판정 기준과 버전 이력."""
+    async with transaction() as conn:
+        return await criteria.view(conn)
+
+
+@router.put("/consult/criteria")
+async def criteria_save(body: CriteriaIn, user: CurrentUser = Depends(require_roles(*governance.CRITERIA)),
+                        rid: str = Depends(request_id)):
+    """새 버전으로 저장하고 바로 적용한다."""
+    async with transaction(user.id, rid) as conn:
+        data = body.model_dump()
+        note = data.pop("note")
+        try:
+            return await criteria.save(conn, data, note, user.id)
+        except ValueError as e:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e)) from None
+
+
+@router.post("/consult/criteria/versions/{version}/activate")
+async def criteria_activate(version: int, user: CurrentUser = Depends(require_roles(*governance.CRITERIA)),
+                            rid: str = Depends(request_id)):
+    async with transaction(user.id, rid) as conn:
+        try:
+            return await criteria.activate(conn, version)
+        except LookupError:
+            raise NotFound("판정기준 버전", version) from None
+
+
+# ---------- 상담 보완자료 ----------
+
+@router.get("/consult/companies/{org_id}/evidence")
+async def evidence_list(org_id: int, user: CurrentUser = Depends(require_roles(*STAFF))):
+    """기업이 낸 증빙과 담당자가 첨부한 보완자료."""
+    async with transaction() as conn:
+        await _require_company(conn, org_id, user)
+        return await consult_evidence.list_for(conn, org_id)
+
+
+@router.post("/consult/companies/{org_id}/evidence", status_code=201)
+async def evidence_add(org_id: int, file: UploadFile = File(..., description="인증서·수출실적·보유기술 자료 (PDF·HWP)"),
+                       note: str | None = Form(default=None, max_length=500),
+                       user: CurrentUser = Depends(require_roles(*STAFF)), rid: str = Depends(request_id)):
+    """상담 중 보완자료 첨부. 글자와 뽑은 값만 남긴다."""
+    limit = get_settings().upload_max_mb * 1024 * 1024
+    data = await file.read(limit + 1)
+    if len(data) > limit:
+        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, f"파일이 {get_settings().upload_max_mb}MB 를 넘습니다")
+    if not data:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "빈 파일입니다")
+    async with transaction(user.id, rid) as conn:
+        await _require_company(conn, org_id, user)
+        return await consult_evidence.add(conn, org_id, (file.filename or "보완자료").strip()[:300], data,
+                                          (note or "").strip() or None, user.id)
+
+
+@router.delete("/consult/companies/{org_id}/evidence/{evidence_id}", status_code=204)
+async def evidence_delete(org_id: int, evidence_id: int, user: CurrentUser = Depends(require_roles(*STAFF)),
+                          rid: str = Depends(request_id)):
+    async with transaction(user.id, rid) as conn:
+        await _require_company(conn, org_id, user)
+        try:
+            await consult_evidence.delete(conn, org_id, evidence_id)
+        except LookupError:
+            raise NotFound("보완자료", evidence_id) from None
+        except PermissionError as e:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, str(e)) from None
+    return Response(status_code=204)

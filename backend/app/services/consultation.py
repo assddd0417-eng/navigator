@@ -16,7 +16,7 @@ from fastapi.encoders import jsonable_encoder
 from psycopg import AsyncConnection
 from psycopg.types.json import Jsonb
 
-from app.services import ai_gateway, dstate, eligibility_review, mailer, route
+from app.services import ai_gateway, consult_evidence, dstate, eligibility_review, mailer, route
 
 TASK_KO = {"A": "D-STATE 진단", "B": "자격요건 검토", "C": "종합 성장경로"}
 STATUS_KO = {"DRAFT": "검토 중", "CONFIRMED": "확정"}
@@ -134,7 +134,7 @@ async def polish_report(conn: AsyncConnection, report: list[dict], *, org_id: in
 # ---------- 상담 실행 ----------
 
 async def run(conn: AsyncConnection, org_id: int, *, task: str, concern: str | None, request_id: int | None,
-              user_id: int) -> dict:
+              user_id: int, evidence_ids: list[int] | None = None) -> dict:
     if request_id is not None:
         req = await (await conn.execute(
             "SELECT organization_id, status, concern FROM ax.consult_request WHERE id = %s",
@@ -164,6 +164,7 @@ async def run(conn: AsyncConnection, org_id: int, *, task: str, concern: str | N
         await conn.execute(
             """UPDATE ax.consult_request SET status = 'IN_PROGRESS', handled_by = %s, updated_at = now()
                 WHERE id = %s AND status = 'REQUESTED'""", (user_id, request_id))
+    await consult_evidence.link(conn, org_id, row["id"], evidence_ids or [])
     return await get(conn, row["id"])
 
 
@@ -227,6 +228,7 @@ async def get(conn: AsyncConnection, cid: int) -> dict | None:
         return None
     c = _out(row)
     c["compare"] = compare(await _prev(conn, c), c)
+    c["evidence"] = await consult_evidence.list_for(conn, c["organization_id"], consultation_id=cid)
     return c
 
 

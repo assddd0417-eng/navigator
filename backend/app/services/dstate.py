@@ -259,6 +259,37 @@ async def variables(conn: AsyncConnection) -> list[dict]:
         "FROM ax.dstate_variable ORDER BY sort_order")).fetchall()
 
 
+async def variable_admin(conn: AsyncConnection) -> list[dict]:
+    return await (await conn.execute(
+        """SELECT v.code, v.name_ko, v.definition, v.value_type, v.options, v.areas, v.source_desc, v.question,
+                  v.sort_order, v.updated_at, u.name AS updated_by_name
+             FROM ax.dstate_variable v LEFT JOIN ax.app_user u ON u.id = v.updated_by
+            ORDER BY v.sort_order""")).fetchall()
+
+
+async def update_variable(conn: AsyncConnection, code: str, data: dict, user_id: int) -> dict:
+    """변수명·정의·증빙 원천·보완 질문·선택지 이름만 고친다. 코드·값 유형·영역·산정식은 바꾸지 않는다."""
+    cur = await (await conn.execute("SELECT * FROM ax.dstate_variable WHERE code = %s", (code,))).fetchone()
+    if cur is None:
+        raise LookupError(code)
+    options = cur["options"]
+    if data.get("option_labels"):
+        known = {o["code"] for o in options}
+        if bad := sorted(set(data["option_labels"]) - known):
+            raise ValueError(f"없는 선택지: {', '.join(bad)}")
+        options = [{**o, "label": data["option_labels"].get(o["code"]) or o["label"]} for o in options]
+    if cur["value_type"] == "PROFILE" and data.get("question"):
+        raise ValueError("회사 정보에서 읽는 변수에는 보완 질문을 두지 않습니다")
+    await conn.execute(
+        """UPDATE ax.dstate_variable SET name_ko = %s, definition = %s, source_desc = %s, question = %s,
+                  options = %s, updated_at = now(), updated_by = %s WHERE code = %s""",
+        (data.get("name_ko") or cur["name_ko"], data.get("definition") or cur["definition"],
+         data.get("source_desc") or cur["source_desc"],
+         (data["question"] or None) if "question" in data and cur["value_type"] != "PROFILE" else cur["question"],
+         Jsonb(options), user_id, code))
+    return next(v for v in await variable_admin(conn) if v["code"] == code)
+
+
 async def _preferred_numbers(conn: AsyncConnection, org_id: int) -> dict[str, Any]:
     rows = await (await conn.execute(
         """SELECT field_name, preferred_value, any_verified FROM ax.v_company_field_compare

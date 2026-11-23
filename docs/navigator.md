@@ -152,6 +152,21 @@ AI 는 등급이 정한 범위 안에서만 처리한다. 결과 화면에는 �
 | `GET /navigator/consult/companies/{org_id}/access` | 기업정보 열람 부서와 지정 여부. 열람 권한이 없으면 403. 역할: `STAFF`·`PROGRAM_OWNER`·`AX_ADMIN` |
 | `PUT /navigator/consult/companies/{org_id}/access` | 열람 부서 지정 `{"department_ids": [...]}`. 빈 배열이면 모든 담당 부서가 본다. 응답은 지정 결과. 역할: `AX_ADMIN` |
 
+### 판정기준·진단 변수사전·보완자료
+
+| 메서드·경로 | 설명 |
+|-------------|------|
+| `GET /navigator/consult/criteria` | 공고문 점검 항목·판정 기준 (사용 중 버전) 과 버전 이력. 역할: `STAFF`·`PROGRAM_OWNER`·`AX_ADMIN` |
+| `PUT /navigator/consult/criteria` | 새 버전 저장 `{capability_full, capability_partial, grade_high, grade_mid, partial_ratio, check_items, note}`. 바로 적용. 역할: `PROGRAM_OWNER`·`AX_ADMIN` |
+| `POST /navigator/consult/criteria/versions/{version}/activate` | 예전 버전으로 되돌리기. 역할: `PROGRAM_OWNER`·`AX_ADMIN` |
+| `GET /navigator/consult/dstate/variables` | 진단 변수사전 (고친 사람·시각 포함). 역할: 셋 다 |
+| `PUT /navigator/consult/dstate/variables/{code}` | 변수 이름·정의·증빙 원천·보완 질문·선택지 이름 수정. 역할: `AX_ADMIN` |
+| `GET /navigator/consult/companies/{org_id}/evidence` | 기업 제출 증빙과 담당자 첨부 보완자료 |
+| `POST /navigator/consult/companies/{org_id}/evidence` | 상담 중 보완자료 첨부 (multipart `file`, `note`). 글자와 찾은 값만 남긴다 |
+| `DELETE /navigator/consult/companies/{org_id}/evidence/{id}` | 담당자 첨부 자료 삭제. 기업 제출 증빙은 403 |
+
+상담 실행 (`POST .../consultations`) 에 `evidence_ids` 를 주면 그 자료를 상담에 묶고, 상담 한 건 조회의 `evidence` 에 나온다.
+
 ### 운영규정·지침 (소관부서)
 
 | 메서드·경로 | 설명 |
@@ -349,6 +364,8 @@ AI 는 등급이 정한 범위 안에서만 처리한다. 결과 화면에는 �
 | EXPORT_EXPERIENCE | 수출 경험 | 회사 정보(수출 실적) 또는 보완 답변 |
 | TARGET_MARKET | 목표 수출시장 | 보완 답변 |
 
+AX 주관부서는 변수 이름·정의·증빙 원천·보완 질문·선택지 이름을 화면에서 고친다 (`PUT /navigator/consult/dstate/variables/{code}`). 코드, 값 유형, 영역, 산정식은 바꾸지 않는다. 고친 사람과 시각이 남고 변경은 감사 로그에 기록된다.
+
 ### 변수값 우선순위
 
 - 담당자 입력(STAFF)이 있으면 그 값.
@@ -514,6 +531,13 @@ weighted 모드는 비교 대상이 없으면 0.5. 정렬 방식·가중치·규
 | 지원내용·기업부담 (안내) | 지원 한도·기간, 기업 부담 비율 | `announcement.support_amount_krw`, `support_period_months`, `company_burden` |
 | 제출서류 (안내) | 서류 이름, 필수 여부 | `announcement.submit_documents` |
 
+### 판정기준 설정
+
+- `ax.review_criteria` (마이그레이션 0010) 에 공고문 점검 항목과 적합도 판정 기준을 버전으로 둔다. 사용 중 버전은 하나.
+- 기준값: 역량 충분 경계 (기본 70), 역량 부분 경계 (40), 적합도 상 경계 (70), 중 경계 (50), 부분 충족 비율 (50%).
+- 소관부서 협의로 바꾸면 새 버전을 만들고 바로 모든 공고 자격검토에 쓴다. 자격검토 결과의 `fit_rule` 에 적용한 기준과 버전이 나온다.
+- 아래 Q2 설명의 숫자는 기본값이다.
+
 ### Q2 적합도
 
 | 종류 | 평가 방법 | 충족도 |
@@ -672,6 +696,12 @@ D-STATE 상태유형으로 정한다.
 | 결과 안내 수신 | 기업 | 확정한 상담만 본다. 이메일 안내는 선택이다 |
 | 상담이력 기록 | 시스템 | 실행자, 확정자, 시각을 남긴다. 변경은 감사 로그에도 기록한다 |
 | 이력 점검·기준 보정 | 기업지원 담당자, AX 주관부서 | 수정 사례를 모아 진단 기준과 판정 기준을 고친다 |
+
+### 보완자료
+
+- 담당자는 상담 중 기업에게 받은 인증서·수출실적·보유기술 자료를 올린다. 기업이 관리 링크로 올리는 증빙과 같은 표 (`company_evidence`) 에 두고, 올린 담당자 (`uploaded_by`) 와 상담 (`consultation_id`) 을 남긴다.
+- PDF·HWP·HWPX 는 글자를 읽어 인증 종류·번호·날짜·등급을 찾는다. 원본 파일은 두지 않는다. 찾은 값은 자동으로 반영하지 않고 담당자가 진단 변수나 회사 정보에 넣는다.
+- 기업이 올린 증빙은 담당자가 지울 수 없다.
 
 ### 결과서 규칙
 

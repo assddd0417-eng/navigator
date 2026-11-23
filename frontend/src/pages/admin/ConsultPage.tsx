@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import {
-  createConsultation, createConsultRequest, getConsultation, getConsultationHistory, listConsultRequests, setConsultRequestStatus,
+  addConsultEvidence, createConsultation, createConsultRequest, deleteConsultEvidence, listConsultEvidence, getConsultation, getConsultationHistory, listConsultRequests, setConsultRequestStatus,
   getDiagnosisHistory, getDstateRules, growthRoute, previewDstate, reviewEligibility, runDstate, saveStaffDstateValues, searchConsultCompanies, getCompanyAccess,
-  type ConsultCompany, type Consultation, type ConsultRequest, type DstateResult, type EligibilityReview, type DstateVariable, type GrowthRoute,
+  type ConsultCompany, type ConsultEvidence, type Consultation, type ConsultRequest, type DstateResult, type EligibilityReview, type DstateVariable, type GrowthRoute,
 } from '../../api/navigator'
 import { changedValues, DstateInput } from '../../components/DstateInput'
 import { RadarChart } from '../../components/RadarChart'
@@ -46,13 +46,14 @@ export function ConsultPage() {
   const [consultation, setConsultation] = useState<Consultation | null>(null)
   const [requestId, setRequestId] = useState<number | null>(null)
   const [consultKey, setConsultKey] = useState(0)
+  const [evidenceIds, setEvidenceIds] = useState<number[]>([])
   const requests = useAsync(() => listConsultRequests(), [])
   const { busy, run } = useAction()
   const toast = useToast()
 
   useEffect(() => {
     if (orgId == null) return
-    setResult(null); setElig(null); setRoute(null); setConsultation(null)
+    setResult(null); setElig(null); setRoute(null); setConsultation(null); setEvidenceIds([])
     void run(async () => setResult(await previewDstate(orgId)))
   }, [orgId, run])
 
@@ -73,7 +74,8 @@ export function ConsultPage() {
   })
 
   const saveDraft = () => run(async () => {
-    const c = await createConsultation(orgId!, { task, concern: concern.trim() || undefined, request_id: requestId ?? undefined })
+    const c = await createConsultation(orgId!, { task, concern: concern.trim() || undefined, request_id: requestId ?? undefined,
+      evidence_ids: evidenceIds.length ? evidenceIds : undefined })
     setConsultation(c)
     setTab('report')
     setConsultKey((k) => k + 1)
@@ -117,6 +119,7 @@ export function ConsultPage() {
               </li>
             ))}
           </ul>
+          {orgId != null && <EvidenceBlock key={orgId} orgId={orgId} checked={evidenceIds} onChecked={setEvidenceIds} />}
           {requestId != null && <div className="small muted" style={{ marginTop: 10 }}>상담 요청 {requestId}번에 연결됩니다.</div>}
           {(
             <label className="small muted" style={{ display: 'block', margin: '14px 0 6px' }}>상담 내용 (애로사항·관심분야)
@@ -174,6 +177,57 @@ export function ConsultPage() {
         </div>
       </div>
     </>
+  )
+}
+
+function EvidenceBlock({ orgId, checked, onChecked }: { orgId: number; checked: number[]; onChecked: (ids: number[]) => void }) {
+  const list = useAsync(() => listConsultEvidence(orgId), [orgId])
+  const [file, setFile] = useState<File | null>(null)
+  const [note, setNote] = useState('')
+  const [inputKey, setInputKey] = useState(0)
+  const { busy, run } = useAction()
+  const toast = useToast()
+  const upload = () => run(async () => {
+    const e = await addConsultEvidence(orgId, file!, note.trim() || undefined)
+    setFile(null); setNote(''); setInputKey((k) => k + 1)
+    onChecked([...checked, e.id])
+    await list.reload()
+    toast.show({ kind: 'success', title: '보완자료를 올렸습니다' })
+  })
+  const remove = (e: ConsultEvidence) => run(async () => {
+    await deleteConsultEvidence(orgId, e.id)
+    onChecked(checked.filter((id) => id !== e.id))
+    await list.reload()
+  })
+  const toggle = (id: number) => onChecked(checked.includes(id) ? checked.filter((x) => x !== id) : [...checked, id])
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div className="small muted" style={{ marginBottom: 6 }}>보완자료 (선택)</div>
+      {list.loading ? <div className="small muted">불러오는 중…</div> : !list.data?.length ? <div className="small muted">올라온 보완자료가 없습니다.</div> : (
+        <ul className="select-list" style={{ maxHeight: 240 }}>
+          {list.data.map((e) => (
+            <li key={e.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, padding: '4px 0' }}>
+              <input type="checkbox" checked={checked.includes(e.id)} onChange={() => toggle(e.id)} aria-label={`${e.file_name} 상담에 쓰기`} style={{ marginTop: 4 }} />
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ wordBreak: 'break-all' }}>{e.file_name}</span>
+                <span className="small muted" style={{ display: 'block' }}>
+                  {[e.origin_label, e.kind_label, e.note, fmtDate(e.created_at)].filter(Boolean).join(' · ')}
+                </span>
+              </span>
+              {e.origin_label === '담당자 첨부' && (
+                <button className="link-btn small" style={{ width: 'auto' }} disabled={busy} onClick={() => void remove(e)}>삭제</button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="stack" style={{ marginTop: 8 }}>
+        <input key={inputKey} type="file" accept=".pdf,.hwp,.hwpx" aria-label="보완자료 파일" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="메모 (선택)" aria-label="보완자료 메모" maxLength={500} />
+        <button className="btn btn-sm" disabled={busy || !file} onClick={() => void upload()}>{busy ? '올리는 중…' : '올리기'}</button>
+      </div>
+      <p className="small muted" style={{ marginTop: 6 }}>인증서·수출실적·보유기술 자료를 올리면 글자와 찾은 값만 남깁니다. 값은 진단 변수에서 확인해 넣습니다.</p>
+    </div>
   )
 }
 

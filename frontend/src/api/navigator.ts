@@ -796,6 +796,7 @@ export interface EligibilityReview {
   results: EligibilityResult[]
   ai_mode?: 'llm' | 'rules'
   notice?: string
+  fit_rule?: FitRule
 }
 export const reviewEligibility = (orgId: number, body: { concern?: string; include_closed?: boolean }) =>
   api<EligibilityReview>(`/navigator/consult/companies/${orgId}/eligibility`, { method: 'POST', body })
@@ -947,6 +948,7 @@ export interface Consultation {
   concern: string | null
   eligibility: EligibilityReview | null
   route: GrowthRoute | null
+  evidence?: ConsultEvidence[]
   draft: ReportSection[]
   report: ReportSection[]
   overrides: VerdictOverride[]
@@ -986,7 +988,7 @@ export interface ConsultationUpdate {
 }
 export type ConfirmedConsultation = Consultation & { notify: { sent: boolean; to?: string; reason?: string } }
 
-export const createConsultation = (orgId: number, body: { task: 'A' | 'B' | 'C'; concern?: string; request_id?: number }) =>
+export const createConsultation = (orgId: number, body: { task: 'A' | 'B' | 'C'; concern?: string; request_id?: number; evidence_ids?: number[] }) =>
   api<Consultation>(`/navigator/consult/companies/${orgId}/consultations`, { method: 'POST', body })
 export const getConsultationHistory = (orgId: number) =>
   api<ConsultationSummary[]>(`/navigator/consult/companies/${orgId}/consultations`)
@@ -1184,3 +1186,86 @@ export const confirmRegulation = (id: number) =>
   api<Regulation>(`/navigator/regulations/${id}/confirm`, { method: 'POST' })
 export const deleteRegulation = (id: number) =>
   api<void>(`/navigator/regulations/${id}`, { method: 'DELETE' })
+
+
+// ---- 판정기준·진단 변수사전·상담 보완자료 ----
+export interface FitRule {
+  capability_full: number
+  capability_partial: number
+  grade_high: number
+  grade_mid: number
+  partial_ratio: number
+  version?: number | null
+}
+export type CheckKind = 'MANDATORY' | 'FIT' | 'GUIDE'
+export interface CheckItem { item: string; content: string; kind: CheckKind; kind_label?: string }
+export interface CriteriaVersion {
+  id: number
+  version: number
+  is_active: boolean
+  note: string | null
+  created_at: string
+  created_by_name: string | null
+  settings: Record<string, unknown>
+}
+export interface CriteriaView {
+  active: FitRule & { version: number | null; check_items: CheckItem[] }
+  history: CriteriaVersion[]
+  kinds: Record<string, string>
+}
+export interface CriteriaSave extends FitRule { check_items: CheckItem[]; note?: string }
+export const getCriteria = () => api<CriteriaView>('/navigator/consult/criteria')
+export const saveCriteria = (body: CriteriaSave) => api<CriteriaView>('/navigator/consult/criteria', { method: 'PUT', body })
+export const activateCriteria = (version: number) =>
+  api<CriteriaView>(`/navigator/consult/criteria/versions/${version}/activate`, { method: 'POST' })
+
+export interface DstateVariableDef {
+  code: string
+  name_ko: string
+  definition: string
+  value_type: 'LEVEL' | 'INTEGER' | 'PROFILE'
+  options: { code: string; label: string }[]
+  areas: string[]
+  source_desc: string
+  question: string | null
+  sort_order: number
+  updated_at: string | null
+  updated_by_name: string | null
+}
+export interface DstateVariableEdit {
+  name_ko?: string
+  definition?: string
+  source_desc?: string
+  question?: string
+  option_labels?: Record<string, string>
+}
+export const listDstateVariables = () => api<DstateVariableDef[]>('/navigator/consult/dstate/variables')
+export const updateDstateVariable = (code: string, body: DstateVariableEdit) =>
+  api<DstateVariableDef>(`/navigator/consult/dstate/variables/${code}`, { method: 'PUT', body })
+
+export interface ConsultEvidence {
+  id: number
+  file_name: string
+  parse_status: string
+  parse_note: string | null
+  detected_kind: string | null
+  kind_label: string | null
+  detected: Record<string, unknown> | null
+  note: string | null
+  consultation_id: number | null
+  created_at: string
+  uploaded_by: number | null
+  uploaded_by_name: string | null
+  origin_label: string
+  text_excerpt: string | null
+}
+export const listConsultEvidence = (orgId: number) =>
+  api<ConsultEvidence[]>(`/navigator/consult/companies/${orgId}/evidence`)
+export const addConsultEvidence = (orgId: number, file: File, note?: string) => {
+  const form = new FormData()
+  form.append('file', file)
+  if (note) form.append('note', note)
+  return api<ConsultEvidence>(`/navigator/consult/companies/${orgId}/evidence`, { method: 'POST', body: form })
+}
+export const deleteConsultEvidence = (orgId: number, id: number) =>
+  api<void>(`/navigator/consult/companies/${orgId}/evidence/${id}`, { method: 'DELETE' })

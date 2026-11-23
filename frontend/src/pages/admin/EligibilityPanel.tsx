@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { AiJudgeInfo, ReviewCheck, EligibilityResult, EligibilityReview, Tone } from '../../api/navigator'
+import type { AiJudgeInfo, FitRule, ReviewCheck, EligibilityResult, EligibilityReview, Tone } from '../../api/navigator'
 import { Card } from '../../components/ui'
 import { fmtDay, fmtKrw } from '../navigator/components'
 
@@ -25,7 +25,7 @@ export function EligibilityPanel({ data }: { data: EligibilityReview }) {
         {data.concern && <p className="small muted" style={{ marginTop: 10 }}>상담 내용: {data.concern}</p>}
       </Card>
       {!data.results.length && <Card><p className="muted">검토할 공고가 없습니다.</p></Card>}
-      {list.map((r, i) => <ResultCard key={r.announcement_id} r={r} defaultOpen={i === 0} />)}
+      {list.map((r, i) => <ResultCard key={r.announcement_id} r={r} rule={data.fit_rule} defaultOpen={i === 0} />)}
       {data.results.length > SHOW_FIRST && (
         <button className="btn" onClick={() => setAll(!all)}>
           {all ? '접기' : `더 보기 (${data.results.length - SHOW_FIRST}건)`}
@@ -47,7 +47,7 @@ function Headline({ label, value, tone }: { label: string; value: string; tone?:
   )
 }
 
-function ResultCard({ r, defaultOpen }: { r: EligibilityResult; defaultOpen: boolean }) {
+function ResultCard({ r, rule, defaultOpen }: { r: EligibilityResult; rule?: FitRule; defaultOpen: boolean }) {
   const [open, setOpen] = useState(defaultOpen)
   const mand = r.checks.filter((c) => c.is_mandatory)
   const pref = r.checks.filter((c) => !c.is_mandatory)
@@ -123,7 +123,7 @@ function ResultCard({ r, defaultOpen }: { r: EligibilityResult; defaultOpen: boo
             </table>
           )}
           <p className="small muted">
-            점수 = Σ(배점×충족도) ÷ 평가한 배점 합 × 100 + 우대 가점 · 상 70↑ / 중 50~69 / 하 50↓ · 신청서 기반 항목은 상담 단계 평가 제외
+            점수 = Σ(배점×충족도) ÷ 평가한 배점 합 × 100 + 우대 가점 · {rule ? `상 ${rule.grade_high}점 이상, 중 ${rule.grade_mid}~${rule.grade_high - 1}점, 하 ${rule.grade_mid}점 미만` : '상 70점 이상, 중 50~69점, 하 50점 미만'} · 신청서 기반 항목은 상담 단계 평가 제외
           </p>
 
           {r.todo.length > 0 && (
