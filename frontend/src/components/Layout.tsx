@@ -37,7 +37,7 @@ export function Layout() {
             <div key={sec.key} className="nav-section">
               <div className="nav-section-title">{sec.title}</div>
               {sec.items.map((m) => (
-                <NavLink key={m.path} to={m.path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                <NavLink key={m.path} to={m.path} end className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
                   <span className="nav-icon">{m.icon}</span>
                   {m.label}
                 </NavLink>

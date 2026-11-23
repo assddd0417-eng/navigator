@@ -3,12 +3,12 @@ import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from
 import { Link } from 'react-router-dom'
 import { ApiError } from '../../api/client'
 import {
-  answerQuestions, autofillProfile, CERT_TYPES, deleteEvidence, PRODUCT_CATEGORIES, SUPPORT_RESULTS, uploadEvidence, getMyAlerts, getMyDstate, getMyMatches, saveMyDstate, getMyProfile, getMyQuestions, REGIONS, SIZE_LABELS, updateMyProfile,
-  type DstateVariable, type Evidence, type FullProfile, type MatchRun, type ProductCategory, type ProfileUpdate, type Question, type SupportResult,
+  answerQuestions, autofillProfile, createMyConsultRequest, getMyConsultations, CERT_TYPES, deleteEvidence, PRODUCT_CATEGORIES, SUPPORT_RESULTS, uploadEvidence, getMyAlerts, getMyDstate, getMyMatches, saveMyDstate, getMyProfile, getMyQuestions, REGIONS, SIZE_LABELS, updateMyProfile,
+  type DstateVariable, type MyConsultation, type MyConsultRequest, type Evidence, type FullProfile, type MatchRun, type ProductCategory, type ProfileUpdate, type Question, type SupportResult,
 } from '../../api/navigator'
 import { useToast } from '../../components/Toast'
 import { changedValues, DstateInput } from '../../components/DstateInput'
-import { Card, Empty, useAction } from '../../components/ui'
+import { Card, Empty, fmtDate, useAction } from '../../components/ui'
 import { AlertsPanel } from './AlertsPanel'
 import { OutreachConsent } from './OutreachConsent'
 import { PastPanel } from './PastPanel'
@@ -30,7 +30,7 @@ function readToken(): string | null {
 
 type Tab = 'matches' | 'past' | 'alerts' | 'manage'
 /** 관리 탭 안의 화면 */
-type ManageView = 'profile' | 'dstate' | 'recipients' | 'consent'
+type ManageView = 'profile' | 'dstate' | 'consult' | 'recipients' | 'consent'
 
 export function CompanyManagePage() {
   const [token] = useState(readToken)
@@ -155,6 +155,9 @@ export function CompanyManagePage() {
           <button role="tab" className={manageView === 'dstate' ? 'on' : ''} onClick={() => setManageView('dstate')}>
             성장 진단 정보 {dstateMissing != null && dstateMissing > 0 && <span className="tab-count">{dstateMissing}</span>}
           </button>
+          <button role="tab" className={manageView === 'consult' ? 'on' : ''} onClick={() => setManageView('consult')}>
+            상담
+          </button>
           <button role="tab" className={manageView === 'recipients' ? 'on' : ''} onClick={() => setManageView('recipients')}>
             알림 받는 사람
           </button>
@@ -165,6 +168,8 @@ export function CompanyManagePage() {
       )}
 
       {tab === 'manage' && manageView === 'dstate' && <DstatePanel token={token!} onMissing={setDstateMissing} />}
+
+      {tab === 'manage' && manageView === 'consult' && <ConsultPanel token={token!} />}
 
       {tab === 'manage' && manageView === 'recipients' && <AlertsPanel token={token!} onUnread={setUnread} part="recipients" />}
 
@@ -681,5 +686,117 @@ function DstatePanel({ token, onMissing }: { token: string; onMissing: (n: numbe
         ))}
       </div>
     </Card>
+  )
+}
+
+function ConsultPanel({ token }: { token: string }) {
+  const [data, setData] = useState<{ consultations: MyConsultation[]; requests: MyConsultRequest[] } | null>(null)
+  const [concern, setConcern] = useState('')
+  const [interest, setInterest] = useState('')
+  const [contactName, setContactName] = useState('')
+  const [contactPhone, setContactPhone] = useState('')
+  const { busy, run } = useAction()
+  const toast = useToast()
+  const load = useCallback(() => getMyConsultations(token).then(setData).catch(() => undefined), [token])
+  useEffect(() => { void load() }, [load])
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    void run(async () => {
+      await createMyConsultRequest(token, {
+        concern: concern.trim(), interest: interest.trim() || undefined,
+        contact_name: contactName.trim() || undefined, contact_phone: contactPhone.trim() || undefined,
+      })
+      setConcern(''); setInterest('')
+      toast.show({ kind: 'success', title: '상담을 요청했습니다', message: '담당자가 확인 후 안내합니다.' })
+      await load()
+    })
+  }
+  const tone: Record<string, string> = { REQUESTED: 'warn', IN_PROGRESS: 'info', DONE: 'ok', CANCELED: 'muted' }
+
+  return (
+    <div className="stack">
+      <Card title="상담 요청">
+        <form className="stack" onSubmit={submit}>
+          <label>애로사항
+            <textarea rows={3} required value={concern} onChange={(e) => setConcern(e.target.value)}
+              placeholder="어려운 점이나 궁금한 점을 적어 주세요." />
+          </label>
+          <div className="form-row">
+            <label>관심 지원사업<input value={interest} onChange={(e) => setInterest(e.target.value)} /></label>
+            <label>담당자 이름<input value={contactName} onChange={(e) => setContactName(e.target.value)} /></label>
+            <label>연락처<input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} /></label>
+          </div>
+          <div><button className="btn btn-primary" disabled={busy || !concern.trim()}>{busy ? '요청 중…' : '상담 요청'}</button></div>
+        </form>
+      </Card>
+
+      <Card title="내 상담 요청">
+        {!data ? <div className="page-loading">불러오는 중…</div> : !data.requests.length ? <Empty>요청한 상담이 없습니다.</Empty> : (
+          <table className="table">
+            <thead><tr><th>요청일</th><th>애로사항</th><th>관심 지원사업</th><th>상태</th></tr></thead>
+            <tbody>
+              {data.requests.map((r) => (
+                <tr key={r.id}>
+                  <td className="small">{fmtDate(r.created_at)}</td>
+                  <td style={{ whiteSpace: 'pre-wrap' }}>{r.concern}</td>
+                  <td>{r.interest ?? '–'}</td>
+                  <td><span className={`badge badge-${tone[r.status] ?? 'muted'}`}>{r.status_label}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
+      {data && !data.consultations.length && <Card><Empty>확정된 상담 결과가 없습니다. 상담을 요청하면 담당자가 확인 후 안내합니다.</Empty></Card>}
+      {data?.consultations.map((c) => (
+        <Card key={c.id} title={`${c.task_label} 상담 결과`} actions={<span className="small muted">{fmtDate(c.confirmed_at)}</span>}>
+          {c.state_label && <p className="small muted">상태유형 {c.state_label}</p>}
+          {c.report.map((s) => (
+            <div key={s.key}>
+              <h4>{s.title}</h4>
+              <p style={{ whiteSpace: 'pre-wrap' }}>{s.text}</p>
+            </div>
+          ))}
+          {c.announcements.length > 0 && (
+            <>
+              <h4>검토한 지원사업</h4>
+              <table className="table">
+                <thead><tr><th>공고</th><th>기관</th><th>마감일</th><th>신청 가능 여부</th><th>적합도</th></tr></thead>
+                <tbody>
+                  {c.announcements.map((a) => (
+                    <tr key={a.announcement_id}>
+                      <td>{a.title}{a.todo.length > 0 && <ul className="small">{a.todo.map((t) => <li key={t}>{t}</li>)}</ul>}</td>
+                      <td>{a.agency_name}</td>
+                      <td>{a.receipt_end ?? '–'}</td>
+                      <td><span className="badge badge-info">{a.q1_label}</span></td>
+                      <td>{a.fit_grade ? `적합도 ${a.fit_grade}` : '–'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+          {c.steps.length > 0 && (
+            <>
+              <h4>성장 경로</h4>
+              <div className="stack">
+                {c.steps.map((st, i) => (
+                  <div key={i}>
+                    <strong>{st.horizon} · {st.stage_label}</strong>
+                    <div>{st.goal}</div>
+                    {st.programs.length > 0 && (
+                      <div className="chips">{st.programs.map((p) => <span key={p.name} className="badge badge-muted">{p.name} · {p.readiness_label}</span>)}</div>
+                    )}
+                    {st.tasks.length > 0 && <ul className="small">{st.tasks.map((t) => <li key={t}>{t}</li>)}</ul>}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </Card>
+      ))}
+    </div>
   )
 }

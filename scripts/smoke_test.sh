@@ -240,5 +240,24 @@ api "성장경로 (한빛)" 200 POST /navigator/consult/companies/101/route "$ST
 check "단기·중기·장기 · 추천 사업 · 안내 문구" \
     '(.steps | length) == 3 and .steps[0].is_current and ([.steps[].programs[]] | length) >= 3 and (.notice | length) > 0'
 api "성장경로는 담당자만 (VIEWER)" 403 POST /navigator/consult/companies/101/route "$VIEWER" '{}'
+api "상담 요청 목록" 200 GET "/navigator/consult/requests" "$STAFF"
+check "가상 상담 요청 있음" 'any(.[]; .organization_id == 101 or .organization_id == 103)'
+api "상담 요청 대신 등록 (누리)" 201 POST /navigator/consult/companies/102/requests "$STAFF" \
+    '{"concern":"수출 품목 확대 상담","interest":"방산전시회"}'
+REQ_ID=$(pick '.id')
+api "상담 실행·이력 저장 (누리, 종합)" 201 POST /navigator/consult/companies/102/consultations "$STAFF" \
+    "{\"task\":\"C\",\"request_id\":${REQ_ID:-0}}"
+check "진단·판정·경로·결과서 초안 7항목" \
+    '.status == "DRAFT" and .diagnosis_id > 0 and .route != null and (.report | length) == 7'
+CONS_ID=$(pick '.id')
+api "결과서 담당자 의견 입력" 200 PUT "/navigator/consult/consultations/${CONS_ID:-0}" "$STAFF" \
+    '{"report":{"opinion":"스모크 테스트 의견"},"feedback":"스모크"}'
+check "고친 항목 표시" '.edited_sections == ["opinion"]'
+api "상담 확정" 200 POST "/navigator/consult/consultations/${CONS_ID:-0}/confirm" "$STAFF" '{"notify":false}'
+check "확정 · 기업 화면 공개" '.status == "CONFIRMED" and .shared_at != null'
+api "확정 후 수정 불가" 409 PUT "/navigator/consult/consultations/${CONS_ID:-0}" "$STAFF" '{"feedback":"x"}'
+api "이력 점검" 200 GET "/navigator/consult/review-log" "$STAFF"
+check "고친 상담 포함" 'any(.items[]; .consultation_id == ($id | tonumber))' --arg id "${CONS_ID:-0}"
+api "이력 점검은 담당자만 (VIEWER)" 403 GET "/navigator/consult/review-log" "$VIEWER"
 
 summary

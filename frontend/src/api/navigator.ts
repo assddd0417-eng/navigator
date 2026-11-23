@@ -873,3 +873,133 @@ export const saveProgramRoute = (id: number, body: ProgramRouteBody) =>
   api<RouteRules>(`/navigator/consult/route/programs/${id}`, { method: 'PUT', body })
 export const deleteProgramRoute = (id: number) =>
   api<void>(`/navigator/consult/route/programs/${id}`, { method: 'DELETE' })
+
+// ---- 상담 요청 · 상담결과서 ----
+export type RequestStatus = 'REQUESTED' | 'IN_PROGRESS' | 'DONE' | 'CANCELED'
+export interface ConsultRequest {
+  id: number
+  organization_id: number
+  company_name: string
+  concern: string
+  interest: string | null
+  contact_name: string | null
+  contact_phone?: string | null
+  status: RequestStatus
+  status_label: string
+  origin: string
+  created_at: string
+  consultation_id: number | null
+}
+export interface ConsultRequestBody { concern: string; interest?: string; contact_name?: string; contact_phone?: string }
+export const listConsultRequests = (status?: string) =>
+  api<ConsultRequest[]>('/navigator/consult/requests', { query: status ? { status } : undefined })
+export const createConsultRequest = (orgId: number, body: ConsultRequestBody) =>
+  api<ConsultRequest>(`/navigator/consult/companies/${orgId}/requests`, { method: 'POST', body })
+export const setConsultRequestStatus = (id: number, status: RequestStatus) =>
+  api<ConsultRequest>(`/navigator/consult/requests/${id}`, { method: 'PATCH', body: { status } })
+
+export interface ReportSection { key: string; title: string; text: string }
+export interface VerdictOverride { announcement_id: number; title: string; from: string; verdict: string; reason: string }
+export interface ConsultCompare {
+  total_before: number
+  total_after: number
+  state_before: string
+  state_after: string
+  areas: { label: string; before: number; after: number; delta: number }[]
+  verdict_changes: { title: string; before: string; after: string }[]
+}
+export interface Consultation {
+  id: number
+  organization_id: number
+  company_name: string
+  request_id: number | null
+  task: 'A' | 'B' | 'C'
+  task_label: string
+  concern: string | null
+  eligibility: EligibilityReview | null
+  route: GrowthRoute | null
+  draft: ReportSection[]
+  report: ReportSection[]
+  overrides: VerdictOverride[]
+  edited_sections: string[]
+  compare: ConsultCompare | null
+  status: 'DRAFT' | 'CONFIRMED'
+  status_label: string
+  feedback: string | null
+  created_at: string
+  created_by_name: string | null
+  confirmed_at: string | null
+  confirmed_by_name: string | null
+  notified_at: string | null
+}
+export interface ConsultationSummary {
+  id: number
+  task: string
+  task_label: string
+  status: 'DRAFT' | 'CONFIRMED'
+  status_label: string
+  concern: string | null
+  total_score: number | null
+  state_label: string | null
+  eligible_count: number | null
+  override_count: number
+  edited_sections: string[]
+  feedback: string | null
+  created_at: string
+  created_by_name: string | null
+  confirmed_at: string | null
+  confirmed_by_name: string | null
+}
+export interface ConsultationUpdate {
+  report?: Record<string, string>
+  overrides?: { announcement_id: number; verdict: string; reason: string }[]
+  feedback?: string
+}
+export type ConfirmedConsultation = Consultation & { notify: { sent: boolean; to?: string; reason?: string } }
+
+export const createConsultation = (orgId: number, body: { task: 'A' | 'B' | 'C'; concern?: string; request_id?: number }) =>
+  api<Consultation>(`/navigator/consult/companies/${orgId}/consultations`, { method: 'POST', body })
+export const getConsultationHistory = (orgId: number) =>
+  api<ConsultationSummary[]>(`/navigator/consult/companies/${orgId}/consultations`)
+export const getConsultation = (id: number) => api<Consultation>(`/navigator/consult/consultations/${id}`)
+export const updateConsultation = (id: number, body: ConsultationUpdate) =>
+  api<Consultation>(`/navigator/consult/consultations/${id}`, { method: 'PUT', body })
+export const confirmConsultation = (id: number, notify: boolean) =>
+  api<ConfirmedConsultation>(`/navigator/consult/consultations/${id}/confirm`, { method: 'POST', body: { notify } })
+
+export interface ReviewLog {
+  total: number
+  confirmed: number
+  counts: { overrides: number; edits: number; feedback: number }
+  items: {
+    consultation_id: number
+    company_name: string
+    task_label: string
+    status_label: string
+    created_at: string
+    created_by_name: string | null
+    overrides: VerdictOverride[]
+    edited_sections: string[]
+    feedback: string | null
+  }[]
+}
+export const getReviewLog = () => api<ReviewLog>('/navigator/consult/review-log')
+
+// 기업 화면
+export interface MyConsultation {
+  id: number
+  task_label: string
+  confirmed_at: string | null
+  concern: string | null
+  state_label: string | null
+  report: ReportSection[]
+  announcements: { announcement_id: number; title: string; agency_name: string; receipt_end: string | null;
+    q1_label: string; fit_grade: '상' | '중' | '하' | null; todo: string[] }[]
+  steps: { horizon: string; stage_label: string; goal: string;
+    programs: { name: string; readiness_label: string }[]; tasks: string[] }[]
+}
+export interface MyConsultRequest { id: number; concern: string; interest: string | null; status: RequestStatus; status_label: string; created_at: string }
+export const getMyConsultations = (token: string) =>
+  api<{ consultations: MyConsultation[]; requests: MyConsultRequest[] }>('/navigator/manage/consultations', manage(token))
+export const createMyConsultRequest = (token: string, body: ConsultRequestBody) =>
+  api<MyConsultRequest>('/navigator/manage/consult-requests', { ...manage(token), method: 'POST', body })
