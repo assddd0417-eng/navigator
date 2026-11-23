@@ -21,7 +21,6 @@ export function ConsultReportPanel({ data, onChange }: { data: Consultation; onC
     Object.fromEntries(data.overrides.map((o) => [o.announcement_id, { verdict: o.verdict, reason: o.reason }])))
   const [feedback, setFeedback] = useState(data.feedback ?? '')
   const [notify, setNotify] = useState(true)
-  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null)
   const { busy, run } = useAction()
   const toast = useToast()
 
@@ -49,12 +48,14 @@ export function ConsultReportPanel({ data, onChange }: { data: Consultation; onC
     const c = await confirmConsultation(data.id, notify)
     onChange(c)
     const n = c.notify
-    setNotice(notify
-      ? n.sent ? { ok: true, text: `확정했습니다. ${n.to ?? '기업 이메일'}로 안내했습니다.` }
-        : { ok: false, text: `확정했습니다. 안내 메일은 보내지 못했습니다${n.reason ? `: ${n.reason}` : '.'}` }
-      : { ok: true, text: '확정했습니다. 안내 메일은 보내지 않았습니다.' })
+    // 확정 후 결과서가 다시 그려지므로 안내는 토스트로 보여 준다
+    if (!notify) toast.show({ kind: 'success', title: '확정했습니다', message: '안내 메일은 보내지 않았습니다.' })
+    else if (n?.sent) toast.show({ kind: 'success', title: '확정했습니다', message: `${n.to ?? '기업 이메일'}로 안내했습니다.` })
+    else toast.show({ kind: 'info', title: '확정했습니다', message: `안내 메일은 보내지 못했습니다${n?.reason ? `: ${n.reason}` : '.'}` })
   })
 
+  // 기업 판본은 'NN점'을 지운다 (consultation.strip_scores). 담당자가 직접 쓴 문장에 점수가 있으면 미리 알린다
+  const scoreInEdits = data.report.some((s) => texts[s.key] !== draftOf(s.key) && /\d+\s*점/.test(texts[s.key] ?? ''))
   const cmp = data.compare
   return (
     <>
@@ -67,7 +68,6 @@ export function ConsultReportPanel({ data, onChange }: { data: Consultation; onC
             {data.notified_at ? ` · 안내 ${fmtDate(data.notified_at)}` : ''}</>}
         </p>
         {data.concern && <p className="small">상담 내용: {data.concern}</p>}
-        {notice && <div className={`notice ${notice.ok ? 'notice-ok' : 'notice-warn'}`}>{notice.text}</div>}
       </Card>
 
       {data.evidence && data.evidence.length > 0 && (
@@ -170,6 +170,11 @@ export function ConsultReportPanel({ data, onChange }: { data: Consultation; onC
         {!locked && (
           <>
             {missingReason && <div className="notice">바꾼 판정에는 이유를 적어야 저장할 수 있습니다.</div>}
+            {scoreInEdits && (
+              <div className="notice">
+                고친 문장에 점수가 있습니다. 기업 화면에서는 ‘NN점’을 지우고 보여 주므로, 문장이 어색하지 않게 점수 없이 적어 주세요.
+              </div>
+            )}
             <div className="form-row" style={{ marginTop: 12, alignItems: 'center' }}>
               <button className="btn" disabled={busy || missingReason} onClick={() => void save()}>{busy ? '처리 중…' : '저장'}</button>
               <button className="btn btn-primary" disabled={busy || missingReason} onClick={() => void confirm()}>확정</button>

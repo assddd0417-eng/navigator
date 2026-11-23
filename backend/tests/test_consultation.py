@@ -96,6 +96,12 @@ async def test_consultation_flow(client, setup):
     c1 = r.json()
     assert c1["edited_sections"] == ["opinion"] and c1["overrides"][0]["from"] in ("ELIGIBLE", "NEEDS_INFO")
     assert c1["draft"][5]["text"] == ""
+    # 손대지 않은 '지원사업 검토 결과'는 바꾼 판정대로 다시 쓴다
+    title = next(x["title"] for x in c1["eligibility"]["results"] if x["announcement_id"] == ann)
+    elig_text = c1["report"][2]["text"]
+    assert f"- {title}:" not in elig_text and elig_text == c1["draft"][2]["text"]
+    n_bad = sum(1 for x in c1["eligibility"]["results"] if x["verdict"] == "INELIGIBLE") + 1
+    assert f"신청 불가 {n_bad}건" in elig_text
 
     # 확정 전에는 기업 화면에 없음
     assert (await client.get("/navigator/manage/consultations", headers=h)).json()["consultations"] == []

@@ -13,7 +13,7 @@ def normalize(raw: str) -> str:
     if not re.fullmatch(r"\d{10}", digits):
         raise InvalidBizNo("사업자번호는 숫자 10자리입니다 (예: 123-45-67890)")
     if not checksum_ok(digits):
-        raise InvalidBizNo("사업자번호 형식이 올바르지 않습니다 (검증번호 불일치)")
+        raise InvalidBizNo("없는 사업자등록번호입니다. 숫자를 다시 확인해 주세요")
     return digits
 
 

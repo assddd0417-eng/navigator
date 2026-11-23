@@ -70,6 +70,19 @@ def scores(row: dict) -> dict[str, int | None]:
     }
 
 
+def level_label(value: int | None, average: int | None) -> str:
+    """기업 화면용 라벨. 숫자 대신 평균과 견줘서 말로 보여 준다."""
+    if value is None:
+        return "미입력"
+    if average is None:
+        return "높음" if value >= 70 else "보통" if value >= 40 else "낮음"
+    if value >= average + 10:
+        return "평균보다 높음"
+    if value <= average - 10:
+        return "평균보다 낮음"
+    return "평균 수준"
+
+
 async def radar(conn: AsyncConnection, org_id: int) -> dict:
     rows = await (await conn.execute(_SQL)).fetchall()
     by_org = {r["org"]: scores(r) for r in rows}
@@ -77,10 +90,10 @@ async def radar(conn: AsyncConnection, org_id: int) -> dict:
     axes = []
     for code, label in AXES:
         vals = [s[code] for s in by_org.values() if s[code] is not None]
+        avg = round(sum(vals) / len(vals)) if vals else None
         axes.append({
             "code": code, "label": label, "note": AXIS_NOTE[code],
-            "value": mine[code],
-            "average": round(sum(vals) / len(vals)) if vals else None,
+            "value": mine[code], "average": avg, "level_label": level_label(mine[code], avg),
         })
     return {"axes": axes, "company_count": len(by_org)}
 

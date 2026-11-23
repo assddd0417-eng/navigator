@@ -240,7 +240,7 @@ function ProfilePanel({ token, profile, missing, onSaved }: {
     <CompanyInfoForm profile={profile} missing={missing} token={token} submitLabel="저장하고 다시 판정"
       top={<>
         <Card title="회사 역량 한눈에" actions={<span className="small muted">저장하면 다시 계산합니다</span>}>
-          <RadarChart radar={profile.radar} />
+          <RadarChart radar={profile.radar} labelsOnly />
         </Card>
         <div className="manage-box">
           <div>

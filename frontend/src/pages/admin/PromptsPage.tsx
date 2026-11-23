@@ -19,7 +19,7 @@ export function PromptsPage() {
     <>
       <PageHeader title="프롬프트 관리" subtitle="AI가 따르는 지침을 확인하고, 바꾸면 새 버전으로 남깁니다."
         actions={list.data && <span className={`badge badge-${llm ? 'ok' : 'muted'}`}>
-          {llm ? 'AI 판단 켜짐' : 'AI 판단 꺼짐 (규칙 사용). 켜려면 서버 설정 AI_JUDGE_MODE'}</span>} />
+          {llm ? 'AI 판단 켜짐' : 'AI 판단 꺼짐 (규칙으로 판정)'}</span>} />
       <div className="form-row" style={{ marginBottom: 12, gap: 8 }}>
         {CODES.map((c) => (
           <button key={c.code} className={`btn ${c.code === code ? 'btn-primary' : ''}`} onClick={() => setCode(c.code)}>{c.label}</button>

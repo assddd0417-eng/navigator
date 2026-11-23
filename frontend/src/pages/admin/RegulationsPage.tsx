@@ -17,7 +17,7 @@ export function RegulationsPage() {
   return (
     <>
       <PageHeader title="운영규정·지침"
-        subtitle="공통운영규정과 사업별 운영지침을 조문 단위로 등록합니다. 참여제한 조문은 모든 공고 자격검토에 더해집니다." />
+        subtitle="공통운영규정과 사업별 운영지침을 조문 단위로 등록합니다. 참여제한 조문은 소관부서가 내용 확인을 누른 뒤부터 모든 공고 자격검토에 더해집니다." />
       <SearchBox onPick={(id) => { setAdding(false); setSelected(id) }} />
       <div className="grid-side">
         <Card title="규정 목록" actions={canEdit && (
@@ -218,7 +218,7 @@ function Detail({ id, canEdit, onChanged, onDeleted }:
         <div style={{ margin: '8px 0' }}>
           {g.confirmed_at
             ? <span className="badge badge-ok">확인 {fmtDay(g.confirmed_at)}{g.confirmed_by_name ? ` · ${g.confirmed_by_name}` : ''}</span>
-            : <span className="badge badge-warn">확인 전</span>}
+            : <><span className="badge badge-warn">확인 전</span> <span className="small muted">내용 확인을 누르기 전에는 판정에 쓰지 않습니다.</span></>}
           {!g.is_active && <> <span className="badge badge-muted">사용 안 함</span></>}
         </div>
         {canEdit && (

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { AiJudgeInfo, FitRule, ReviewCheck, EligibilityResult, EligibilityReview, Tone } from '../../api/navigator'
-import { Card } from '../../components/ui'
+import { Card, docName } from '../../components/ui'
 import { fmtDay, fmtKrw } from '../navigator/components'
 
 const VERDICT_TONE: Record<string, Tone> = { ELIGIBLE: 'ok', NEEDS_INFO: 'warn', INELIGIBLE: 'bad' }
@@ -139,7 +139,7 @@ function ResultCard({ r, rule, defaultOpen }: { r: EligibilityResult; rule?: Fit
             <li>기간: {g.support_period_months ? `${g.support_period_months}개월` : '–'}</li>
             <li>기업부담: {g.company_burden || '–'}</li>
             <li>제출서류: {g.submit_documents.length
-              ? g.submit_documents.map((d) => d.name + (d.required ? '' : ' (해당 시)')).join(', ') : '–'}</li>
+              ? g.submit_documents.map((d) => docName(d)).join(', ') : '–'}</li>
           </ul>
         </>
       )}
@@ -152,10 +152,10 @@ function CriteriaLine({ r }: { r: EligibilityResult }) {
   if (!cr) return null
   return (
     <div className="small muted" style={{ marginBottom: 8 }}>
-      판단기준 확인: 공고 요건 확인 {cr.requirements_confirmed_at ? fmtDay(cr.requirements_confirmed_at) : '미확인'}
-      {' · '}운영규정 확인 {cr.regulations_confirmed_at ? fmtDay(cr.regulations_confirmed_at) : '없음'}
+      판단기준 확인: 공고 요건 {cr.requirements_confirmed_at ? `확인 ${fmtDay(cr.requirements_confirmed_at)}` : '확인 전'}
+      {' · '}운영규정 {cr.regulations_confirmed_at ? `확인 ${fmtDay(cr.regulations_confirmed_at)}` : '확인된 규정 없음'}
       {cr.unconfirmed_regulations.length > 0 && (
-        <div><span className="badge badge-warn">확인 전 규정</span> {cr.unconfirmed_regulations.join(', ')}</div>
+        <div><span className="badge badge-warn">확인 전 규정 (판정에 쓰지 않음)</span> {cr.unconfirmed_regulations.join(', ')}</div>
       )}
     </div>
   )

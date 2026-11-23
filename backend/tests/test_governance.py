@@ -81,3 +81,4 @@ async def test_company_access(client, org):
     # 열람 권한을 풀어도 상담 기록은 그대로
     r = await client.put(f"/navigator/consult/companies/{org}/access", headers=as_user(4), json={"department_ids": []})
     assert r.json()["restricted"] is False
+

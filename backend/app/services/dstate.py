@@ -404,14 +404,14 @@ def validate_value(defn: dict, value: Any) -> Any:
     if vt == "LEVEL":
         allowed = [o["code"] for o in defn["options"]]
         if value not in allowed:
-            raise ValueError(f"{defn['name_ko']}: {', '.join(allowed)} 중 하나")
+            raise ValueError(f"{defn['name_ko']}: {', '.join(o.get('label', o['code']) for o in defn['options'])} 중에서 골라 주세요")
         return value
     if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"{defn['name_ko']}: 정수")
+        raise ValueError(f"{defn['name_ko']}: 소수점 없는 숫자로 적어 주세요")
     if code == "TRL" and not 1 <= value <= 9:
-        raise ValueError("TRL 은 1~9")
+        raise ValueError("기술성숙도(TRL)는 1~9 사이로 적어 주세요")
     if value < 0:
-        raise ValueError(f"{defn['name_ko']}: 0 이상")
+        raise ValueError(f"{defn['name_ko']}: 0 이상으로 적어 주세요")
     return value
 
 

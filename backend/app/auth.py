@@ -44,7 +44,9 @@ def require_roles(*roles: str):
 
     async def checker(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
         if not user.has_any(*roles):
-            raise HTTPException(status.HTTP_403_FORBIDDEN, f"필요 역할: {', '.join(roles)}")
+            names = {"STAFF": "기업지원 담당자", "PROGRAM_OWNER": "지원사업 소관부서", "AX_ADMIN": "AX 주관부서"}
+            raise HTTPException(status.HTTP_403_FORBIDDEN,
+                                f"{'·'.join(names.get(r, r) for r in roles)}만 할 수 있습니다")
         return user
 
     return checker

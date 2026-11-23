@@ -18,6 +18,36 @@ export function setApiUserId(id: number | null): void {
 interface ValidationIssue {
   loc: (string | number)[]
   msg: string
+  type?: string
+  ctx?: Record<string, unknown>
+}
+
+/** 자주 나오는 입력 항목 이름 (나머지는 서버 이름 그대로) */
+const FIELD_KO: Record<string, string> = {
+  concern: '상담 내용', interest: '관심 지원사업', contact_name: '담당자 이름', contact: '연락처', reason: '이유',
+  title: '제목', text: '본문', announcement_no: '공고번호', agency_name: '기관', receipt_start: '접수 시작',
+  receipt_end: '접수 마감', email: '이메일', code: '확인 코드', note: '메모', feedback: '담당자 의견',
+  grade_high: '적합도 상 경계', grade_mid: '적합도 중 경계', capability_full: '역량 충분 경계',
+  capability_partial: '역량 부분 경계', partial_ratio: '부분 충족 비율',
+}
+
+/** 입력 검증 오류(pydantic)를 우리말로 */
+function issueText(d: ValidationIssue): string {
+  const c = d.ctx ?? {}
+  switch (d.type) {
+    case 'string_too_long': return `${c.max_length}자 이하로 적어 주세요`
+    case 'string_too_short': return Number(c.min_length) <= 1 ? '비어 있습니다' : `${c.min_length}자 이상 적어 주세요`
+    case 'missing': return '꼭 넣어야 합니다'
+    case 'greater_than_equal': return `${c.ge} 이상이어야 합니다`
+    case 'greater_than': return `${c.gt}보다 커야 합니다`
+    case 'less_than_equal': return `${c.le} 이하여야 합니다`
+    case 'less_than': return `${c.lt}보다 작아야 합니다`
+    case 'int_parsing': case 'int_type': case 'float_parsing': case 'float_type': return '숫자로 적어 주세요'
+    case 'date_parsing': case 'date_from_datetime_parsing': case 'date_type': return '날짜 형식이 아닙니다'
+    case 'literal_error': case 'enum': return '고를 수 있는 값이 아닙니다'
+    case 'string_pattern_mismatch': return '형식이 맞지 않습니다'
+    default: return d.msg.replace(/^Value error, /, '')
+  }
 }
 
 export class ApiError extends Error {
@@ -48,7 +78,11 @@ function formatDetail(detail: unknown): string {
   if (typeof detail === 'string') return detail
   if (Array.isArray(detail)) {
     return (detail as ValidationIssue[])
-      .map((d) => `${d.loc.filter((l) => l !== 'body').join('.')}: ${d.msg}`)
+      .map((d) => {
+        const field = d.loc.filter((l) => l !== 'body' && l !== 'query' && typeof l === 'string').pop()
+        const name = field ? FIELD_KO[field] ?? field : ''
+        return name ? `${name}: ${issueText(d)}` : issueText(d)
+      })
       .join('\n')
   }
   return detail == null ? '' : JSON.stringify(detail)

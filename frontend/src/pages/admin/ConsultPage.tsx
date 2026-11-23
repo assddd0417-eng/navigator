@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   addConsultEvidence, createConsultation, createConsultRequest, deleteConsultEvidence, listConsultEvidence, getConsultation, getConsultationHistory, listConsultRequests, setConsultRequestStatus,
   getDiagnosisHistory, getDstateRules, growthRoute, previewDstate, reviewEligibility, runDstate, saveStaffDstateValues, searchConsultCompanies, getCompanyAccess,
@@ -34,7 +35,14 @@ export function ConsultPage() {
   const [q, setQ] = useState('')
   const [query, setQuery] = useState('')
   const companies = useAsync(() => searchConsultCompanies(query), [query])
-  const [orgId, setOrgId] = useState<number | null>(null)
+  useEffect(() => { // 입력하면 잠시 뒤 바로 찾는다 (Enter 를 몰라도 되게)
+    const t = setTimeout(() => setQuery(q.trim()), 300)
+    return () => clearTimeout(t)
+  }, [q])
+  // 고른 기업·열어 본 결과서는 주소에 남겨 새로고침·뒤로가기 후에도 이어서 본다
+  const [params, setParams] = useSearchParams()
+  const [orgId, setOrgId] = useState<number | null>(() => Number(params.get('org')) || null)
+  const [openId] = useState<number | null>(() => Number(params.get('c')) || null)
   const [task, setTask] = useState<Task>('A')
   const [tab, setTab] = useState<ResultTab>('dstate')
   const [result, setResult] = useState<DstateResult | null>(null)
@@ -54,8 +62,21 @@ export function ConsultPage() {
   useEffect(() => {
     if (orgId == null) return
     setResult(null); setElig(null); setRoute(null); setConsultation(null); setEvidenceIds([])
-    void run(async () => setResult(await previewDstate(orgId)))
-  }, [orgId, run])
+    void run(async () => {
+      setResult(await previewDstate(orgId))
+      if (openId != null && Number(params.get('c')) === openId) { // 주소에 있던 결과서 다시 열기 (처음 한 번)
+        const c = await getConsultation(openId)
+        if (c.organization_id === orgId) { setConsultation(c); setTab('report') }
+      }
+    })
+  }, [orgId, run]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const next = new URLSearchParams()
+    if (orgId != null) next.set('org', String(orgId))
+    if (consultation && consultation.organization_id === orgId) next.set('c', String(consultation.id))
+    if (next.toString() !== params.toString()) setParams(next, { replace: true })
+  }, [orgId, consultation]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const company = companies.data?.find((c) => c.organization_id === orgId) ?? null
   const execute = () => run(async () => {
@@ -106,7 +127,7 @@ export function ConsultPage() {
           <form className="form-row" style={{ marginBottom: 10 }} onSubmit={(e) => { e.preventDefault(); setQuery(q.trim()) }}>
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="상호 또는 사업자번호" aria-label="기업 검색" />
           </form>
-          {companies.loading ? <div className="page-loading">불러오는 중…</div> : !companies.data?.length ? <Empty>기업이 없습니다.</Empty> : (
+          {companies.loading ? <div className="page-loading">불러오는 중…</div> : !companies.data?.length ? <Empty>{query ? `‘${query}’에 맞는 기업이 없습니다.` : '기업이 없습니다.'}</Empty> : (
             <ul className="select-list">
               {companies.data.map((c) => <CompanyButton key={c.organization_id} c={c} on={c.organization_id === orgId}
                 onClick={() => {
@@ -129,8 +150,9 @@ export function ConsultPage() {
           {requestId != null && <div className="small muted" style={{ marginTop: 10 }}>상담 요청 {requestId}번에 연결됩니다.</div>}
           {(
             <label className="small muted" style={{ display: 'block', margin: '14px 0 6px' }}>상담 내용 (애로사항·관심분야)
-              <textarea rows={3} value={concern} onChange={(e) => setConcern(e.target.value)}
+              <textarea rows={3} value={concern} onChange={(e) => setConcern(e.target.value)} maxLength={2000}
                 placeholder="사업 목적 부합 평가에 씁니다. 비워도 됩니다." />
+              {concern.length > 1800 && <span className="small muted">{concern.length}/2000자</span>}
             </label>
           )}
           {(task === 'B' || task === 'C') && (

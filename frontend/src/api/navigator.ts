@@ -197,7 +197,7 @@ export interface FullProfile {
   access_link?: { expires_at: string }
 }
 
-export type RadarAxis = { code: string; label: string; note: string; value: number | null; average: number | null }
+export type RadarAxis = { code: string; label: string; note: string; value: number | null; average: number | null; level_label?: string }
 export type Radar = { axes: RadarAxis[]; company_count: number }
 
 export type ProductCategory = 'WEAPON_SYSTEM' | 'COMPONENT' | 'MATERIAL' | 'SOFTWARE' | 'EQUIPMENT' | 'SERVICE' | 'OTHER'
@@ -593,6 +593,15 @@ export const extractRequirements = (id: number) =>
 export const getRequirementTypes = () => api<RequirementTypes>('/navigator/announcements/requirement-types')
 export const saveReview = (id: number, body: { fields: AnnFields; requirements: ReqDraft[]; tech_needs: TechDraft[]; eval_items?: EvalItem[]; confirm: boolean; publish: boolean }) =>
   api<void>(`/navigator/announcements/${id}/review`, { method: 'PUT', body })
+/** 공고문 파일(PDF·TXT)을 올려 작성 중 공고를 만든다. 조건 뽑기는 올린 글자로 한다 */
+export const uploadAnnouncement = (file: File, f: { title?: string; agency_name: string; announcement_no: string }) => {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('agency_name', f.agency_name)
+  form.append('announcement_no', f.announcement_no)
+  if (f.title) form.append('title', f.title)
+  return api<{ id: number; chunk_count?: number; warnings?: string[] }>('/navigator/announcements/upload', { method: 'POST', body: form })
+}
 export const createAnnouncementFromText = (body: { title: string; agency_name?: string; announcement_no?: string; body_text: string; source_url?: string; posted_on?: string }) =>
   api<{ id: number }>('/navigator/announcements/text', { method: 'POST', body })
 
