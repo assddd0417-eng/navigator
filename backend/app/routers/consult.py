@@ -13,7 +13,7 @@ from app.auth import CurrentUser, request_id, require_roles
 from app.db import transaction
 from app.errors import NotFound
 from app.routers.navigator import manage_link
-from app.services import dstate
+from app.services import dstate, eligibility_review
 from app.services.bizno import format_bizno
 from app.services.ratelimit import public_rate_limit
 
@@ -24,6 +24,13 @@ STAFF = ("STAFF",)
 class DstateValues(BaseModel):
     values: dict[str, Any] = Field(description="변수 코드: 값. null 이면 그 값을 지움",
                                    examples=[{"PROTOTYPE": "HAVE", "RND_STAFF": 4}])
+
+
+class EligibilityRequest(BaseModel):
+    concern: str | None = Field(default=None, max_length=2000,
+                                description="상담 애로사항·관심분야. 사업 목적 부합 평가에 씀")
+    announcement_ids: list[int] | None = Field(default=None, description="비우면 접수중·접수전 공개 공고 전체")
+    include_closed: bool = False
 
 
 async def _require_company(conn, org_id: int) -> None:
@@ -101,6 +108,17 @@ async def diagnosis_history(org_id: int, _: CurrentUser = Depends(require_roles(
     async with transaction() as conn:
         await _require_company(conn, org_id)
         return await dstate.history(conn, org_id)
+
+
+@router.post("/consult/companies/{org_id}/eligibility")
+async def eligibility(org_id: int, body: EligibilityRequest, _: CurrentUser = Depends(require_roles(*STAFF))):
+    """자격요건 검토 (D-STATE + 자격): 공고별 신청 가능 여부, 적합도 상·중·하, 근거, 보완 포인트, 신청 안내.
+    저장하지 않는다."""
+    async with transaction() as conn:
+        await _require_company(conn, org_id)
+        return await eligibility_review.review(conn, org_id, concern=body.concern,
+                                               announcement_ids=body.announcement_ids,
+                                               include_closed=body.include_closed)
 
 
 @router.get("/manage/dstate", dependencies=[Depends(public_rate_limit)])

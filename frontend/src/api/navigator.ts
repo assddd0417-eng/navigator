@@ -175,6 +175,7 @@ export interface FullProfile {
   tax_delinquent: boolean | null
   insolvent: boolean | null
   rnd_restricted: boolean | null
+  procurement_sanctioned: boolean | null
   defense_goods: boolean | null
   military_supply_krw: number | null
   export_krw: number | null
@@ -235,6 +236,7 @@ export interface ProfileUpdate {
   tax_delinquent?: boolean | null
   insolvent?: boolean | null
   rnd_restricted?: boolean | null
+  procurement_sanctioned?: boolean | null
   defense_goods?: boolean | null
   military_supply_krw?: number | null
   export_krw?: number | null
@@ -532,6 +534,7 @@ export interface ReqDraft {
   source_quote: string | null
   quote_found?: boolean
   origin?: 'MANUAL' | 'AI_EXTRACTED'
+  bonus_points?: number | null
 }
 export interface TechDraft { tech_name: string; description?: string | null; is_core: boolean }
 export interface AnnFields {
@@ -541,6 +544,18 @@ export interface AnnFields {
   support_period_months?: number | null
   target_desc?: string | null
   summary?: string | null
+  company_burden?: string | null
+  submit_documents?: SubmitDoc[] | null
+}
+export interface SubmitDoc { name: string; required: boolean }
+export type EvalKind = 'CAPABILITY' | 'PURPOSE' | 'APPLICATION'
+export interface EvalItem {
+  name: string
+  points: number
+  kind: EvalKind
+  areas: string[]
+  source_quote?: string | null
+  source_page?: number | null
 }
 export interface Extraction {
   extractor: string
@@ -562,6 +577,9 @@ export interface AnnDetail extends AnnouncementRow {
   source_url: string | null
   requirements: (ReqDraft & { id: number; req_type_name: string })[]
   tech_needs: (TechDraft & { id: number })[]
+  eval_items: EvalItem[]
+  company_burden: string | null
+  submit_documents: SubmitDoc[] | null
 }
 export interface RequirementTypes {
   types: { code: string; name_ko: string; rule_example: Record<string, unknown>; description: string | null }[]
@@ -573,7 +591,7 @@ export const getAnnouncementSource = (id: number) => api<AnnSource>(`/navigator/
 export const extractRequirements = (id: number) =>
   api<Extraction>(`/navigator/announcements/${id}/extract`, { method: 'POST' })
 export const getRequirementTypes = () => api<RequirementTypes>('/navigator/announcements/requirement-types')
-export const saveReview = (id: number, body: { fields: AnnFields; requirements: ReqDraft[]; tech_needs: TechDraft[]; confirm: boolean; publish: boolean }) =>
+export const saveReview = (id: number, body: { fields: AnnFields; requirements: ReqDraft[]; tech_needs: TechDraft[]; eval_items?: EvalItem[]; confirm: boolean; publish: boolean }) =>
   api<void>(`/navigator/announcements/${id}/review`, { method: 'PUT', body })
 export const createAnnouncementFromText = (body: { title: string; agency_name?: string; announcement_no?: string; body_text: string; source_url?: string; posted_on?: string }) =>
   api<{ id: number }>('/navigator/announcements/text', { method: 'POST', body })
@@ -679,3 +697,76 @@ export interface MyDstate { variables: DstateVariable[]; missing: string[] }
 export const getMyDstate = (token: string) => api<MyDstate>('/navigator/manage/dstate', manage(token))
 export const saveMyDstate = (token: string, values: DstateValues) =>
   api<MyDstate>('/navigator/manage/dstate', { ...manage(token), method: 'PUT', body: { values } })
+
+// 자격요건 검토 (상담 업무 B)
+export type Tone = 'ok' | 'warn' | 'bad'
+export interface ReviewCheck {
+  requirement_id: number
+  req_type_code: string
+  req_type_name: string
+  description: string
+  is_mandatory: boolean
+  mandatory_label: string
+  result: string
+  result_label: string
+  reason: string
+  question: string | null
+  self_declared: boolean
+  source_quote: string | null
+  source_page: number | null
+  has_basis: boolean
+  bonus_points: number | null
+}
+export interface FitItem {
+  id: number
+  name: string
+  points: number
+  kind: EvalKind
+  kind_label: string
+  areas: string[]
+  level: 'FULL' | 'PARTIAL' | 'LOW' | null
+  level_label: string
+  basis: string
+}
+export interface EligibilityResult {
+  announcement_id: number
+  announcement_no: string
+  title: string
+  agency_name: string
+  program_name: string | null
+  receipt_state: string
+  receipt_start: string | null
+  receipt_end: string | null
+  verdict: 'ELIGIBLE' | 'NEEDS_INFO' | 'INELIGIBLE'
+  q1_label: string
+  q1_text: string
+  checks: ReviewCheck[]
+  fit: {
+    items: FitItem[]
+    score: number | null
+    grade: string | null
+    grade_label: string
+    bonus_points: number
+    hints: { item: string; after_score: number; text: string }[]
+  }
+  todo: { kind: string; text: string; question: string | null }[]
+  guide: {
+    support_amount_krw: number | null
+    support_period_months: number | null
+    company_burden: string | null
+    submit_documents: SubmitDoc[]
+    text: string
+  }
+}
+export interface EligibilityReview {
+  organization_id: number
+  company_name?: string
+  as_of?: string
+  concern: string | null
+  diagnosis?: { total_score: number; state_label: string }
+  summary: Record<'ELIGIBLE' | 'NEEDS_INFO' | 'INELIGIBLE', number>
+  results: EligibilityResult[]
+  notice?: string
+}
+export const reviewEligibility = (orgId: number, body: { concern?: string; include_closed?: boolean }) =>
+  api<EligibilityReview>(`/navigator/consult/companies/${orgId}/eligibility`, { method: 'POST', body })

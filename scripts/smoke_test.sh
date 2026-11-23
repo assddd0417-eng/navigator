@@ -130,7 +130,7 @@ api "이미 등록된 사업자번호 재등록 거부" 409 POST /navigator/comp
 section "③ 공고 (seeds/navigator_announcements.sql 필요)"
 api "공고 목록 (로그인 없음)" 200 GET "/navigator/announcements?q=%EA%B0%80%EC%83%81" -
 check "가상 공고 5건, 105 는 마감" \
-    '([.[] | select(.announcement_no | startswith("NAV-2026-"))] | length) == 5
+    '([.[] | select(.announcement_no | test("^NAV-2026-10[1-5]$"))] | length) == 5
      and any(.[]; .announcement_no == "NAV-2026-105" and .receipt_state == "CLOSED")'
 api "공고 상세 (자격요건·요구기술)" 200 GET /navigator/announcements/101 -
 check "자격요건 8줄 (필수 5·우대 3) · 요구기술 2" \
@@ -229,5 +229,10 @@ api "D-STATE 진단 (한빛)" 201 POST /navigator/consult/companies/101/dstate "
 check "6개 영역 · 방산진입 준비기업 · 이력 저장" \
     '(.areas | length) == 6 and .state_type == "DEFENSE_ENTRY" and .diagnosis_id > 0'
 api "진단은 담당자만 (VIEWER)" 403 GET /navigator/consult/companies/101/dstate "$VIEWER"
+api "자격요건 검토 (한빛 · 컨설팅 공고)" 200 POST /navigator/consult/companies/101/eligibility "$STAFF" \
+    '{"concern":"품질체계 구축과 군 수요처 확보"}'
+check "접수 공고 판정 · 적합도 등급 · 신청 안내" \
+    '(.results | length) >= 2 and (.results[] | select(.announcement_no == "NAV-2026-101") | .fit.grade) != null
+     and (.results[] | select(.announcement_no == "NAV-2026-107") | .guide.company_burden) == "컨설팅 비용 25%"'
 
 summary

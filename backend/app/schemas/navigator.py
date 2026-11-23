@@ -96,6 +96,7 @@ class ProfileFields(BaseModel):
     tax_delinquent: bool | None = None
     insolvent: bool | None = None
     rnd_restricted: bool | None = None
+    procurement_sanctioned: bool | None = None
     # 방산·수출 실적
     defense_goods: bool | None = None
     military_supply_krw: int | None = Field(default=None, ge=0, description="최근 3년 군 납품(조달) 실적 합계 (원)")

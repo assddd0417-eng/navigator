@@ -273,6 +273,7 @@ export function CompanyInfoForm({ profile, missing = [], token, identity, setIde
     employee_count: s(profile?.employee_count), annual_revenue_krw: s(profile?.annual_revenue_krw),
     revenue_year: s(profile?.revenue_year), region: s(profile?.region), address: s(profile?.address),
     tax_delinquent: s(profile?.tax_delinquent), insolvent: s(profile?.insolvent), rnd_restricted: s(profile?.rnd_restricted),
+    procurement_sanctioned: s(profile?.procurement_sanctioned),
     defense_goods: s(profile?.defense_goods), military_supply_krw: s(profile?.military_supply_krw),
     export_krw: s(profile?.export_krw), export_year: s(profile?.export_year),
   })
@@ -303,7 +304,7 @@ export function CompanyInfoForm({ profile, missing = [], token, identity, setIde
       employee_count: f.employee_count ? Number(f.employee_count) : null,
       annual_revenue_krw: f.annual_revenue_krw ? Number(f.annual_revenue_krw) : null,
       revenue_year: f.revenue_year ? Number(f.revenue_year) : null, region: orNull(f.region), address: orNull(f.address),
-      tax_delinquent: tri(f.tax_delinquent), insolvent: tri(f.insolvent), rnd_restricted: tri(f.rnd_restricted),
+      tax_delinquent: tri(f.tax_delinquent), insolvent: tri(f.insolvent), rnd_restricted: tri(f.rnd_restricted), procurement_sanctioned: tri(f.procurement_sanctioned),
       defense_goods: tri(f.defense_goods), military_supply_krw: num(f.military_supply_krw),
       export_krw: num(f.export_krw), export_year: num(f.export_year),
       certifications: certs.filter((c) => c.cert_type_code).map((c) => ({ cert_type_code: c.cert_type_code,
@@ -418,7 +419,7 @@ export function CompanyInfoForm({ profile, missing = [], token, identity, setIde
       <Card title="결격사유·실적" actions={<span className="small muted">공고 대부분이 이 항목으로 신청 자격을 거릅니다. 모르면 비워 두세요</span>}>
         <div className="form">
           <div className="form-row">
-            {([['tax_delinquent', '국세·지방세 체납'], ['insolvent', '부도·자본잠식'], ['rnd_restricted', '국가 R&D 참여제한']] as const).map(([k, label]) => (
+            {([['tax_delinquent', '국세·지방세 체납'], ['insolvent', '부도·자본잠식'], ['rnd_restricted', '국가 R&D 참여제한'], ['procurement_sanctioned', '부정당제재']] as const).map(([k, label]) => (
               <label key={k}>{label}
                 <select value={f[k]} onChange={set(k)}>
                   <option value="">모름</option><option value="false">해당 없음</option><option value="true">해당</option>

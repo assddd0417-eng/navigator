@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import {
-  getDiagnosisHistory, getDstateRules, previewDstate, runDstate, saveStaffDstateValues, searchConsultCompanies,
-  type ConsultCompany, type DstateResult, type DstateVariable,
+  getDiagnosisHistory, getDstateRules, previewDstate, reviewEligibility, runDstate, saveStaffDstateValues, searchConsultCompanies,
+  type ConsultCompany, type DstateResult, type EligibilityReview, type DstateVariable,
 } from '../../api/navigator'
 import { changedValues, DstateInput } from '../../components/DstateInput'
 import { RadarChart } from '../../components/RadarChart'
 import { useToast } from '../../components/Toast'
+import { EligibilityPanel } from './EligibilityPanel'
 import { Card, Empty, fmtDate, PageHeader, useAction, useAsync } from '../../components/ui'
 
 type Task = 'A' | 'B' | 'C'
@@ -13,12 +14,12 @@ type ResultTab = 'dstate' | 'qualify' | 'route'
 
 const TASKS: { code: Task; label: string; ready: boolean }[] = [
   { code: 'A', label: 'A. D-STATE 진단', ready: true },
-  { code: 'B', label: 'B. 자격요건 검토 (A+B)', ready: false },
+  { code: 'B', label: 'B. 자격요건 검토 (A+B)', ready: true },
   { code: 'C', label: 'C. 종합 성장경로 (A+B+C)', ready: false },
 ]
 const RESULT_TABS: { code: ResultTab; label: string; ready: boolean }[] = [
   { code: 'dstate', label: 'D-STATE 진단결과', ready: true },
-  { code: 'qualify', label: '자격요건 검토', ready: false },
+  { code: 'qualify', label: '자격요건 검토', ready: true },
   { code: 'route', label: 'D-ROUTE 성장경로', ready: false },
 ]
 
@@ -32,13 +33,16 @@ export function ConsultPage() {
   const [task, setTask] = useState<Task>('A')
   const [tab, setTab] = useState<ResultTab>('dstate')
   const [result, setResult] = useState<DstateResult | null>(null)
+  const [concern, setConcern] = useState('')
+  const [includeClosed, setIncludeClosed] = useState(false)
+  const [elig, setElig] = useState<EligibilityReview | null>(null)
   const [histKey, setHistKey] = useState(0)
   const { busy, run } = useAction()
   const toast = useToast()
 
   useEffect(() => {
     if (orgId == null) return
-    setResult(null)
+    setResult(null); setElig(null)
     void run(async () => setResult(await previewDstate(orgId)))
   }, [orgId, run])
 
@@ -46,6 +50,10 @@ export function ConsultPage() {
   const execute = () => run(async () => {
     setResult(await runDstate(orgId!))
     setHistKey((k) => k + 1)
+    if (task === 'B') {
+      setElig(await reviewEligibility(orgId!, { concern: concern.trim() || undefined, include_closed: includeClosed }))
+      setTab('qualify')
+    }
     toast.show({ kind: 'success', title: '진단을 저장했습니다', message: '진단 이력에서 볼 수 있습니다.' })
   })
 
@@ -74,8 +82,17 @@ export function ConsultPage() {
               </li>
             ))}
           </ul>
+          <label className="small muted" style={{ display: 'block', margin: '14px 0 6px' }}>상담 내용 (애로사항·관심분야)
+            <textarea rows={3} value={concern} onChange={(e) => setConcern(e.target.value)}
+              placeholder="사업 목적 부합 평가에 씁니다. 비워도 됩니다." />
+          </label>
+          {task === 'B' && (
+            <label className="check small" style={{ marginTop: 8 }}>
+              <input type="checkbox" checked={includeClosed} onChange={(e) => setIncludeClosed(e.target.checked)} /> 마감 공고 포함
+            </label>
+          )}
           <button className="btn btn-primary" style={{ marginTop: 12, width: '100%' }}
-            disabled={busy || orgId == null || task !== 'A'} onClick={() => void execute()}>
+            disabled={busy || orgId == null || task === 'C'} onClick={() => void execute()}>
             {busy ? '진단 중…' : '실행'}
           </button>
         </Card>
@@ -92,6 +109,8 @@ export function ConsultPage() {
               {tab === 'dstate' && (!result ? <div className="page-loading">불러오는 중…</div> : (
                 <DstatePanel result={result} company={company} onChange={setResult} orgId={orgId} />
               ))}
+              {tab === 'qualify' && (elig ? <EligibilityPanel data={elig} />
+                : <Card><Empty>검토 업무 B를 고르고 실행하면 결과가 나옵니다.</Empty></Card>)}
               {tab === 'dstate' && <HistoryCard key={`${orgId}-${histKey}`} orgId={orgId} />}
             </>
           )}

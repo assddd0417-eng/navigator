@@ -14,7 +14,7 @@ BUSINESS_STATUS_LABEL = {"ACTIVE": "계속사업자", "SUSPENDED": "휴업", "CL
 
 PROFILE_FIELDS = ("main_business", "homepage", "company_size", "established_on", "employee_count",
                   "annual_revenue_krw", "revenue_year", "region", "address",
-                  "tax_delinquent", "insolvent", "rnd_restricted", "defense_goods", "military_supply_krw",
+                  "tax_delinquent", "insolvent", "rnd_restricted", "procurement_sanctioned", "defense_goods", "military_supply_krw",
                   "export_krw", "export_year")
 
 LIST_TABLES = {

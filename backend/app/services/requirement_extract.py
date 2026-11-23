@@ -163,8 +163,12 @@ def extract_rules(text: str, posted_on: date | None = None) -> Extraction:
                 checks.setdefault("TAX_DELINQUENT", t)
             if re.search(r"부도|채무\s*불이행|자본\s*잠식|법정\s*관리|파산", t):
                 checks.setdefault("INSOLVENT", t)
-            if re.search(r"참여\s*제한|입찰\s*참가\s*자격\s*제한", t):
+            if "부정당" in t:
+                checks.setdefault("PROCUREMENT_SANCTIONED", t)
+            elif re.search(r"참여\s*제한|입찰\s*참가\s*자격\s*제한", t):
                 checks.setdefault("RND_RESTRICTED", t)
+            if ln.section == "LIMIT" and re.search(r"중복\s*(지원|수혜|참여|선정)|동일\s*(사업|과제|분야)", t):
+                add("DUPLICATE_SUPPORT", {"within_years": 1}, True, "같은 사업 중복 수혜 없음", t)
         # "본사, 기업부설연구소 또는 공장이 있는 기업" 은 소재지 설명이지 인증 조건이 아니다
         if (ln.section in ("QUALIFY", "PREFER") or _SEC_PREFER.search(t)) and not re.search(r"본사|공장|사업장", t):
             for pat, code in _CERTS:
@@ -200,7 +204,8 @@ def extract_rules(text: str, posted_on: date | None = None) -> Extraction:
             add("REQUIRED_CERT", {"any_of": preferred}, False, _cert_label(preferred) + " 보유 우대",
                 certs[preferred[0]][1])
     if checks:
-        names = {"TAX_DELINQUENT": "체납", "INSOLVENT": "부도·채무불이행", "RND_RESTRICTED": "참여제한"}
+        names = {"TAX_DELINQUENT": "체납", "INSOLVENT": "부도·채무불이행", "RND_RESTRICTED": "참여제한",
+                 "PROCUREMENT_SANCTIONED": "부정당제재"}
         order = [c for c in names if c in checks]
         add("NO_DISQUALIFICATION", {"checks": order}, True,
             "·".join(names[c] for c in order) + " 없음", checks[order[0]])
@@ -335,7 +340,7 @@ def _user_prompt(text: str, posted_on: date | None, codes: list[dict], certs: li
             f"REQUIRED_CERT any_of 에 쓸 인증 코드: {cert_lines}\n"
             f"COMPANY_SIZE allowed 값: LARGE, MIDSIZE, SME, STARTUP, VENTURE (중소기업이면 SME·STARTUP·VENTURE 모두)\n"
             f"NO_DISQUALIFICATION checks 값: TAX_DELINQUENT(체납), INSOLVENT(부도·채무불이행·자본잠식), "
-            f"RND_RESTRICTED(국가 R&D·입찰 참여제한)\n\n"
+            f"RND_RESTRICTED(국가 R&D·입찰 참여제한), PROCUREMENT_SANCTIONED(부정당제재)\n\n"
             f"공고문:\n{text[:MAX_LLM_CHARS]}")
 
 

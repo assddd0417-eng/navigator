@@ -20,6 +20,7 @@ from app.services.eligibility import (
     Patent,
     Requirement,
     Rnd,
+    Support,
     judge,
     overall,
 )
@@ -72,8 +73,9 @@ class Scored:
 
 async def load_announcements(conn: AsyncConnection, ann_ids: list[int]) -> dict[int, AnnInfo]:
     rows = await (await conn.execute(
-        "SELECT id, title, agency_name, receipt_end, receipt_state FROM ax.v_announcement WHERE id = ANY(%s)",
-        (ann_ids,))).fetchall()
+        "SELECT id, title, agency_name, receipt_end, receipt_state, series_key, program_id, program_name "
+        "FROM ax.v_announcement WHERE id = ANY(%s)", (ann_ids,))).fetchall()
+    ctx = {r["id"]: r for r in rows}
     anns = {r["id"]: AnnInfo(r["id"], r["title"], r["agency_name"], r["receipt_end"] or date.today(),
                              r["receipt_state"], r["receipt_end"]) for r in rows}
     ranks = {r["grade"]: r["rank"] for r in await (await conn.execute(
@@ -86,6 +88,10 @@ async def load_announcements(conn: AsyncConnection, ann_ids: list[int]) -> dict[
         rule = dict(r["rule"])
         if r["req_type_code"] == "MIN_CREDIT_GRADE":
             rule["min_rank"] = ranks.get(rule.get("min_grade"), 99)
+        if r["req_type_code"] == "DUPLICATE_SUPPORT":   # 같은 사업 판단에 쓰는 공고 정보
+            x = ctx[r["announcement_id"]]
+            rule.update(_announcement_id=x["id"], _title=x["title"], _series_key=x["series_key"], _program_id=x["program_id"],
+                        _program_name=x["program_name"])
         a = anns[r["announcement_id"]]
         a.requirements.append(Requirement(r["id"], r["req_type_code"], rule, r["is_mandatory"], r["description"]))
         a.req_meta[r["id"]] = {"type_name": r["name_ko"], "evidence_id": r["evidence_id"],
@@ -102,13 +108,14 @@ async def load_companies(conn: AsyncConnection, org_ids: list[int]) -> dict[int,
         """SELECT o.id, o.name, cp.company_size, COALESCE(cp.opened_on, cp.established_on) AS opened_on, cp.region,
                   cp.employee_count, cp.annual_revenue_krw, cp.business_status, cp.is_defense_company,
                   cp.tax_delinquent, cp.insolvent, cp.rnd_restricted, cp.defense_goods, cp.military_supply_krw,
-                  cp.export_krw
+                  cp.export_krw, cp.procurement_sanctioned
              FROM ax.organization o JOIN ax.company_profile cp ON cp.organization_id = o.id
             WHERE o.id = ANY(%s)""", (org_ids,))).fetchall()
     facts = {r["id"]: CompanyFacts(r["id"], r["name"], r["company_size"], r["opened_on"], r["region"],
                                    r["employee_count"], r["annual_revenue_krw"], r["business_status"],
                                    r["is_defense_company"], r["tax_delinquent"], r["insolvent"], r["rnd_restricted"],
-                                   r["defense_goods"], r["military_supply_krw"], r["export_krw"]) for r in rows}
+                                   r["defense_goods"], r["military_supply_krw"], r["export_krw"],
+                                   r["procurement_sanctioned"]) for r in rows}
     # 외부 확인값 우선
     for r in await (await conn.execute(
             """SELECT organization_id, field_name, preferred_value FROM ax.v_company_field_compare
@@ -133,6 +140,13 @@ async def load_companies(conn: AsyncConnection, org_ids: list[int]) -> dict[int,
             "SELECT organization_id, status, ipc_codes, title FROM ax.company_patent WHERE organization_id = ANY(%s)",
             (org_ids,))).fetchall():
         facts[r["organization_id"]].patents.append(Patent(r["status"], list(r["ipc_codes"] or []), r["title"]))
+    for r in await (await conn.execute(
+            """SELECT s.organization_id, s.program_name, s.year, s.result, a.series_key, a.program_id, s.announcement_id
+                 FROM ax.company_support_history s LEFT JOIN ax.announcement a ON a.id = s.announcement_id
+                WHERE s.organization_id = ANY(%s)""", (org_ids,))).fetchall():
+        facts[r["organization_id"]].support.append(
+            Support(r["program_name"], r["year"], r["result"], r["series_key"], r["program_id"],
+                    r["announcement_id"]))
     for org_id in facts:
         facts[org_id].rnd = [Rnd(x["role"], x["end_date"], x["title"]) for x in await rnd_facts(conn, org_id)]
     for r in await (await conn.execute(
