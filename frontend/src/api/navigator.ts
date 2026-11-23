@@ -720,6 +720,7 @@ export interface ReviewCheck {
   judged_label?: string
   ai_reason?: string | null
   ai_quote?: string | null
+  regulation_ref?: string | null
 }
 export interface FitItem {
   id: number
@@ -749,6 +750,13 @@ export interface AiJudgeInfo {
 }
 export interface EligibilityResult {
   ai?: AiJudgeInfo | null
+  regulations?: { ref: string; text: string; confirmed_at: string | null }[]
+  criteria?: {
+    requirements_confirmed_at: string | null
+    announcement_updated_at: string | null
+    regulations_confirmed_at: string | null
+    unconfirmed_regulations: string[]
+  }
   announcement_id: number
   announcement_no: string
   title: string
@@ -1100,3 +1108,79 @@ export interface AiCallList {
 }
 export const listAiCalls = (purpose = '', limit = 100) =>
   api<AiCallList>(`/navigator/ai/calls?limit=${limit}${purpose ? `&purpose=${encodeURIComponent(purpose)}` : ''}`)
+
+// 운영규정·지침
+export type RegulationCheck = 'TAX_DELINQUENT' | 'INSOLVENT' | 'RND_RESTRICTED' | 'PROCUREMENT_SANCTIONED' | 'DUPLICATE'
+export const REGULATION_CHECKS: { code: RegulationCheck; label: string }[] = [
+  { code: 'TAX_DELINQUENT', label: '국세·지방세 체납' },
+  { code: 'INSOLVENT', label: '부도·자본잠식' },
+  { code: 'RND_RESTRICTED', label: '국가 R&D 참여제한' },
+  { code: 'PROCUREMENT_SANCTIONED', label: '부정당제재' },
+  { code: 'DUPLICATE', label: '중복지원 제한' },
+]
+export interface RegulationArticleIn {
+  article_no: string
+  title: string | null
+  body: string
+  checks: RegulationCheck[]
+  within_years: number | null
+}
+export interface RegulationArticle extends RegulationArticleIn {
+  id: number
+  check_labels: string[]
+  ref: string
+}
+export interface RegulationSummary {
+  id: number
+  title: string
+  kind: 'COMMON' | 'PROGRAM'
+  kind_label: string
+  program_id: number | null
+  program_name: string | null
+  version_label: string | null
+  effective_on: string | null
+  is_active: boolean
+  confirmed_at: string | null
+  owner_dept_name: string | null
+  article_count: number
+  limit_count: number
+}
+export interface Regulation extends Omit<RegulationSummary, 'article_count' | 'limit_count'> {
+  source_url: string | null
+  confirmed_by_name: string | null
+  articles: RegulationArticle[]
+}
+export interface RegulationHit {
+  id: number
+  ref: string
+  regulation_id: number
+  kind: string
+  body: string
+  check_labels: string[]
+  score: number
+  confirmed_at: string | null
+}
+export interface RegulationBody {
+  title: string
+  kind: 'COMMON' | 'PROGRAM'
+  program_id?: number | null
+  version_label?: string
+  effective_on?: string
+  source_url?: string
+  text?: string
+  articles?: RegulationArticleIn[]
+}
+export const listRegulations = () => api<RegulationSummary[]>('/navigator/regulations')
+export const getRegulation = (id: number) => api<Regulation>(`/navigator/regulations/${id}`)
+export const searchRegulations = (q: string, programId?: number) =>
+  api<RegulationHit[]>('/navigator/regulations/search', { query: { q, program_id: programId } })
+export const previewRegulation = (text: string) =>
+  api<RegulationArticle[]>('/navigator/regulations/preview', { method: 'POST', body: { text } })
+export const createRegulation = (body: RegulationBody) =>
+  api<Regulation>('/navigator/regulations', { method: 'POST', body })
+export const updateRegulation = (id: number, body: Partial<Pick<RegulationBody, 'title' | 'version_label' | 'effective_on' | 'source_url' | 'articles'>> & { is_active?: boolean }) =>
+  api<Regulation>(`/navigator/regulations/${id}`, { method: 'PUT', body })
+export const confirmRegulation = (id: number) =>
+  api<Regulation>(`/navigator/regulations/${id}/confirm`, { method: 'POST' })
+export const deleteRegulation = (id: number) =>
+  api<void>(`/navigator/regulations/${id}`, { method: 'DELETE' })

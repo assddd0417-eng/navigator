@@ -8,6 +8,7 @@ import { ToastProvider } from './components/Toast'
 import { AccessPage } from './pages/admin/AccessPage'
 import { PromptsPage } from './pages/admin/PromptsPage'
 import { AiCallsPage } from './pages/admin/AiCallsPage'
+import { RegulationsPage } from './pages/admin/RegulationsPage'
 import { RouteRulesPage } from './pages/admin/RouteRulesPage'
 import { ServicePage } from './pages/admin/ServicePage'
 import { AnnouncementReviewPage } from './pages/admin/AnnouncementReviewPage'
@@ -54,6 +55,7 @@ export default function App() {
               <Route path="/staff/service" element={<ServicePage />} />
               <Route path="/staff/announcements" element={<Only roles={['STAFF', 'PROGRAM_OWNER']}><AnnouncementReviewPage /></Only>} />
               <Route path="/staff/route-rules" element={<RouteRulesPage />} />
+              <Route path="/staff/regulations" element={<RegulationsPage />} />
               <Route path="/staff/access" element={<Only roles={['AX_ADMIN']}><AccessPage /></Only>} />
               <Route path="/staff/prompts" element={<PromptsPage />} />
               <Route path="/staff/ai-calls" element={<Only roles={['AX_ADMIN']}><AiCallsPage /></Only>} />

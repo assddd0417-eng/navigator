@@ -13,7 +13,7 @@ from datetime import date
 from psycopg import AsyncConnection
 
 from app.config import get_settings
-from app.services import ai_gateway, ai_judge, dstate, fit
+from app.services import ai_gateway, ai_judge, dstate, fit, regulation
 from app.services.eligibility import RESULT_KO, judge, overall
 from app.services.embedding import embed_query
 from app.services.levels import sim_levels
@@ -57,7 +57,8 @@ async def _ann_extra(conn: AsyncConnection, ann_ids: list[int]) -> dict[int, dic
     rows = await (await conn.execute(
         """SELECT a.id, a.announcement_no, a.program_name, a.summary, a.support_amount_krw, a.support_period_months,
                   a.receipt_start, a.receipt_end, a.receipt_state, x.company_burden, x.submit_documents,
-                  x.body_text, p.purpose
+                  x.body_text, x.program_id, x.series_key, x.requirements_confirmed_at, x.updated_at AS ann_updated_at,
+                  p.purpose
              FROM ax.v_announcement a JOIN ax.announcement x ON x.id = a.id
              LEFT JOIN ax.program p ON p.id = x.program_id WHERE a.id = ANY(%s)""",
         (ann_ids,))).fetchall()
@@ -92,7 +93,7 @@ async def review(conn: AsyncConnection, org_id: int, *, concern: str | None = No
     purpose = await purpose_fit(conn, concern, ann_ids)
     use_ai = ai_gateway.mode() == "llm"
     ai_left = get_settings().ai_judge_max_announcements
-    extra_basis = await regulation_basis(conn, concern)
+    limits_by_prog: dict[int | None, list[dict]] = {}
 
     results = []
     for ann_id in ann_ids:
@@ -100,11 +101,19 @@ async def review(conn: AsyncConnection, org_id: int, *, concern: str | None = No
         if ann is None:
             continue
         x = extra[ann_id]
-        checks = [(req, judge(req, org, ann.as_of)) for req in ann.requirements]
+        if x["program_id"] not in limits_by_prog:
+            limits_by_prog[x["program_id"]] = await regulation.limit_articles(conn, x["program_id"])
+        common = regulation.common_requirements(limits_by_prog[x["program_id"]], ann.requirements,
+                                                {"id": ann_id, "title": ann.title, "series_key": x["series_key"],
+                                                 "program_id": x["program_id"], "program_name": x["program_name"]})
+        reqs = ann.requirements + [r for r, _ in common]
+        meta_of = {**ann.req_meta, **{r.id: {"type_name": "공통 참여제한", "quote": f"{a['ref']}: {a['body'][:300]}",
+                                              "page": None, "regulation": a["ref"]} for r, a in common}}
+        checks = [(req, judge(req, org, ann.as_of)) for req in reqs]
         verdict = overall(checks)
         rows = []
         for req, ch in checks:
-            meta = ann.req_meta[req.id]
+            meta = meta_of[req.id]
             rows.append({
                 "requirement_id": req.id, "req_type_code": req.req_type, "req_type_name": meta["type_name"],
                 "description": req.description, "is_mandatory": req.is_mandatory,
@@ -114,14 +123,17 @@ async def review(conn: AsyncConnection, org_id: int, *, concern: str | None = No
                 "source_quote": meta["quote"], "source_page": meta["page"],
                 "has_basis": bool(meta["quote"]),
                 "bonus_points": x["bonus"].get(req.id),
+                "regulation_ref": meta.get("regulation"),
             })
+        query = " ".join([ann.title] + [r["description"] for r in rows if r["is_mandatory"]] + [concern or ""])
+        regs = await regulation.basis_for(conn, program_id=x["program_id"], query=query)
         ai = None
         ann_purpose = purpose.get(ann_id) if concern else None
         if use_ai and ai_left > 0 and rows:
             ai_left -= 1
             j = await ai_judge.judge(conn, org=org, diag=diagnosis, ann_id=ann_id, title=ann.title,
                                      purpose_text=x["purpose"] or x["summary"], rows=rows, concern=concern,
-                                     body=x["body_text"], attachments=x["attachments"], extra_basis=extra_basis,
+                                     body=x["body_text"], attachments=x["attachments"], extra_basis=regs,
                                      user_id=user_id)
             rows, ai = j["rows"], j["ai"]
             verdict = verdict_of(rows)
@@ -154,6 +166,14 @@ async def review(conn: AsyncConnection, org_id: int, *, concern: str | None = No
                       "text": _guide_text(x, docs)},
             "unsupported": [r["requirement_id"] for r in rows if not r["has_basis"]],
             "ai": ai,
+            "regulations": [{"ref": g["ref"], "text": g["text"][:300], "confirmed_at": g["confirmed_at"]}
+                            for g in regs[:3]],
+            "criteria": {"requirements_confirmed_at": x["requirements_confirmed_at"],
+                         "announcement_updated_at": x["ann_updated_at"],
+                         "regulations_confirmed_at": min((g["confirmed_at"] for g in regs if g["confirmed_at"]),
+                                                         default=None),
+                         "unconfirmed_regulations": sorted({g["regulation_title"] for g in regs
+                                                            if not g["confirmed_at"]})},
         })
     results.sort(key=lambda r: (ORDER[r["verdict"]], -(r["fit"]["score"] or -1), r["announcement_id"]))
     return {
@@ -174,11 +194,6 @@ def verdict_of(rows: list[dict]) -> str:
     if "UNKNOWN" in mand:
         return "NEEDS_INFO"
     return "ELIGIBLE"
-
-
-async def regulation_basis(conn: AsyncConnection, concern: str | None) -> list[dict]:
-    """운영규정·지침 조문 근거. 조문 등록 기능이 들어오면 여기서 찾는다."""
-    return []
 
 
 def _guide_text(x: dict, docs: list[dict]) -> str:
