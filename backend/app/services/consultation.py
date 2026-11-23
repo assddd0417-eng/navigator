@@ -2,8 +2,10 @@
 
   상담 실행   D-STATE 진단(이력 저장) + 업무 B·C 면 자격요건 검토 + 업무 C 면 성장경로. 결과 스냅샷과
               상담결과서 초안을 consultation 에 저장한다.
-  결과서      템플릿 문장으로 초안을 만들고, AI 판단을 켜면 LLM 이 문장만 다듬는다 (새 숫자·약속 표현이 생기면
-              그 항목은 템플릿 문장을 쓴다). 초안(draft)은 고치지 않고 남긴다. 담당자는 report 를 고친다.
+  AI 호출     ISP 처리구조 기준. 진단(A) 0회, 자격요건(B) 1회(자격 판단), 종합(C) 2회(자격 판단 + 결과서 초안).
+              부른 호출은 ai_call_log.consultation_id 로 상담에 묶는다.
+  결과서      템플릿 문장으로 초안을 만들고, 종합 상담에서 AI 판단을 켜면 LLM 이 문장만 다듬는다 (새 숫자·약속
+              표현이 생기면 그 항목은 템플릿 문장을 쓴다). 초안(draft)은 고치지 않고 남긴다. 담당자는 report 를 고친다.
   판정 수정   담당자가 공고별 신청 가능 여부를 바꾸면 사유와 함께 overrides 에 남긴다.
   확정        확정한 상담만 기업 화면에 보인다. 확정 후에는 고치지 않는다 (새로 상담).
   이력 점검   초안과 다르게 고친 결과서 항목, 판정 수정 사례를 모아 기준 보정에 쓴다.
@@ -19,6 +21,7 @@ from psycopg.types.json import Jsonb
 from app.services import ai_gateway, consult_evidence, dstate, eligibility_review, mailer, route
 
 TASK_KO = {"A": "D-STATE 진단", "B": "자격요건 검토", "C": "종합 성장경로"}
+AI_CALLS = {"A": 0, "B": 1, "C": 2}     # ISP 처리구조의 상담 업무별 LLM 호출 수
 STATUS_KO = {"DRAFT": "검토 중", "CONFIRMED": "확정"}
 REQUEST_KO = {"REQUESTED": "요청", "IN_PROGRESS": "상담 중", "DONE": "완료", "CANCELED": "취소"}
 VERDICTS = ("ELIGIBLE", "NEEDS_INFO", "INELIGIBLE")
@@ -122,10 +125,10 @@ def check_polished(draft: list[dict], out: dict | None) -> tuple[dict[str, str],
 
 
 async def polish_report(conn: AsyncConnection, report: list[dict], *, org_id: int, company_name: str | None,
-                        user_id: int | None) -> tuple[list[dict], dict]:
+                        user_id: int | None, use_ai: bool = True) -> tuple[list[dict], dict]:
     """결과서 초안 문장 다듬기. 기업 이름은 [기업]으로 바꿔 보낸다. LLM 을 못 쓰면 템플릿 문장 그대로."""
     marked = [{**s, "drafted_by": "TEMPLATE"} for s in report]
-    if ai_gateway.mode() != "llm":
+    if not use_ai or ai_gateway.mode() != "llm":
         return marked, {"status": "FALLBACK", "log_id": None, "blocked": []}
     hide = (lambda t: t.replace(company_name, COMPANY)) if company_name else (lambda t: t)
     send = [{"key": s["key"], "title": s["title"], "text": hide(s["text"])}
@@ -145,7 +148,7 @@ async def polish_report(conn: AsyncConnection, report: list[dict], *, org_id: in
 # ---------- 상담 실행 ----------
 
 async def run(conn: AsyncConnection, org_id: int, *, task: str, concern: str | None, request_id: int | None,
-              user_id: int, evidence_ids: list[int] | None = None) -> dict:
+              user_id: int, evidence_ids: list[int] | None = None, include_closed: bool = False) -> dict:
     if request_id is not None:
         req = await (await conn.execute(
             "SELECT organization_id, status, concern FROM ax.consult_request WHERE id = %s",
@@ -157,24 +160,31 @@ async def run(conn: AsyncConnection, org_id: int, *, task: str, concern: str | N
     diag = await dstate.run(conn, org_id, save=True, user_id=user_id, reuse_same=True)
     elig = rt = None
     if task in ("B", "C"):
-        elig = await eligibility_review.review(conn, org_id, concern=concern, diagnosis=diag, user_id=user_id)
+        elig = await eligibility_review.review(conn, org_id, concern=concern, diagnosis=diag, user_id=user_id,
+                                               include_closed=include_closed)
     if task == "C":
         rt = await route.build(conn, org_id, concern=concern, diagnosis=diag, review=elig, user_id=user_id)
     snap = _diag_snapshot(diag)
-    report, _ = await polish_report(conn, build_report(snap, elig, rt, concern), org_id=org_id,
-                                    company_name=snap.get("company_name"), user_id=user_id)
+    report, polished = await polish_report(conn, build_report(snap, elig, rt, concern), org_id=org_id,
+                                           company_name=snap.get("company_name"), user_id=user_id,
+                                           use_ai=task == "C")
     row = await (await conn.execute(
         """INSERT INTO ax.consultation (organization_id, request_id, task, concern, diagnosis_id, diagnosis,
-                                        eligibility, route, draft, report, created_by)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                                        eligibility, route, draft, report, created_by, ai_mode)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
         (org_id, request_id, task, concern, diag["diagnosis_id"], Jsonb(jsonable_encoder(snap)),
          Jsonb(jsonable_encoder(elig)) if elig is not None else None,
          Jsonb(jsonable_encoder(rt)) if rt is not None else None,
-         Jsonb(report), Jsonb(report), user_id))).fetchone()
+         Jsonb(report), Jsonb(report), user_id, ai_gateway.mode()))).fetchone()
     if request_id is not None:
         await conn.execute(
             """UPDATE ax.consult_request SET status = 'IN_PROGRESS', handled_by = %s, updated_at = now()
                 WHERE id = %s AND status = 'REQUESTED'""", (user_id, request_id))
+    log_ids = {r["ai"]["log_id"] for r in (elig or {}).get("results", []) if r.get("ai")} | {polished["log_id"]}
+    log_ids.discard(None)
+    if log_ids:
+        await conn.execute("UPDATE ax.ai_call_log SET consultation_id = %s WHERE id = ANY(%s)",
+                           (row["id"], sorted(log_ids)))
     await consult_evidence.link(conn, org_id, row["id"], evidence_ids or [])
     return await get(conn, row["id"])
 

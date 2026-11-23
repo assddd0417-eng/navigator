@@ -34,8 +34,8 @@ class Settings(BaseSettings):
     llm_provider: str = "anthropic"   # anthropic | openai
     llm_model: str = ""               # 비우면 제공자 기본값 (DEFAULT_LLM_MODELS)
     llm_effort: str = "medium"        # low | medium | high | xhigh | max (비우면 보내지 않음)
-    llm_max_tokens: int = 4000        # 사고(thinking) 토큰 포함 상한
-    llm_timeout_s: float = 60.0
+    llm_max_tokens: int = 8000        # 사고(thinking) 토큰 포함 상한. 자격 판단은 공고 여러 건을 한 번에 받음
+    llm_timeout_s: float = 120.0
     llm_max_retries: int = 2
     llm_server_fallback: bool = True  # 거절 시 서버측 대체 모델 (Claude API 전용, Bedrock 등에서는 false)
     anthropic_api_key: str | None = None  # 비우면 SDK 가 ANTHROPIC_API_KEY 환경변수 등에서 찾음
@@ -44,7 +44,8 @@ class Settings(BaseSettings):
     # 상담 AI 판단 (자격 판단·사업 목적 부합·결과서 문장): "rules"(기본) = 규칙·템플릿만 / "llm" / "auto"
     # llm·auto 는 기업정보(이름·사업자번호 제외)를 LLM 제공자에 보낸다. 기관 내부 LLM 에 붙일 때 켠다
     ai_judge_mode: str = "rules"
-    ai_judge_max_announcements: int = 8   # 상담 한 번에 LLM 으로 판단할 공고 수 상한 (나머지는 규칙)
+    ai_judge_max_announcements: int = 8   # 자격 판단 한 번(LLM 1회)에 묶어 보내는 공고 수 상한 (나머지는 규칙)
+    report_font_path: str = ""          # 상담결과서 PDF 한글 글꼴(TTF). 비우면 나눔고딕·맑은 고딕·애플고딕 순으로 찾음
     ai_cache_hours: int = 24              # 같은 입력·같은 프롬프트 버전이면 이 시간 안의 결과를 다시 씀
 
     # 기업·공고

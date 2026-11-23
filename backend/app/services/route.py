@@ -124,7 +124,7 @@ def _readiness(stage_idx: int, review: dict | None, entry_unmet: list[dict]) -> 
 
 async def build(conn: AsyncConnection, org_id: int, *, concern: str | None = None,
                 diagnosis: dict | None = None, review: dict | None = None,
-                user_id: int | None = None) -> dict:
+                user_id: int | None = None, include_closed: bool = False) -> dict:
     diagnosis = diagnosis or await dstate.run(conn, org_id, save=False)
     scores = {a["code"]: a["score"] for a in diagnosis["areas"]}
     all_stages = await stages(conn)
@@ -139,7 +139,8 @@ async def build(conn: AsyncConnection, org_id: int, *, concern: str | None = Non
     anns = await _announcements_by_program(conn, [p["id"] for p in programs])
     current_ids = sorted({a["id"] for p in anns.values() for a in p["current"]})
     if review is None:
-        review = await eligibility_review.review(conn, org_id, concern=concern, announcement_ids=current_ids or None,
+        # 자격요건 검토와 같은 공고 범위로 검토한다. 같은 상담에서 자격 판단 AI 결과를 다시 쓰게 (캐시, 호출 1회)
+        review = await eligibility_review.review(conn, org_id, concern=concern, include_closed=include_closed,
                                                  diagnosis=diagnosis, user_id=user_id) if current_ids else {"results": []}
     reviewed = {r["announcement_id"]: r for r in review["results"]}
 

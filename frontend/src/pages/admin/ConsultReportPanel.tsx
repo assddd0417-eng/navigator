@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { confirmConsultation, updateConsultation, type Consultation } from '../../api/navigator'
+import { confirmConsultation, downloadConsultationPdf, updateConsultation, type Consultation } from '../../api/navigator'
 import { useToast } from '../../components/Toast'
 import { Card, fmtDate, useAction } from '../../components/ui'
 
@@ -55,12 +55,19 @@ export function ConsultReportPanel({ data, onChange }: { data: Consultation; onC
   })
 
   // 기업 판본은 'NN점'을 지운다 (consultation.strip_scores). 담당자가 직접 쓴 문장에 점수가 있으면 미리 알린다
+  // 파일은 저장한 결과서로 만든다. 고친 뒤 저장 전이면 내려받기를 막는다
+  const unsaved = data.report.some((s) => (texts[s.key] ?? '') !== s.text)
+  const download = () => run(async () => { await downloadConsultationPdf(data.id) })
   const scoreInEdits = data.report.some((s) => texts[s.key] !== draftOf(s.key) && /\d+\s*점/.test(texts[s.key] ?? ''))
   const cmp = data.compare
   return (
     <>
       <Card title={`${data.company_name} 상담결과서`} actions={
-        <span className={`badge badge-${locked ? 'ok' : 'warn'}`}>{data.status_label}</span>
+        <div className="form-row" style={{ gap: 8, alignItems: 'center' }}>
+          <span className={`badge badge-${locked ? 'ok' : 'warn'}`}>{data.status_label}</span>
+          <button className="btn btn-sm" disabled={busy || unsaved} onClick={() => void download()}
+            title={unsaved ? '고친 내용을 저장한 뒤 내려받을 수 있습니다' : '결과서를 PDF 파일로 내려받습니다'}>PDF 내려받기</button>
+        </div>
       }>
         <p className="small muted">
           {data.task_label} · 작성 {fmtDate(data.created_at)}{data.created_by_name ? ` ${data.created_by_name}` : ''}
@@ -68,6 +75,7 @@ export function ConsultReportPanel({ data, onChange }: { data: Consultation; onC
             {data.notified_at ? ` · 안내 ${fmtDate(data.notified_at)}` : ''}</>}
         </p>
         {data.concern && <p className="small">상담 내용: {data.concern}</p>}
+        {unsaved && <p className="small muted">고친 내용은 저장해야 파일에 들어갑니다.</p>}
       </Card>
 
       {data.evidence && data.evidence.length > 0 && (

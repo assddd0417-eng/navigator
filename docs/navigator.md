@@ -155,6 +155,7 @@ AI 는 등급이 정한 범위 안에서만 처리한다. 결과 화면에는 �
 | `POST /navigator/consult/companies/{org_id}/consultations` | 요청 본문 `{task, concern, request_id}`. `task` 는 A(진단), B(자격검토 추가), C(성장경로 추가), 기본 C. 진단을 저장하고 결과 스냅샷과 결과서 초안을 남긴다. `request_id` 를 넣으면 요청이 상담 중으로 바뀐다. 자세한 내용은 [상담 이력과 상담결과서](#상담-이력과-상담결과서) |
 | `GET /navigator/consult/consultations/{cid}` | 상담 한 건: 스냅샷, 결과서 초안 `draft` 와 고친 본 `report`, 판정 수정 `overrides`, 직전 상담과 비교 `compare` |
 | `PUT /navigator/consult/consultations/{cid}` | 담당자 수정 `{report, overrides, feedback}`. 확정 전에만 된다. 판정 수정은 사유 필수. 확정 후에는 409 |
+| `GET /navigator/consult/consultations/{cid}/report.pdf` | 상담결과서 PDF (담당자 판본). 저장한 결과서 그대로, 점수 병기. 자세한 내용은 [결과서 파일](#결과서-파일) |
 | `POST /navigator/consult/consultations/{cid}/confirm` | 확정 `{notify}`. 기업 화면에 보이고 요청은 `DONE` 이 된다. `notify: true` 면 등록 이메일로 안내. 되돌릴 수 없다 |
 | `GET /navigator/consult/review-log?limit=` | 이력 점검: 판정을 바꾸거나 결과서를 고치거나 의견을 남긴 상담 (최대 500건). 역할: `STAFF`·`AX_ADMIN` |
 | `GET /navigator/service/info` | 서비스 정의, 주체별 역할 (RACI), AI 자율성 등급, 확정 관문. 역할: `STAFF`·`PROGRAM_OWNER`·`AX_ADMIN` |
@@ -196,7 +197,7 @@ AI 는 등급이 정한 범위 안에서만 처리한다. 결과 화면에는 �
 | `GET /navigator/ai/prompts` | 프롬프트 전체 버전과 AI 판단 사용 여부 `mode`. 역할: `STAFF`·`PROGRAM_OWNER`·`AX_ADMIN` |
 | `POST /navigator/ai/prompts/{code}` | 새 버전 저장 `{title, system_text, guide_text, note}`. 빈 항목은 지금 버전 값을 쓴다. 저장하면 바로 사용. 역할: `AX_ADMIN` |
 | `POST /navigator/ai/prompts/{code}/versions/{id}/activate` | 예전 버전으로 되돌리기. 역할: `AX_ADMIN` |
-| `GET /navigator/ai/calls?purpose=&limit=` | AI 호출 기록과 집계. 역할: `AX_ADMIN` |
+| `GET /navigator/ai/calls?purpose=&limit=` | AI 호출 기록과 집계. `per_task` 는 상담 업무별 호출 수와 기준 (진단 0, 자격 1, 종합 2). 역할: `AX_ADMIN` |
 
 `code` 는 `ELIGIBILITY_JUDGE` (자격 판단 지침), `REPORT_DRAFT` (상담결과서 템플릿).
 
@@ -586,7 +587,9 @@ weighted 모드는 비교 대상이 없으면 0.5. 정렬 방식·가중치·규
 
 `AI_JUDGE_MODE` 가 `llm` 이거나 `auto` 이면서 LLM 키가 있을 때만 쓴다. 기본값 `rules` 는 규칙만 쓰고 외부로 보내는 것이 없다.
 
-- 공고 하나에 LLM 을 한 번 부른다. 상담 한 번에 앞에서부터 `AI_JUDGE_MAX_ANNOUNCEMENTS` 건까지, 나머지는 규칙 결과.
+- 호출 횟수는 ISP 처리구조 기준이다. 상담 업무별 LLM 호출은 진단 0회, 자격요건 1회, 종합 2회 (자격 판단 1 + 결과서 초안 1).
+- 자격 판단은 검토 공고를 묶어 LLM 을 한 번 부른다. 앞에서부터 `AI_JUDGE_MAX_ANNOUNCEMENTS` 건을 묶고, 나머지는 규칙 결과. 응답은 공고별로 받고, 응답에 빠진 공고는 규칙 결과를 쓰고 차단 목록에 '응답에 공고 없음'으로 남긴다.
+- 상담 실행에서 부른 호출은 `ai_call_log.consultation_id` 로 상담에 묶인다. 호출 기록 화면에서 상담 업무별 호출 수를 기준과 견준다.
 - 보내는 것: 요건 목록 (설명·공고 조항), 근거 자료 (요건 조항, 요건 낱말이 겹치는 공고 본문·첨부 문단, 운영규정 조문), 기업정보, 상담 내용. 기업 이름과 사업자번호는 보내지 않는다. 기업정보 (규모·개업일·소재지·인원·매출·결격사유·인증·지원 이력·과제·진단 변수) 는 외부 LLM 제공자에게 간다. 운영에서는 기관 내부 LLM 을 쓰는 것을 전제로 한다.
 - 근거 없는 판단 차단: 판단마다 인용문을 받는다. 인용문이 근거 자료나 기업정보에 그대로 없으면 그 판단은 버리고 규칙 결과를 쓴다.
 - 계산 검증: 업력·규모·인원·매출·등급·이력처럼 규칙이 값으로 판정한 요건은 규칙 결과를 쓴다. LLM 결과가 다르면 차단 목록에 남긴다. 규칙이 값이 없어 확인 필요로 둔 요건은 LLM 이 충족이라 해도 확인 필요로 둔다.
@@ -719,7 +722,7 @@ D-STATE 상태유형으로 정한다.
 - `PUT` 에 `overrides` 를 주면 목록을 통째로 바꾼다. `report` 는 보낸 항목만 바꾸고, 빠진 항목은 그대로 둔다.
 - 확정은 되돌릴 수 없다. 확정한 상담을 다시 고치거나 다시 확정하면 409 를 준다.
 - 결과서 초안은 템플릿 문장이다. 점수, 공고 건수, 단계 이름 등을 끼워 넣는다.
-- AI 판단을 켜면 LLM 이 기업 개요·진단·검토 결과·성장경로·보완 요청 문장을 다듬는다. 기업 이름은 `[기업]` 으로 바꿔 보낸다. 다듬은 문장에 초안에 없는 숫자가 있거나 선정·지원을 약속하는 표현이 있으면 그 항목은 템플릿 문장을 쓰고 차단 사유를 호출 기록에 남긴다. 담당자 의견과 유의사항은 보내지 않는다.
+- 종합 상담(C)에서 AI 판단을 켜면 LLM 이 기업 개요·진단·검토 결과·성장경로·보완 요청 문장을 다듬는다. 진단(A)·자격요건(B) 상담은 템플릿 문장 그대로다. 기업 이름은 `[기업]` 으로 바꿔 보낸다. 다듬은 문장에 초안에 없는 숫자가 있거나 선정·지원을 약속하는 표현이 있으면 그 항목은 템플릿 문장을 쓰고 차단 사유를 호출 기록에 남긴다. 담당자 의견과 유의사항은 보내지 않는다.
 - 항목마다 `drafted_by` (`LLM`, `TEMPLATE`) 가 붙는다.
 
 ### 기업 화면
@@ -729,6 +732,16 @@ D-STATE 상태유형으로 정한다.
 - 보완 포인트는 공고마다 3개까지 보인다.
 - 결과서는 담당자가 확정한 문장 그대로다. 비어 있는 항목은 뺀다.
 - 기업은 자기 상담 요청 목록도 함께 본다.
+- 상담 결과마다 PDF 로 내려받는다 (`GET /navigator/manage/consultations/{cid}/report.pdf`, 관리 링크).
+
+### 결과서 파일
+
+- PDF 로 내려받는다 (`services/report_pdf.py`). 화면과 같은 데이터로 만들어 내용이 같다.
+- 담당자 판본: 상담결과서 화면의 제목, 과업·작성·확정 정보와 상태, 상담 내용, 결과서 7개 항목. 저장한 결과서로 만든다. 화면에서 고친 뒤 저장하지 않았으면 내려받기 버튼이 막힌다. 점수는 화면처럼 병기한다.
+- 기업 판본: 기업 화면의 상담 결과 그대로. 결과서 항목(점수 뺌), 검토한 지원사업 표, 성장 경로. 확정한 상담만 받는다.
+- 판정 수정·담당자 의견(이력 점검용)·직전 상담 비교는 업무 기록이라 파일에 넣지 않는다.
+- 한글 글꼴은 `REPORT_FONT_PATH` (TTF), 없으면 나눔고딕 (`fonts-nanum`), 맑은 고딕, 애플고딕 순으로 찾아 파일에 넣는다. 다 없으면 PDF 기본 한글 글꼴(HYGothic)을 쓰고 뷰어 글꼴로 보인다. 시연 이미지는 `fonts-nanum` 을 설치한다.
+- 한글(HWP·HWPX) 파일은 만들지 않는다.
 
 ## 화면
 
@@ -786,8 +799,9 @@ D-STATE 상태유형으로 정한다.
 | `NAVIGATOR_RANKING` | `vector` | 같은 판정 안의 순서. `vector` = 벡터 관련도(A안), `weighted` = 이전 가중합 |
 | `REQUIREMENT_EXTRACTOR` | `auto` | 공고 조건 뽑기. `auto` 는 LLM 키가 있으면 LLM (`LLM_PROVIDER`·`LLM_MODEL` 따름), `rules` 는 규칙만 |
 | `AI_JUDGE_MODE` | `rules` | 자격 판단·결과서 문장의 LLM 사용. `llm` 사용, `auto` 는 LLM 키가 있으면 사용, `rules` 는 규칙·템플릿만 (외부로 보내는 것 없음) |
-| `AI_JUDGE_MAX_ANNOUNCEMENTS` | `8` | 상담 한 번에 LLM 으로 판단할 공고 수 |
+| `AI_JUDGE_MAX_ANNOUNCEMENTS` | `8` | 자격 판단 한 번(LLM 1회)에 묶어 보내는 공고 수 |
 | `AI_CACHE_HOURS` | `24` | 같은 입력 결과를 다시 쓰는 시간. 0 이면 캐시 안 씀 |
+| `REPORT_FONT_PATH` | (빈 값) | 상담결과서 PDF 한글 글꼴 TTF 경로. 비우면 나눔고딕·맑은 고딕·애플고딕 순으로 찾음 |
 | `NAVIGATOR_ANNOUNCEMENT_KEYWORDS` | `국방,방산,방위산업,방위사업,무기체계,군수` | 외부 공고 거르기 (쉼표). "방위"만 쓰면 "주방위생" 같은 공고가 걸림 |
 | `MAILER` | `mock` | mock 은 발송 없이 로그만 (본문은 DEBUG 로그), smtp 는 실제 발송 |
 | `SMTP_HOST`, `SMTP_PORT` | -, `587` | SMTP 서버 |
@@ -878,4 +892,4 @@ DISIS·PMS·DTiMS·조달청·SSO 는 기관 내부망이나 기관 계약으로
 - LLM 추천 사유 문장 생성 (지금은 템플릿)
 - 실제 LLM 으로 자격 판단 정확도 측정 (지금은 가짜 LLM 으로 검증 규칙만 시험)
 - 실제 사업 연계 기준표는 기관 확인 후 입력
-- 결과서 파일 내려받기 (한글·PDF)
+- 결과서 한글(HWP·HWPX) 파일 (지금은 PDF)

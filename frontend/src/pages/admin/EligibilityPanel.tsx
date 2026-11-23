@@ -223,7 +223,7 @@ function AiLine({ ai, checks }: { ai: AiJudgeInfo; checks: ReviewCheck[] }) {
           <ul>
             {ai.blocked.map((b, i) => (
               <li key={i}>
-                {checks.find((c) => c.requirement_id === b.requirement_id)?.description ?? `요건 ${b.requirement_id}`}
+                {b.requirement_id == null ? 'AI 응답에 이 공고가 없음' : checks.find((c) => c.requirement_id === b.requirement_id)?.description ?? `요건 ${b.requirement_id}`}
                 <div>{b.reason}</div>
               </li>
             ))}

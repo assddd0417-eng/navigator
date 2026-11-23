@@ -1,5 +1,5 @@
 // Navigator API. 기업 쪽은 X-User-Id 없이 호출하고, 관리 링크 토큰은 X-Manage-Token 으로 보냄
-import { api } from './client'
+import { api, downloadFile } from './client'
 
 export type Verdict = 'ELIGIBLE' | 'NEEDS_INFO' | 'INELIGIBLE'
 export type CheckResult = 'MET' | 'UNMET' | 'UNKNOWN'
@@ -743,7 +743,9 @@ export interface FitItem {
   basis: string
 }
 export interface AiBlocked {
-  requirement_id: number
+  requirement_id?: number
+  announcement_id?: number
+  section?: string
   reason: string
   llm_result?: string | null
   rule_result?: string | null
@@ -871,7 +873,7 @@ export interface GrowthRoute {
   summary: string
   notice: string
 }
-export const growthRoute = (orgId: number, body: { concern?: string }) =>
+export const growthRoute = (orgId: number, body: { concern?: string; include_closed?: boolean }) =>
   api<GrowthRoute>(`/navigator/consult/companies/${orgId}/route`, { method: 'POST', body })
 
 export interface RouteRuleStage { code: string; name_ko: string; goal: string; areas: string[] }
@@ -997,13 +999,15 @@ export interface ConsultationUpdate {
 }
 export type ConfirmedConsultation = Consultation & { notify: { sent: boolean; to?: string; reason?: string } }
 
-export const createConsultation = (orgId: number, body: { task: 'A' | 'B' | 'C'; concern?: string; request_id?: number; evidence_ids?: number[] }) =>
+export const createConsultation = (orgId: number, body: { task: 'A' | 'B' | 'C'; concern?: string; request_id?: number; evidence_ids?: number[]; include_closed?: boolean }) =>
   api<Consultation>(`/navigator/consult/companies/${orgId}/consultations`, { method: 'POST', body })
 export const getConsultationHistory = (orgId: number) =>
   api<ConsultationSummary[]>(`/navigator/consult/companies/${orgId}/consultations`)
 export const getConsultation = (id: number) => api<Consultation>(`/navigator/consult/consultations/${id}`)
 export const updateConsultation = (id: number, body: ConsultationUpdate) =>
   api<Consultation>(`/navigator/consult/consultations/${id}`, { method: 'PUT', body })
+export const downloadConsultationPdf = (id: number) =>
+  downloadFile(`/navigator/consult/consultations/${id}/report.pdf`, '상담결과서.pdf')
 export const confirmConsultation = (id: number, notify: boolean) =>
   api<ConfirmedConsultation>(`/navigator/consult/consultations/${id}/confirm`, { method: 'POST', body: { notify } })
 
@@ -1039,6 +1043,8 @@ export interface MyConsultation {
     programs: { name: string; readiness_label: string }[]; tasks: string[] }[]
 }
 export interface MyConsultRequest { id: number; concern: string; interest: string | null; status: RequestStatus; status_label: string; created_at: string }
+export const downloadMyConsultationPdf = (token: string, id: number) =>
+  downloadFile(`/navigator/manage/consultations/${id}/report.pdf`, '상담결과.pdf', manage(token))
 export const getMyConsultations = (token: string) =>
   api<{ consultations: MyConsultation[]; requests: MyConsultRequest[] }>('/navigator/manage/consultations', manage(token))
 export const createMyConsultRequest = (token: string, body: ConsultRequestBody) =>
@@ -1109,12 +1115,29 @@ export interface AiCall {
   latency_ms: number | null
   created_at: string
   created_by_name: string | null
-  input_refs: { basis?: { source?: string; ref?: string | number | null; chars?: number }[]; sections?: string[] } | null
+  input_refs: {
+    basis?: { announcement_id?: number; source?: string; ref?: string | number | null; chars?: number }[]
+    sections?: string[]
+    announcement_ids?: number[]
+  } | null
   output: unknown
+  consultation_id: number | null
+  consultation_task: 'A' | 'B' | 'C' | null
+  consultation_task_label: string | null
+  announcement_count: number
+}
+export interface AiCallPerTask {
+  task: 'A' | 'B' | 'C'
+  task_label: string
+  standard: number
+  consultations: number
+  calls: number
+  max_calls: number | null
 }
 export interface AiCallList {
   mode: string
   stats: { total: number; ok: number; partial: number; fallback: number; cached: number; blocked: number }
+  per_task: AiCallPerTask[]
   items: AiCall[]
 }
 export const listAiCalls = (purpose = '', limit = 100) =>
