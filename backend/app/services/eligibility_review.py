@@ -13,7 +13,7 @@ from datetime import date
 from psycopg import AsyncConnection
 
 from app.config import get_settings
-from app.services import ai_gateway, ai_judge, dstate, fit, regulation
+from app.services import ai_gateway, ai_judge, criteria, dstate, fit, regulation
 from app.services.eligibility import RESULT_KO, judge, overall
 from app.services.embedding import embed_query
 from app.services.levels import sim_levels
@@ -94,6 +94,7 @@ async def review(conn: AsyncConnection, org_id: int, *, concern: str | None = No
     use_ai = ai_gateway.mode() == "llm"
     ai_left = get_settings().ai_judge_max_announcements
     limits_by_prog: dict[int | None, list[dict]] = {}
+    crit = await criteria.active(conn)
 
     results = []
     for ann_id in ann_ids:
@@ -147,7 +148,7 @@ async def review(conn: AsyncConnection, org_id: int, *, concern: str | None = No
                    else f"필수요건 {len(mand)}건 중 {met}건 충족")
         bonus = [{"description": r["description"], "points": r["bonus_points"]}
                  for r in rows if not r["is_mandatory"] and r["result"] == "MET" and r["bonus_points"]]
-        f = fit.evaluate(x["eval_items"], area_scores, ann_purpose, bonus)
+        f = fit.evaluate(x["eval_items"], area_scores, ann_purpose, bonus, crit)
         todo = [{"kind": "REQUIREMENT", "text": f"{r['description']}: {r['reason']}",
                  "question": r["question"]} for r in mand if r["result"] != "MET"]
         todo += [{"kind": "FIT", "text": h["text"], "question": None} for h in f["hints"][:2]]
@@ -184,6 +185,7 @@ async def review(conn: AsyncConnection, org_id: int, *, concern: str | None = No
         "results": results,
         "notice": "판정 결과는 상담 참고자료입니다. 최종 자격 판정은 담당자가 확정합니다.",
         "ai_mode": "llm" if use_ai else "rules",
+        "fit_rule": {k: crit[k] for k in (*criteria.NUMBERS, "version")},
     }
 
 

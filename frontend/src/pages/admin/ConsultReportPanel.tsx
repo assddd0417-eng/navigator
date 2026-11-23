@@ -70,6 +70,19 @@ export function ConsultReportPanel({ data, onChange }: { data: Consultation; onC
         {notice && <div className={`notice ${notice.ok ? 'notice-ok' : 'notice-warn'}`}>{notice.text}</div>}
       </Card>
 
+      {data.evidence && data.evidence.length > 0 && (
+        <Card title="상담에 쓴 보완자료">
+          <ul>
+            {data.evidence.map((e) => (
+              <li key={e.id}>
+                {e.file_name}
+                <span className="small muted"> {[e.origin_label, e.kind_label, e.note].filter(Boolean).join(' · ')}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
       {cmp && (
         <Card title="직전 상담 대비">
           <p>
