@@ -8,7 +8,7 @@ from app.errors import NotFound
 from app.services import collector
 
 router = APIRouter(prefix="/navigator/sources", tags=["Navigator 외부 수집"])
-STAFF = ("STAFF",)
+STAFF = ("STAFF", "PROGRAM_OWNER")  # 공고 등록·조건 확인: 기업지원 담당자, 지원사업 소관부서
 
 
 class ExternalIdIn(BaseModel):

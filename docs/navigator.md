@@ -1,7 +1,7 @@
 # Navigator
 
 기업이 사업자번호로 지원 가능한 공고를 찾고, 기관 담당자가 공고별로 적합 기업을 보는 기능.
-기업은 로그인 없이 쓴다. 회사 정보 화면은 사업자번호로 조회한 뒤 등록 이메일로 받은 6자리 확인 코드를 넣어야 열린다. 담당자는 로그인한다 (역할 `STAFF`).
+기업은 로그인 없이 쓴다. 회사 정보 화면은 사업자번호로 조회한 뒤 등록 이메일로 받은 6자리 확인 코드를 넣어야 열린다. 담당자는 로그인한다 (역할 `STAFF`, `PROGRAM_OWNER`, `AX_ADMIN`. 아래 '서비스 정의와 역할').
 
 ## 구성
 
@@ -24,6 +24,44 @@
 
 기존 테이블은 컬럼 추가만 했다. 사업자번호는 `organization.business_reg_no` 를 숫자 10자리로 쓴다.
 기존 코드 변경은 `routers/documents.py` 의 문서 저장 부분을 `store_document`, `parse_file` 로 분리한 것과 `reembed` 에 새 벡터 테이블을 추가한 것뿐이다.
+
+## 서비스 정의와 역할
+
+서비스 명칭은 **AI 기반 방산기업 성장경로 서비스**다. 방산기업의 기업정보와 지원사업 공고·지침을 함께 분석해 성장준비도 진단과 자격요건 검토를 돕고, 맞춤형 지원사업과 단계별 성장경로를 안내한다.
+
+- 대상: 기업지원 상담 담당자, 지원사업 소관부서
+- 주요 기능
+  - A. 성장역량 진단 (D-STATE): 기업정보 조회, 미확보 정보 보완, 6대 성장준비도 점수와 강점·부족역량 도출
+  - B. 지원사업 자격검토: 공고·지침의 신청·제외요건 추출, 기업정보와 대조한 충족·미충족·확인 필요 판정, 적합도
+  - C. 맞춤형 성장경로 추천 (D-ROUTE): 적합 지원사업과 추천·미추천 사유, 현재·다음·중장기 경로와 준비사항
+
+| 역할 코드 | 이름 | 시드 사용자 (`X-User-Id`) | 할 수 있는 일 |
+|-----------|------|---------------------------|---------------|
+| `STAFF` | 기업지원 담당자 | 1 (`staff`) | 기업 상담 전 과정 (진단, 자격검토, 경로 추천, 상담결과서 작성·확정), 상담 기업 검색, 상담 요청 관리, 공고 등록·조건 확인, 외부 수집 실행, 이력 점검 조회, 기준 보기 |
+| `PROGRAM_OWNER` | 지원사업 소관부서 | 3 (`owner`) | 공고 등록·조건 확인, 외부 수집 실행, 연계 기준 수정, 기준 보기 |
+| `AX_ADMIN` | AX 주관부서 | 4 (`ax`) | 이력 점검 조회, 연계 기준 수정, 기업정보 열람 권한 지정, 상담 기업 검색, 기준 보기. 열람 권한의 제한을 받지 않는다 |
+
+역할 검사는 `require_roles` 가 한다. 역할이 필요한 API 는 역할이 없는 사용자에게 403 을 준다 (시드 사용자 2 `viewer` 가 그렇다). `ADMIN` 역할이 있으면 모든 역할 권한을 가지며, 시드에는 없다. 기준 보기는 `GET /navigator/consult/dstate/rules`, `GET /navigator/consult/route/rules`, `GET /navigator/service/info` 를 뜻한다. 기업별 상담 실행과 결과서 확정은 `STAFF` 만 한다.
+
+### AI 자율성 등급
+
+AI 는 등급이 정한 범위 안에서만 처리한다. 결과 화면에는 등급과 확정 관문을 표시한다. 등급과 관문은 `GET /navigator/service/info` 의 `levels`, `gates` 에 있고, 주체별 역할 분담 (RACI) 표도 같은 응답의 `raci` 에 있다.
+
+| 등급 | 이름 | 범위 | 기능 | 확정 관문 (확정 주체) |
+|------|------|------|------|------|
+| L1 | 조력 | 기업정보 확인, 진단, 자격 판단과 근거 제시까지만 한다. 확정과 기업 안내는 담당자가 한다 | A 진단, B 자격검토 | 진단 확인 관문, 자격 확정 관문 (기업지원 담당자) |
+| L2 | 수동승인 | 경로 추천과 상담결과서 초안을 만든다. 담당자가 확정한 내용만 기업에 안내한다 | C 성장경로 추천 | 추천결과 확정 관문 (기업지원 담당자) |
+| L3 | 조건부자율 | 확정된 기준 안에서 판단기준 반영과 상담이력 기록을 자동으로 한다. 자격 판정과 사업 선정에는 쓰지 않는다 | 판단기준 반영, 상담이력 기록 | 판단기준 반영 (지원사업 소관부서), 상담이력 기록 (AX 주관부서) |
+
+### 기업정보 열람 권한
+
+기업마다 볼 수 있는 부서를 `ax.company_access` 에 둔다.
+
+- 행이 없으면 모든 담당 부서가 본다.
+- 행이 하나라도 있으면 지정된 부서 (사용자의 소속 부서) 와 AX 주관부서만 본다.
+- `AX_ADMIN` 은 지정과 관계없이 모든 기업을 본다.
+- 지정: `PUT /navigator/consult/companies/{org_id}/access` (`AX_ADMIN`). 본문은 `{"department_ids": [1, 3]}` 이다. 빈 배열이면 제한을 푼다. 없는 부서 ID 가 섞이면 422 를 준다. 현재 설정은 `GET` 으로 본다.
+- 적용 범위: 상담 기업 검색 (`GET /navigator/consult/companies`), 상담 요청 목록 (`GET /navigator/consult/requests`, 볼 수 없는 기업의 요청은 빠진다), 기업별 상담 API (`/navigator/consult/companies/{org_id}/...`), 상담 한 건 API (`/navigator/consult/consultations/{cid}...`). 권한이 없으면 403 이다.
 
 ## API
 
@@ -74,7 +112,7 @@
 - 요건의 `bonus_points` (우대 요건 충족 시 가점, 0~100) 은 두 API 의 `requirements` 항목에 넣는다.
 - `submit_documents` 는 `[{"name": "중소기업 확인서", "required": true}]` 형식.
 
-담당자 = `STAFF`. 접수 상태(UPCOMING / OPEN / CLOSED)는 날짜로 계산한다 (`v_announcement`).
+담당자 = `STAFF`, `PROGRAM_OWNER`. 접수 상태(UPCOMING / OPEN / CLOSED)는 날짜로 계산한다 (`v_announcement`).
 
 ### 매칭 (담당자)
 
@@ -90,18 +128,18 @@
 
 | 메서드·경로 | 설명 |
 |-------------|------|
-| `GET /navigator/consult/companies?q=` | 상담 기업 찾기: 상호 또는 사업자번호 일부. 빈 값이면 최근 수정 순 |
-| `GET /navigator/consult/dstate/rules` | 진단 기준: 영역별 산정식, 상태유형 조건, 변수사전 |
+| `GET /navigator/consult/companies?q=` | 상담 기업 찾기: 상호 또는 사업자번호 일부. 빈 값이면 최근 수정 순. 열람 권한 적용. 역할: `STAFF`·`AX_ADMIN` |
+| `GET /navigator/consult/dstate/rules` | 진단 기준: 영역별 산정식, 상태유형 조건, 변수사전. 역할: `STAFF`·`PROGRAM_OWNER`·`AX_ADMIN` |
 | `GET /navigator/consult/companies/{org_id}/dstate` | 지금 값으로 진단. 저장 안 함 |
 | `POST /navigator/consult/companies/{org_id}/dstate` | 진단 실행 후 이력 저장. 응답에 직전 진단 `previous` 포함 |
 | `PUT /navigator/consult/companies/{org_id}/dstate/values` | 담당자 확인값 `{"values":{...}}` 저장 (출처 STAFF). `null` 이면 지움 |
 | `GET /navigator/consult/companies/{org_id}/diagnoses` | 진단 이력 (최신 순) |
 | `POST /navigator/consult/companies/{org_id}/eligibility` | 요청 본문 `{concern, announcement_ids, include_closed}`. 공고별 신청 가능 여부·적합도·근거·보완 포인트·신청 안내. 저장 안 함. 자세한 내용은 [자격검토 (상담)](#자격검토-상담) |
 | `POST /navigator/consult/companies/{org_id}/route` | 요청 본문 `{concern}`. 성장단계별 목표·추천 사업 (준비상태)·준비과제·근거·미추천 사유·경로 요약. 저장 안 함. 자세한 내용은 [성장경로 (상담)](#성장경로-상담) |
-| `GET /navigator/consult/route/rules` | 성장단계와 지원사업 연계 기준표. 연계 기준이 없는 사업도 함께 나온다 |
-| `PUT /navigator/consult/route/programs/{program_id}` | 사업의 연계 기준 저장 (`stage_code`, `next_program_ids`, `entry_condition`, `entry_min_scores`, `prep_tasks`, `expected_output`, `repeatable`, `sort_order`). 응답은 기준표 전체 |
-| `DELETE /navigator/consult/route/programs/{program_id}` | 사업의 연계 기준 삭제. 사업 자체는 남는다. 204 |
-| `GET /navigator/consult/requests?status=` | 상담 요청 목록. `REQUESTED` 가 먼저 나온다 |
+| `GET /navigator/consult/route/rules` | 성장단계와 지원사업 연계 기준표. 연계 기준이 없는 사업도 함께 나온다. 역할: `STAFF`·`PROGRAM_OWNER`·`AX_ADMIN` |
+| `PUT /navigator/consult/route/programs/{program_id}` | 사업의 연계 기준 저장 (`stage_code`, `next_program_ids`, `entry_condition`, `entry_min_scores`, `prep_tasks`, `expected_output`, `repeatable`, `sort_order`). 응답은 기준표 전체. 역할: `PROGRAM_OWNER`·`AX_ADMIN` |
+| `DELETE /navigator/consult/route/programs/{program_id}` | 사업의 연계 기준 삭제. 사업 자체는 남는다. 204. 역할: `PROGRAM_OWNER`·`AX_ADMIN` |
+| `GET /navigator/consult/requests?status=` | 상담 요청 목록. `REQUESTED` 가 먼저 나온다. 볼 수 없는 기업의 요청은 빠진다 (열람 권한) |
 | `POST /navigator/consult/companies/{org_id}/requests` | 전화·방문 요청을 담당자가 대신 등록 `{concern, interest, contact_name, contact_phone}`. 출처는 STAFF |
 | `PATCH /navigator/consult/requests/{req_id}` | 요청 상태 `{status}`: `REQUESTED`, `IN_PROGRESS`, `DONE`, `CANCELED` |
 | `GET /navigator/consult/companies/{org_id}/consultations` | 상담 이력 (최신 순): 과업, 상태, 총점, 판정 집계, 판정·결과서 수정 여부, 의견 |
@@ -109,7 +147,12 @@
 | `GET /navigator/consult/consultations/{cid}` | 상담 한 건: 스냅샷, 결과서 초안 `draft` 와 고친 본 `report`, 판정 수정 `overrides`, 직전 상담과 비교 `compare` |
 | `PUT /navigator/consult/consultations/{cid}` | 담당자 수정 `{report, overrides, feedback}`. 확정 전에만 된다. 판정 수정은 사유 필수. 확정 후에는 409 |
 | `POST /navigator/consult/consultations/{cid}/confirm` | 확정 `{notify}`. 기업 화면에 보이고 요청은 `DONE` 이 된다. `notify: true` 면 등록 이메일로 안내. 되돌릴 수 없다 |
-| `GET /navigator/consult/review-log?limit=` | 이력 점검: 판정을 바꾸거나 결과서를 고치거나 의견을 남긴 상담 (최대 500건) |
+| `GET /navigator/consult/review-log?limit=` | 이력 점검: 판정을 바꾸거나 결과서를 고치거나 의견을 남긴 상담 (최대 500건). 역할: `STAFF`·`AX_ADMIN` |
+| `GET /navigator/service/info` | 서비스 정의, 주체별 역할 (RACI), AI 자율성 등급, 확정 관문. 역할: `STAFF`·`PROGRAM_OWNER`·`AX_ADMIN` |
+| `GET /navigator/consult/companies/{org_id}/access` | 기업정보 열람 부서와 지정 여부. 열람 권한이 없으면 403. 역할: `STAFF`·`PROGRAM_OWNER`·`AX_ADMIN` |
+| `PUT /navigator/consult/companies/{org_id}/access` | 열람 부서 지정 `{"department_ids": [...]}`. 빈 배열이면 모든 담당 부서가 본다. 응답은 지정 결과. 역할: `AX_ADMIN` |
+
+표에 역할이 적히지 않은 행은 `STAFF` 만 쓴다. 역할별 권한은 위 '서비스 정의와 역할'과 '기업정보 열람 권한'을 본다.
 
 ### 알림
 
@@ -132,7 +175,7 @@
 
 결과 행: `rank`, `verdict`, `total_score`, `scores`, `checks`(요건별 판정·사유·보완질문·원문), `questions`, `evidence`, `rationale`.
 
-### 외부 수집 (담당자)
+### 외부 수집 (STAFF·PROGRAM_OWNER)
 
 | 메서드·경로 | 설명 |
 |-------------|------|
@@ -715,7 +758,10 @@ curl -s -X POST localhost:8000/navigator/announcements -H 'X-User-Id: 1' -H 'Con
 - 알림 발송을 큐로 분리 (지금은 공고 등록 요청 안에서 처리)
 - 사진·스캔 증빙 OCR (지금은 PDF·한글 파일 글자만 읽음)
 - 실제 공고·기업 데이터로 관련도 경계와 TECH·PURPOSE 비율 다시 맞추기 (bge-m3 경계는 합성 100쌍 기준)
-- 조달청 부정당제재 정보 연동 (지금은 회사 정보 입력)
+- 조달청 부정당제재 정보 연동 (연동 예정, 지금은 회사 정보 입력)
+- DISIS 기업·품목정보 연계 (연동 예정)
+- PMS·DTiMS 과제수행·지원이력 연계 (연동 예정)
+- SSO 로그인 (연동 예정, 지금은 담당자 선택)
 - 사업 목적 부합 LLM 평가 (지금은 임베딩 관련도)
 - 평가표 자동 추출 (지금은 담당자가 확인 화면에서 입력)
 - LLM 추천 사유 문장 생성 (지금은 템플릿)

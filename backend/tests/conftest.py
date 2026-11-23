@@ -22,10 +22,12 @@ os.environ["COLLECT_AUTO_MINUTES"] = "0"
 
 SEED = """
 SET search_path = ax, public;
-INSERT INTO department (id, dept_code, name) OVERRIDING SYSTEM VALUE VALUES (1,'D-BIZ','사업지원팀');
+INSERT INTO department (id, dept_code, name) OVERRIDING SYSTEM VALUE VALUES (1,'D-BIZ','사업지원팀'),
+  (2,'D-PROG','방산사업팀'), (3,'D-AX','AX추진팀');
 INSERT INTO app_user (id, login_id, name, department_id, clearance_code) OVERRIDING SYSTEM VALUE VALUES
-  (1,'staff','공고담당',1,'INTERNAL'), (2,'viewer','열람자',1,'PUBLIC');
-INSERT INTO user_role (user_id, role_code) VALUES (1,'STAFF');
+  (1,'staff','공고담당',1,'INTERNAL'), (2,'viewer','열람자',1,'PUBLIC'),
+  (3,'owner','사업담당',2,'INTERNAL'), (4,'ax','AX담당',3,'INTERNAL');
+INSERT INTO user_role (user_id, role_code) VALUES (1,'STAFF'), (3,'PROGRAM_OWNER'), (4,'AX_ADMIN');
 INSERT INTO program (id, program_code, name, program_type_code, purpose) OVERRIDING SYSTEM VALUE VALUES
   (1,'P-LOC','부품국산화개발지원','PARTS_LOCALIZATION','수입 부품의 국산화로 공급망 안정'),
   (2,'P-CORE','핵심기술개발','CORE_TECH','미래 핵심기술 확보');

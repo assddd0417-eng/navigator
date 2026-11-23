@@ -41,7 +41,7 @@ export function LoginPage() {
       <div className="login-head">
         <span className="brand-mark brand-mark-lg">AX</span>
         <h1>Navigator</h1>
-        <p>기관 담당자 화면입니다. 공고를 등록하고, 공고마다 지원할 수 있는 기업을 찾습니다.</p>
+        <p>AI 기반 방산기업 성장경로 서비스의 담당자 화면입니다. 맡은 역할을 고르세요.</p>
         {from && from !== '/login' && <p className="notice small">로그인하면 보려던 화면으로 바로 이동합니다.</p>}
       </div>
 

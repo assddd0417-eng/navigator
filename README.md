@@ -24,7 +24,7 @@ done
 BASE_URL=http://localhost:8000 ./scripts/smoke_test.sh                       # 4. API 스모크 (curl, jq 필요)
 ```
 
-시드 사용자(`X-User-Id`): 1 기관 담당자(STAFF) · 2 역할 없음(권한 거부 확인용).
+시드 사용자(`X-User-Id`): 1 기관 담당자(STAFF) · 2 역할 없음(권한 거부 확인용) · 3 지원사업 소관부서(PROGRAM_OWNER) · 4 AX 주관부서(AX_ADMIN).
 
 ## 한 주소로 실행 (맥)
 

@@ -3,17 +3,19 @@ import {
   deleteProgramRoute, routeRules, saveProgramRoute,
   type RouteRuleProgram, type RouteRules,
 } from '../../api/navigator'
+import { useAuth } from '../../auth/AuthContext'
 import { useToast } from '../../components/Toast'
 import { Card, useAction, useAsync } from '../../components/ui'
 
 export function RouteRulesCard() {
-  const [open, setOpen] = useState(false)
-  const rules = useAsync(() => (open ? routeRules() : Promise.resolve(null)), [open])
+  const { role } = useAuth()
+  const canEdit = role === 'PROGRAM_OWNER' || role === 'AX_ADMIN'
+  const rules = useAsync(() => routeRules(), [])
   return (
-    <Card title="성장경로 기준" actions={<button className="btn btn-sm" onClick={() => setOpen(!open)}>{open ? '접기' : '펼치기'}</button>}>
-      {!open ? <p className="small muted">단계별 사업, 진입조건, 다음 연계사업을 보고 고칠 수 있습니다.</p>
-        : !rules.data ? <div className="page-loading">불러오는 중…</div>
-          : <RulesBody rules={rules.data} reload={() => void rules.reload()} />}
+    <Card title="성장경로 기준">
+      {!canEdit && <p className="small muted">수정은 지원사업 소관부서와 AX 주관부서가 합니다.</p>}
+      {!rules.data ? <div className="page-loading">{rules.loading ? '불러오는 중…' : '불러오지 못했습니다.'}</div>
+        : <RulesBody rules={rules.data} reload={() => void rules.reload()} canEdit={canEdit} />}
     </Card>
   )
 }
@@ -24,7 +26,7 @@ function scoresText(p: RouteRuleProgram, rules: RouteRules) {
   return s.map(([k, v]) => `${rules.areas.find((a) => a.code === k)?.label ?? k} ${v}`).join(' · ')
 }
 
-function RulesBody({ rules, reload }: { rules: RouteRules; reload: () => void }) {
+function RulesBody({ rules, reload, canEdit }: { rules: RouteRules; reload: () => void; canEdit: boolean }) {
   const [editing, setEditing] = useState<number | null>(null)
   const [removing, setRemoving] = useState<number | null>(null)
   const { busy, run } = useAction()
@@ -49,10 +51,10 @@ function RulesBody({ rules, reload }: { rules: RouteRules; reload: () => void })
   return (
     <>
       <table className="table">
-        <thead><tr><th>단계</th><th>사업</th><th>진입조건</th><th>진입 점수</th><th>다음 연계사업</th><th>준비과제</th><th>반복 가능</th><th /></tr></thead>
+        <thead><tr><th>단계</th><th>사업</th><th>진입조건</th><th>진입 점수</th><th>다음 연계사업</th><th>준비과제</th><th>반복 가능</th>{canEdit && <th />}</tr></thead>
         <tbody>
-          {linked.map((p) => editing === p.program_id ? (
-            <tr key={p.program_id}><td colSpan={8}>{form(p)}</td></tr>
+          {linked.map((p) => canEdit && editing === p.program_id ? (
+            <tr key={p.program_id}><td colSpan={canEdit ? 8 : 7}>{form(p)}</td></tr>
           ) : (
             <tr key={p.program_id}>
               <td>{stageName(p.stage_code)}</td>
@@ -62,7 +64,7 @@ function RulesBody({ rules, reload }: { rules: RouteRules; reload: () => void })
               <td className="small">{p.next_programs.map((n) => n.name).join(', ') || '–'}</td>
               <td className="small">{p.prep_tasks.join(', ') || '–'}</td>
               <td className="small">{p.repeatable ? '가능' : '불가'}</td>
-              <td style={{ whiteSpace: 'nowrap' }}>
+              {canEdit && <td style={{ whiteSpace: 'nowrap' }}>
                 {removing === p.program_id ? (
                   <>
                     <span className="small">해제할까요?</span>{' '}
@@ -75,7 +77,7 @@ function RulesBody({ rules, reload }: { rules: RouteRules; reload: () => void })
                     <button className="btn btn-sm" onClick={() => setRemoving(p.program_id)}>연계 해제</button>
                   </>
                 )}
-              </td>
+              </td>}
             </tr>
           ))}
         </tbody>
@@ -84,15 +86,15 @@ function RulesBody({ rules, reload }: { rules: RouteRules; reload: () => void })
       {!unlinked.length ? <p className="small muted">모든 사업에 기준이 있습니다.</p> : (
         <table className="table">
           <tbody>
-            {unlinked.map((p) => editing === p.program_id ? (
+            {unlinked.map((p) => canEdit && editing === p.program_id ? (
               <tr key={p.program_id}><td>{form(p)}</td></tr>
             ) : (
               <tr key={p.program_id}>
                 <td>{p.name}</td>
                 <td className="small muted">{p.purpose ?? ''}</td>
-                <td style={{ textAlign: 'right' }}>
+                {canEdit && <td style={{ textAlign: 'right' }}>
                   <button className="btn btn-sm" onClick={() => setEditing(p.program_id)}>추가</button>
-                </td>
+                </td>}
               </tr>
             ))}
           </tbody>

@@ -81,7 +81,7 @@ async def test_route_flow(client, setup):
     await _announce(client, "RT-4", ids["RT-SCALE"], mandatory={
         "req_type_code": "COMPANY_SIZE", "rule": {"allowed": ["LARGE"]}, "description": "대기업"})
 
-    put = lambda pid, body: client.put(f"/navigator/consult/route/programs/{pid}", headers=as_user(1), json=body)
+    put = lambda pid, body: client.put(f"/navigator/consult/route/programs/{pid}", headers=as_user(3), json=body)
     assert (await put(ids["RT-ENTRY"], {"stage_code": "ENTRY", "next_program_ids": [ids["RT-TECH"]],
                                         "entry_min_scores": {}, "prep_tasks": ["협약 신청서 준비", " "],
                                         "expected_output": "협약"})).status_code == 200
@@ -124,6 +124,8 @@ async def test_route_flow(client, setup):
     assert "경로시험 RT-ENTRY 지원사업" in d["summary"] and d["notice"]
 
     assert (await client.delete(f"/navigator/consult/route/programs/{ids['RT-NOANN']}",
-                                headers=as_user(1))).status_code == 204
+                                headers=as_user(1))).status_code == 403          # 연계 기준은 소관부서·AX
+    assert (await client.delete(f"/navigator/consult/route/programs/{ids['RT-NOANN']}",
+                                headers=as_user(4))).status_code == 204
     assert (await client.post(f"/navigator/consult/companies/{org}/route", headers=as_user(2),
                               json={})).status_code == 403

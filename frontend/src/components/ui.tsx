@@ -63,10 +63,11 @@ export function Empty({ children }: { children: ReactNode }) {
   return <div className="empty">{children}</div>
 }
 
-export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
+export function PageHeader({ title, subtitle, actions, eyebrow }: { title: string; subtitle?: string; actions?: ReactNode; eyebrow?: string }) {
   return (
     <div className="page-header">
       <div>
+        {eyebrow && <div className="page-eyebrow">{eyebrow}</div>}
         <h1>{title}</h1>
         {subtitle && <p>{subtitle}</p>}
       </div>

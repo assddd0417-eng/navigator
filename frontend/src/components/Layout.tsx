@@ -13,6 +13,7 @@ export function Layout() {
   const sections = [
     { key: 'work', title: '업무', items: menu.filter((m) => m.section === 'work') },
     { key: 'manage', title: '관리', items: menu.filter((m) => m.section === 'manage') },
+    { key: 'extra', title: '부가 기능', items: menu.filter((m) => m.section === 'extra') },
   ].filter((s) => s.items.length > 0)
 
   return (
