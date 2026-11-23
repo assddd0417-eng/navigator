@@ -1,6 +1,7 @@
 # Navigator
 
 기업이 사업자번호로 지원할 수 있는 국방 지원사업 공고를 찾고, 기관 담당자는 공고마다 맞는 기업을 찾아 참여를 권하는 서비스 PoC.
+실제 기관 자료는 받을 수 없어 기업·공고·규정은 모두 가상 데이터이고, 검증도 합성 데이터로 했다. 기관 시스템(DISIS·PMS·DTiMS·조달청·SSO) 연동 위치는 [docs/navigator.md](docs/navigator.md) '기관 시스템 연동'.
 
 ```
 backend/         FastAPI API (backend/README.md)
