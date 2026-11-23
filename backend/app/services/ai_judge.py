@@ -1,7 +1,7 @@
-"""LLM 자격 판단 (근거 인용) + 계산 검증. 공고 하나에 LLM 을 한 번 부른다.
+"""LLM 자격 판단 (근거 인용) + 계산 검증. 자격 판단 한 번에 LLM 을 한 번 부른다 (검토 공고를 묶어서 보냄).
 
-  입력     요건 목록(설명·근거 조항), 근거 자료(공고 조항·본문·첨부·운영규정 조문), 기업정보, 상담 내용
-  출력     요건별 충족·미충족·확인 필요와 이유·인용문, 사업 목적 부합 수준
+  입력     공고별 요건 목록(설명·근거 조항)과 근거 자료(공고 조항·본문·첨부·운영규정 조문), 기업정보, 상담 내용
+  출력     공고별로 요건별 충족·미충족·확인 필요와 이유·인용문, 사업 목적 부합 수준
   검증     1) 인용문이 근거 자료나 기업정보에 그대로 없으면 그 판단은 버린다 (근거 없는 판단 차단)
            2) 규칙 엔진이 값으로 판정한 요건(업력·규모·등급·이력 등)은 규칙 결과를 쓴다 (계산 검증).
               LLM 과 다르면 차단 목록에 남긴다
@@ -129,37 +129,85 @@ def purpose_from(out: dict | None) -> dict | None:
             "similarity": None, "reason": (p.get("reason") or "")[:300], "source": "LLM"}
 
 
+def _by_announcement(out: dict | None, ids: list[int]) -> dict[int, dict]:
+    """응답을 공고별로 나눈다. 공고 하나만 보냈을 때는 예전 형식({"requirements", "purpose"})도 받는다."""
+    got: dict[int, dict] = {}
+    for a in (out or {}).get("announcements", []) or []:
+        try:
+            got[int(a["announcement_id"])] = a
+        except (KeyError, TypeError, ValueError):
+            continue
+    if not got and len(ids) == 1 and isinstance((out or {}).get("requirements"), list):
+        got[ids[0]] = out
+    return got
+
+
+async def judge_many(conn: AsyncConnection, *, org: CompanyFacts, diag: dict | None, items: list[dict],
+                     concern: str | None, user_id: int | None) -> dict[int, dict]:
+    """검토 공고를 묶어 LLM 을 한 번 부른다.
+
+    items: [{ann_id, title, purpose_text, rows, body, attachments, extra_basis}]
+    결과: {ann_id: {rows, purpose, ai {status, model, log_id, blocked, error, prompt_version}}}
+    """
+    if not items:
+        return {}
+    facts = facts_lines(org, diag)
+    concern = concern.strip() if concern and concern.strip() else None
+    bases = {it["ann_id"]: basis_passages(it["rows"], it["body"], it["attachments"], it["extra_basis"])
+             for it in items}
+    payload = {
+        "announcements": [{
+            "announcement_id": it["ann_id"], "title": it["title"], "purpose": it["purpose_text"],
+            "requirements": [{"requirement_id": r["requirement_id"], "type": r["req_type_name"],
+                              "description": r["description"], "mandatory": r["is_mandatory"],
+                              "clause": r["source_quote"]} for r in it["rows"]],
+            "basis": [{"source": b["source"], "text": b["text"]} for b in bases[it["ann_id"]]],
+        } for it in items],
+        "company": facts,
+        "concern": concern,
+    }
+    ids = [it["ann_id"] for it in items]
+    refs = {"announcement_ids": ids,
+            "requirement_ids": [r["requirement_id"] for it in items for r in it["rows"]],
+            "mandatory": sum(r["is_mandatory"] for it in items for r in it["rows"]),
+            "basis": [{"announcement_id": it["ann_id"], "source": b["source"], "ref": b.get("ref"),
+                       "chars": len(b["text"])} for it in items for b in bases[it["ann_id"]]],
+            "concern": bool(concern)}
+    res = await ai_gateway.call(conn, purpose="ELIGIBILITY_JUDGE", payload=payload, refs=refs,
+                                org_id=org.organization_id, ann_id=ids[0] if len(ids) == 1 else None,
+                                user_id=user_id)
+    rule_rows = lambda rows: [{**r, "judged_by": "RULE", "judged_label": JUDGED_KO["RULE"], "ai_reason": None,
+                               "ai_quote": None} for r in rows]
+    if res.output is None:
+        info = {"status": res.status, "model": res.model, "log_id": res.log_id, "blocked": [],
+                "error": res.error, "prompt_version": res.prompt_version}
+        return {it["ann_id"]: {"rows": rule_rows(it["rows"]), "purpose": None, "ai": info} for it in items}
+    got = _by_announcement(res.output, ids)
+    out, all_blocked = {}, []
+    for it in items:
+        a = got.get(it["ann_id"])
+        if a is None:
+            new, blocked = rule_rows(it["rows"]), [{"announcement_id": it["ann_id"], "reason": "응답에 공고 없음"}]
+        else:
+            new, blocked = merge(it["rows"], a, bases[it["ann_id"]], facts)
+            blocked = [{"announcement_id": it["ann_id"], **b} for b in blocked]
+        all_blocked += blocked
+        out[it["ann_id"]] = {
+            "rows": new, "purpose": purpose_from(a) if concern and a is not None else None,
+            "ai": {"status": "PARTIAL" if blocked and res.status == "OK" else res.status, "model": res.model,
+                   "log_id": res.log_id, "blocked": blocked, "error": None, "prompt_version": res.prompt_version}}
+    await ai_gateway.mark(conn, res.log_id, all_blocked)
+    return out
+
+
 async def judge(conn: AsyncConnection, *, org: CompanyFacts, diag: dict | None, ann_id: int, title: str,
                 purpose_text: str | None, rows: list[dict], concern: str | None, body: str | None,
                 attachments: list[str], extra_basis: list[dict], user_id: int | None) -> dict:
-    """공고 하나 판단. 결과: rows, purpose, ai {status, model, log_id, blocked, prompt_version}."""
-    mand = [r for r in rows if r["is_mandatory"]]
-    basis = basis_passages(rows, body, attachments, extra_basis)
-    facts = facts_lines(org, diag)
-    payload = {
-        "announcement": {"title": title, "purpose": purpose_text},
-        "requirements": [{"requirement_id": r["requirement_id"], "type": r["req_type_name"],
-                          "description": r["description"], "mandatory": r["is_mandatory"],
-                          "clause": r["source_quote"]} for r in rows],
-        "basis": [{"source": b["source"], "text": b["text"]} for b in basis],
-        "company": facts,
-        "concern": concern.strip() if concern and concern.strip() else None,
-    }
-    refs = {"requirement_ids": [r["requirement_id"] for r in rows], "mandatory": len(mand),
-            "basis": [{"source": b["source"], "ref": b.get("ref"), "chars": len(b["text"])} for b in basis],
-            "concern": bool(payload["concern"])}
-    res = await ai_gateway.call(conn, purpose="ELIGIBILITY_JUDGE", payload=payload, refs=refs,
-                                org_id=org.organization_id, ann_id=ann_id, user_id=user_id)
-    if res.output is None:
-        return {"rows": [{**r, "judged_by": "RULE", "judged_label": JUDGED_KO["RULE"], "ai_reason": None,
-                          "ai_quote": None} for r in rows], "purpose": None,
-                "ai": {"status": res.status, "model": res.model, "log_id": res.log_id, "blocked": [],
-                       "error": res.error, "prompt_version": res.prompt_version}}
-    new, blocked = merge(rows, res.output, basis, facts)
-    await ai_gateway.mark(conn, res.log_id, blocked)
-    return {"rows": new, "purpose": purpose_from(res.output) if payload["concern"] else None,
-            "ai": {"status": "PARTIAL" if blocked and res.status == "OK" else res.status, "model": res.model,
-                   "log_id": res.log_id, "blocked": blocked, "error": None, "prompt_version": res.prompt_version}}
+    """공고 하나만 판단할 때."""
+    out = await judge_many(conn, org=org, diag=diag, concern=concern, user_id=user_id, items=[{
+        "ann_id": ann_id, "title": title, "purpose_text": purpose_text, "rows": rows, "body": body,
+        "attachments": attachments, "extra_basis": extra_basis}])
+    return out[ann_id]
 
 
-__all__ = ["judge", "merge", "basis_passages", "facts_lines", "DISQUALIFY_KO"]
+__all__ = ["judge", "judge_many", "merge", "basis_passages", "facts_lines", "DISQUALIFY_KO"]

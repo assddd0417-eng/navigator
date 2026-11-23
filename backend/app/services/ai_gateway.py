@@ -170,19 +170,42 @@ async def activate_prompt(conn: AsyncConnection, prompt_id: int, code: str | Non
     return {"id": prompt_id, **row}
 
 
+TASK_KO = {"A": "D-STATE 진단", "B": "자격요건 검토", "C": "종합 성장경로"}
+STANDARD = {"A": 0, "B": 1, "C": 2}     # ISP 처리구조: 상담 업무별 LLM 호출 수 (진단 0, 자격 1, 종합 2)
+
+
+async def per_task(conn: AsyncConnection) -> list[dict]:
+    """상담 업무별 AI 호출 수. AI 판단을 켜고 실행한 상담만 센다."""
+    rows = await (await conn.execute(
+        """WITH n AS (SELECT c.id, c.task, count(l.id) AS calls
+                        FROM ax.consultation c LEFT JOIN ax.ai_call_log l ON l.consultation_id = c.id
+                       WHERE c.ai_mode = 'llm' GROUP BY c.id, c.task)
+           SELECT task, count(*) AS consultations, sum(calls) AS calls, max(calls) AS max_calls FROM n GROUP BY task"""
+    )).fetchall()
+    got = {r["task"]: r for r in rows}
+    return [{"task": t, "task_label": TASK_KO[t], "standard": STANDARD[t],
+             "consultations": got[t]["consultations"] if t in got else 0,
+             "calls": int(got[t]["calls"]) if t in got else 0,
+             "max_calls": got[t]["max_calls"] if t in got else None} for t in STANDARD]
+
+
 async def call_logs(conn: AsyncConnection, limit: int = 100, purpose: str | None = None) -> dict:
     rows = await (await conn.execute(
         """SELECT l.id, l.purpose, l.organization_id, o.name AS company_name, l.announcement_id,
                   a.title AS announcement_title, p.version AS prompt_version, l.model, l.status, l.blocked,
-                  l.error, l.latency_ms, l.created_at, u.name AS created_by_name, l.input_refs, l.output
+                  l.error, l.latency_ms, l.created_at, u.name AS created_by_name, l.input_refs, l.output,
+                  l.consultation_id, c.task AS consultation_task,
+                  jsonb_array_length(coalesce(l.input_refs -> 'announcement_ids', '[]'::jsonb)) AS announcement_count
              FROM ax.ai_call_log l LEFT JOIN ax.organization o ON o.id = l.organization_id
              LEFT JOIN ax.announcement a ON a.id = l.announcement_id
+             LEFT JOIN ax.consultation c ON c.id = l.consultation_id
              LEFT JOIN ax.prompt_template p ON p.id = l.prompt_id
              LEFT JOIN ax.app_user u ON u.id = l.created_by
             WHERE %(p)s::text IS NULL OR l.purpose = %(p)s
             ORDER BY l.id DESC LIMIT %(n)s""", {"p": purpose, "n": limit})).fetchall()
     for r in rows:
         r["created_at"] = r["created_at"].isoformat()
+        r["consultation_task_label"] = TASK_KO.get(r["consultation_task"])
     stats = await (await conn.execute(
         """SELECT count(*) AS total, count(*) FILTER (WHERE status = 'OK') AS ok,
                   count(*) FILTER (WHERE status = 'PARTIAL') AS partial,
@@ -190,4 +213,4 @@ async def call_logs(conn: AsyncConnection, limit: int = 100, purpose: str | None
                   count(*) FILTER (WHERE status = 'CACHED') AS cached,
                   coalesce(sum(jsonb_array_length(blocked)), 0) AS blocked
              FROM ax.ai_call_log""")).fetchone()
-    return {"mode": mode(), "stats": stats, "items": rows}
+    return {"mode": mode(), "stats": stats, "per_task": await per_task(conn), "items": rows}

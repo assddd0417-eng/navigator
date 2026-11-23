@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from typing import Any, Literal
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel, Field, field_validator
@@ -15,7 +16,7 @@ from app.errors import NotFound
 from app.routers.navigator import manage_link
 from app.config import get_settings
 from app.services import (consult_evidence, consultation, criteria, dstate, eligibility_review, governance,
-                          route)
+                          report_pdf, route)
 from app.services.bizno import format_bizno
 from app.services.ratelimit import public_rate_limit
 
@@ -37,6 +38,7 @@ class EligibilityRequest(BaseModel):
 
 class RouteRequest(BaseModel):
     concern: str | None = Field(default=None, max_length=2000, description="상담 애로사항·관심분야")
+    include_closed: bool = Field(default=False, description="자격요건 검토와 같은 값으로 보내면 자격 판단 결과를 다시 씀")
 
 
 AreaCode = Literal["TECH", "QUALITY", "PRODUCTION", "BUSINESS", "DEFENSE", "EXPORT"]
@@ -81,6 +83,7 @@ class ConsultRunIn(BaseModel):
     concern: str | None = Field(default=None, max_length=2000)
     request_id: int | None = None
     evidence_ids: list[int] | None = Field(default=None, description="이번 상담에 쓴 보완자료 (담당자 첨부·기업 제출)")
+    include_closed: bool = False
 
 
 class VariableIn(BaseModel):
@@ -227,7 +230,8 @@ async def growth_route(org_id: int, body: RouteRequest, user: CurrentUser = Depe
     """맞춤형 성장경로: 단기·중기·장기 단계별 목표, 추천 사업(준비상태), 준비과제, 근거, 미추천 사유. 저장하지 않는다."""
     async with transaction() as conn:
         await _require_company(conn, org_id, user)
-        return await route.build(conn, org_id, concern=body.concern, user_id=user.id)
+        return await route.build(conn, org_id, concern=body.concern, user_id=user.id,
+                                 include_closed=body.include_closed)
 
 
 @router.get("/consult/route/rules")
@@ -301,7 +305,7 @@ async def run_consultation(org_id: int, body: ConsultRunIn, user: CurrentUser = 
         try:
             return await consultation.run(conn, org_id, task=body.task, concern=body.concern,
                                           request_id=body.request_id, user_id=user.id,
-                                          evidence_ids=body.evidence_ids)
+                                          evidence_ids=body.evidence_ids, include_closed=body.include_closed)
         except consultation.ConsultError as e:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e)) from None
 
@@ -321,6 +325,22 @@ async def get_consultation(cid: int, user: CurrentUser = Depends(require_roles(*
     if c is None:
         raise NotFound("상담", cid)
     return c
+
+
+def _pdf(data: bytes, name: str) -> Response:
+    return Response(data, media_type="application/pdf", headers={
+        "Content-Disposition": f"attachment; filename=\"report.pdf\"; filename*=UTF-8''{quote(name)}"})
+
+
+@router.get("/consult/consultations/{cid}/report.pdf")
+async def consultation_pdf(cid: int, user: CurrentUser = Depends(require_roles(*STAFF))):
+    """상담결과서 PDF (담당자 판본). 저장한 결과서 내용 그대로."""
+    async with transaction() as conn:
+        await _require_consultation(conn, cid, user)
+        c = await consultation.get(conn, cid)
+    if c is None:
+        raise NotFound("상담", cid)
+    return _pdf(report_pdf.staff_pdf(c), report_pdf.filename(c["company_name"], "상담결과서", c["created_at"]))
 
 
 @router.put("/consult/consultations/{cid}")
@@ -366,6 +386,19 @@ async def my_consultations(link: dict = Depends(manage_link)):
     """기업 화면: 확정된 상담결과와 내 상담 요청."""
     async with transaction() as conn:
         return await consultation.company_view(conn, link["organization_id"])
+
+
+@router.get("/manage/consultations/{cid}/report.pdf", dependencies=[Depends(public_rate_limit)])
+async def my_consultation_pdf(cid: int, link: dict = Depends(manage_link)):
+    """기업 화면의 확정 상담 결과 PDF (점수 없이 라벨만)."""
+    async with transaction() as conn:
+        view = await consultation.company_view(conn, link["organization_id"])
+        name = (await (await conn.execute("SELECT name FROM ax.organization WHERE id = %s",
+                                          (link["organization_id"],))).fetchone())["name"]
+    c = next((x for x in view["consultations"] if x["id"] == cid), None)
+    if c is None:
+        raise NotFound("상담", cid)
+    return _pdf(report_pdf.company_pdf(name, c), report_pdf.filename(name, "상담결과", c["confirmed_at"]))
 
 
 @router.post("/manage/consult-requests", status_code=201, dependencies=[Depends(public_rate_limit)])

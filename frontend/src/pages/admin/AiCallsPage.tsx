@@ -29,6 +29,28 @@ export function AiCallsPage() {
           <span className="badge badge-info">차단 판단 수 {st.blocked}</span>
         </div>
       )}
+      {calls.data?.per_task && (
+        <Card title="상담 업무별 AI 호출">
+          <p className="small muted">기준은 상담 1건당 호출 수 (진단은 AI를 쓰지 않음). AI 판단을 켜고 실행한 상담만 셉니다.</p>
+          <table className="table">
+            <thead><tr><th>상담 업무</th><th>기준</th><th>상담 수</th><th>호출 수</th><th>상담 1건 최대</th><th>판정</th></tr></thead>
+            <tbody>
+              {calls.data.per_task.map((t) => (
+                <tr key={t.task}>
+                  <td>{t.task_label}</td>
+                  <td>{t.standard}회</td>
+                  <td>{t.consultations}</td>
+                  <td>{t.calls}</td>
+                  <td>{t.max_calls ?? '–'}</td>
+                  <td>{t.max_calls == null ? <span className="badge badge-muted">실행 없음</span>
+                    : t.max_calls <= t.standard ? <span className="badge badge-ok">기준 이내</span>
+                      : <span className="badge badge-bad">기준 초과</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
       <Card title="호출 목록" actions={
         <select value={purpose} onChange={(e) => { setPurpose(e.target.value); setOpenId(null) }} aria-label="목적">
           {PURPOSES.map((p) => <option key={p.code} value={p.code}>{p.label}</option>)}
@@ -37,22 +59,23 @@ export function AiCallsPage() {
         {calls.loading ? <div className="page-loading">불러오는 중…</div> : !calls.data?.items.length ? <Empty>호출 기록이 없습니다.</Empty> : (
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th>시각</th><th>목적</th><th>기업</th><th>공고</th><th>프롬프트</th><th>모델</th><th>상태</th><th>차단</th><th>응답(ms)</th></tr></thead>
+              <thead><tr><th>시각</th><th>목적</th><th>상담</th><th>기업</th><th>공고</th><th>프롬프트</th><th>모델</th><th>상태</th><th>차단</th><th>응답(ms)</th></tr></thead>
               <tbody>
                 {calls.data.items.map((c) => (
                   <Fragment key={c.id}>
                     <tr style={{ cursor: 'pointer' }} onClick={() => setOpenId(openId === c.id ? null : c.id)}>
                       <td>{fmtDate(c.created_at)}</td>
                       <td>{PURPOSE_KO[c.purpose] ?? c.purpose}</td>
+                      <td>{c.consultation_id ? `${c.consultation_id}번 ${c.consultation_task_label ?? ''}` : '–'}</td>
                       <td>{c.company_name ?? '–'}</td>
-                      <td>{c.announcement_title ?? '–'}</td>
+                      <td>{c.announcement_count > 1 ? `공고 ${c.announcement_count}건 묶음` : c.announcement_title ?? '–'}</td>
                       <td>{c.prompt_version != null ? `v${c.prompt_version}` : '–'}</td>
                       <td>{c.model ?? '–'}</td>
                       <td><span className={`badge badge-${STATUS_TONE[c.status] ?? 'muted'}`}>{STATUS_KO[c.status] ?? c.status}</span></td>
                       <td>{c.blocked?.length ?? 0}</td>
                       <td>{c.latency_ms ?? '–'}</td>
                     </tr>
-                    {openId === c.id && <tr><td colSpan={9}><Detail c={c} /></td></tr>}
+                    {openId === c.id && <tr><td colSpan={10}><Detail c={c} /></td></tr>}
                   </Fragment>
                 ))}
               </tbody>
@@ -74,7 +97,7 @@ function Detail({ c }: { c: AiCall }) {
           <ul>
             {c.blocked.map((b, i) => (
               <li key={i}>
-                요건 {b.requirement_id}: {b.reason}
+                {b.announcement_id != null && `공고 ${b.announcement_id} `}{b.requirement_id != null && `요건 ${b.requirement_id}`}{b.section && `결과서 항목 ${b.section}`}: {b.reason}
                 {b.llm_result && ` (AI ${b.llm_result}${b.rule_result ? `, 규칙 ${b.rule_result}` : ''})`}
                 {b.quote && <div className="muted">인용: “{b.quote}”</div>}
               </li>
@@ -87,7 +110,7 @@ function Detail({ c }: { c: AiCall }) {
         <div>
           <strong>근거 출처</strong>
           <ul>
-            {basis.map((b, i) => <li key={i}>{b.source ?? '–'} · {b.ref ?? '–'} · {b.chars ?? 0}자</li>)}
+            {basis.map((b, i) => <li key={i}>{b.announcement_id != null ? `공고 ${b.announcement_id} · ` : ''}{b.source ?? '–'} · {b.ref ?? '–'} · {b.chars ?? 0}자</li>)}
             {c.input_refs?.sections?.map((s) => <li key={s}>결과서 항목 {s}</li>)}
           </ul>
         </div>

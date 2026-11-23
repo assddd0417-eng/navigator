@@ -91,7 +91,7 @@ export function ConsultPage() {
       setTab('qualify')
     }
     if (task === 'C') {
-      setRoute(await growthRoute(orgId!, { concern: c }))
+      setRoute(await growthRoute(orgId!, { concern: c, include_closed: includeClosed }))
       setTab('route')
     }
     toast.show({ kind: 'success', title: '진단을 저장했습니다', message: '진단 이력에서 볼 수 있습니다.' })
@@ -99,6 +99,7 @@ export function ConsultPage() {
 
   const saveDraft = () => run(async () => {
     const c = await createConsultation(orgId!, { task, concern: concern.trim() || undefined, request_id: requestId ?? undefined,
+      include_closed: includeClosed,
       evidence_ids: evidenceIds.length ? evidenceIds : undefined })
     setConsultation(c)
     setTab('report')

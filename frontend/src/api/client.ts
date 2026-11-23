@@ -159,14 +159,15 @@ function emit(error: ApiError, silent?: boolean): ApiError {
  * 파일 내려받기 (엑셀 등). api() 와 같은 X-User-Id·오류 처리를 거쳐, 받은 파일을 브라우저 저장으로 넘긴다.
  * 파일 이름은 서버의 Content-Disposition(filename*=UTF-8'') 을 따르고, 없으면 fallbackName.
  */
-export async function downloadFile(path: string, fallbackName: string, opts: Pick<RequestOptions, 'query'> = {}): Promise<void> {
+export async function downloadFile(path: string, fallbackName: string,
+  opts: Pick<RequestOptions, 'query' | 'headers' | 'anonymous'> = {}): Promise<void> {
   const params = new URLSearchParams()
   for (const [k, v] of Object.entries(opts.query ?? {})) {
     if (v !== undefined && v !== null && v !== '') params.set(k, String(v))
   }
   const url = `${BASE_URL}${path}${params.size ? `?${params}` : ''}`
-  const headers: Record<string, string> = {}
-  if (currentUserId != null) headers['X-User-Id'] = String(currentUserId)
+  const headers: Record<string, string> = { ...(opts.headers ?? {}) }
+  if (currentUserId != null && !opts.anonymous) headers['X-User-Id'] = String(currentUserId)
   let res: Response
   try {
     res = await fetch(url, { headers })

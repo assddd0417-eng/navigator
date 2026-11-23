@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from
 import { Link } from 'react-router-dom'
 import { ApiError } from '../../api/client'
 import {
-  answerQuestions, autofillProfile, createMyConsultRequest, getMyConsultations, CERT_TYPES, deleteEvidence, PRODUCT_CATEGORIES, SUPPORT_RESULTS, uploadEvidence, getMyAlerts, getMyDstate, getMyMatches, saveMyDstate, getMyProfile, getMyQuestions, REGIONS, SIZE_LABELS, updateMyProfile,
+  answerQuestions, autofillProfile, createMyConsultRequest, downloadMyConsultationPdf, getMyConsultations, CERT_TYPES, deleteEvidence, PRODUCT_CATEGORIES, SUPPORT_RESULTS, uploadEvidence, getMyAlerts, getMyDstate, getMyMatches, saveMyDstate, getMyProfile, getMyQuestions, REGIONS, SIZE_LABELS, updateMyProfile,
   type DstateVariable, type MyConsultation, type MyConsultRequest, type Evidence, type FullProfile, type MatchRun, type ProductCategory, type ProfileUpdate, type Question, type SupportResult,
 } from '../../api/navigator'
 import { useToast } from '../../components/Toast'
@@ -752,7 +752,12 @@ function ConsultPanel({ token }: { token: string }) {
 
       {data && !data.consultations.length && <Card><Empty>확정된 상담 결과가 없습니다. 상담을 요청하면 담당자가 확인 후 안내합니다.</Empty></Card>}
       {data?.consultations.map((c) => (
-        <Card key={c.id} title={`${c.task_label} 상담 결과`} actions={<span className="small muted">{fmtDate(c.confirmed_at)}</span>}>
+        <Card key={c.id} title={`${c.task_label} 상담 결과`} actions={
+          <div className="form-row" style={{ gap: 8, alignItems: 'center' }}>
+            <span className="small muted">{fmtDate(c.confirmed_at)}</span>
+            <button className="btn btn-sm" disabled={busy} onClick={() => void run(() => downloadMyConsultationPdf(token, c.id))}>PDF 내려받기</button>
+          </div>
+        }>
           {c.state_label && <p className="small muted">상태유형 {c.state_label}</p>}
           {c.report.map((s) => (
             <div key={s.key}>

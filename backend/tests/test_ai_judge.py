@@ -66,16 +66,22 @@ class FakeLLM:
             return json.dumps({"sections": [
                 {"key": s["key"], "text": s["text"].replace("\n", " ") + " 이상임."} for s in data["sections"]]
                 + [{"key": "route", "text": "단기 사업에 반드시 선정됨."}]}, ensure_ascii=False)
+        return json.dumps({"announcements": [
+            {"announcement_id": a["announcement_id"], "requirements": self._reqs(a["requirements"]),
+             "purpose": {"level": "FULL", "reason": "품질체계 구축 목적과 맞음"}}
+            for a in data["announcements"]]}, ensure_ascii=False)
+
+    @staticmethod
+    def _reqs(requirements):
         reqs = []
-        for r in data["requirements"]:
+        for r in requirements:
             if r["type"] == "기타" or "보안" in r["description"]:
                 reqs.append({"requirement_id": r["requirement_id"], "result": "MET", "reason": "보안측정 통과 확인",
                              "quote": "보안측정을 통과한 기업", "question": None})
             else:
                 reqs.append({"requirement_id": r["requirement_id"], "result": "UNMET", "reason": "규모 다름",
                              "quote": "기업규모: 중소기업", "question": None})
-        return json.dumps({"requirements": reqs, "purpose": {"level": "FULL", "reason": "품질체계 구축 목적과 맞음"}},
-                          ensure_ascii=False)
+        return reqs
 
 
 @pytest.fixture
@@ -135,9 +141,9 @@ async def test_ai_flow(client, setup):
     r = await client.post(f"/navigator/consult/companies/{org}/eligibility", headers=as_user(1), json=body)
     assert r.json()["results"][0]["ai"]["status"] == "CACHED" and len(fake.calls) == n
 
-    # 결과서 다듬기: 약속 표현은 템플릿 문장 유지, 기업 이름은 보내지 않음
+    # 결과서 다듬기(종합 상담): 약속 표현은 템플릿 문장 유지, 기업 이름은 보내지 않음
     r = await client.post(f"/navigator/consult/companies/{org}/consultations", headers=as_user(1),
-                          json={"task": "B", "concern": "품질체계 구축"})
+                          json={"task": "C", "concern": "품질체계 구축"})
     assert r.status_code == 201, r.text
     rep = {s["key"]: s for s in r.json()["report"]}
     assert rep["overview"]["drafted_by"] == "LLM" and NAME in rep["overview"]["text"]
@@ -176,3 +182,103 @@ async def test_rules_mode_without_llm(client, setup):
     r = await client.post(f"/navigator/consult/companies/{org}/eligibility", headers=as_user(1), json={})
     assert r.status_code == 200
     assert r.json().get("ai_mode", "rules") == "rules"
+
+
+async def _two_announcements(client):
+    ids = []
+    for no, title in (("AJ-11", "보안 통신 실증 지원(가상)"), ("AJ-12", "보안 부품 국산화 지원(가상)")):
+        r = await client.post("/navigator/announcements", headers=as_user(1), json={
+            "announcement_no": no, "title": title, "agency_name": "(가상)기관", "summary": "방산 품질체계 구축 지원",
+            "receipt_end": (date.today() + timedelta(days=30)).isoformat(),
+            "requirements": [{"req_type_code": "OTHER", "description": "보안측정 통과 기업",
+                              "source_quote": "신청자격: 보안측정을 통과한 기업"}]})
+        assert r.status_code == 201, r.text
+        ids.append(r.json()["id"])
+    return ids
+
+
+async def test_calls_per_consult_task(client, setup):
+    """ISP 처리구조: 상담 업무별 LLM 호출 진단 0회, 자격 1회, 종합 2회. 공고가 여러 건이어도 자격 판단은 1회."""
+    org, fake = setup
+    anns = await _two_announcements(client)
+    want = {"A": [], "B": ["ELIGIBILITY_JUDGE"], "C": ["ELIGIBILITY_JUDGE", "REPORT_DRAFT"]}
+    for task, purposes in want.items():
+        n = len(fake.calls)
+        r = await client.post(f"/navigator/consult/companies/{org}/consultations", headers=as_user(1),
+                              json={"task": task, "concern": f"품질체계 구축 {task}"})
+        assert r.status_code == 201, r.text
+        cid = r.json()["id"]
+        assert len(fake.calls) - n == len(purposes), task
+        with psycopg.connect(TEST_URL) as c:
+            logs = c.execute("SELECT purpose, input_refs FROM ax.ai_call_log WHERE consultation_id = %s ORDER BY id",
+                             (cid,)).fetchall()
+        assert [p for p, _ in logs] == purposes, task
+        if purposes:
+            assert set(anns) <= set(logs[0][1]["announcement_ids"])          # 공고를 묶어 한 번에 보냄
+            sent = json.loads(fake.calls[n][1])
+            assert {a["announcement_id"] for a in sent["announcements"]} >= set(anns)
+        if task != "A":
+            res = {x["announcement_id"]: x for x in r.json()["eligibility"]["results"]}
+            assert all(res[a]["ai"]["status"] == "OK" and res[a]["verdict"] == "ELIGIBLE" for a in anns)
+    assert r.json()["report"][0]["drafted_by"] == "LLM"          # 종합 상담만 결과서 문장 다듬기
+
+    per = {x["task"]: x for x in (await client.get("/navigator/ai/calls", headers=as_user(4))).json()["per_task"]}
+    assert {t: per[t]["standard"] for t in per} == {"A": 0, "B": 1, "C": 2}
+    assert per["A"]["max_calls"] == 0 and per["B"]["max_calls"] == 1 and per["C"]["max_calls"] == 2
+
+
+class DropLast(FakeLLM):
+    """응답에서 마지막 공고를 빠뜨린다."""
+
+    async def complete(self, system: str, user: str) -> str:
+        out = json.loads(await super().complete(system, user))
+        if "announcements" in out:
+            out["announcements"] = out["announcements"][:-1]
+        return json.dumps(out, ensure_ascii=False)
+
+
+async def test_batch_missing_announcement_falls_back(client, setup):
+    org, _ = setup
+    anns = await _two_announcements(client)
+    fake = DropLast()
+    ai_gateway.set_client(fake)
+    r = await client.post(f"/navigator/consult/companies/{org}/eligibility", headers=as_user(1),
+                          json={"announcement_ids": anns, "concern": "품질체계"})
+    assert r.status_code == 200, r.text
+    assert len(fake.calls) == 1
+    res = {x["announcement_id"]: x for x in r.json()["results"]}
+    first, last = res[anns[0]], res[anns[1]]
+    assert first["checks"][0]["judged_by"] == "LLM" and first["ai"]["status"] == "OK"
+    assert last["checks"][0]["judged_by"] == "RULE" and last["verdict"] == "NEEDS_INFO"
+    assert last["ai"]["status"] == "PARTIAL" and last["ai"]["blocked"][0]["reason"] == "응답에 공고 없음"
+    assert first["ai"]["log_id"] == last["ai"]["log_id"]
+
+
+async def test_max_announcements_per_call(client, setup, monkeypatch):
+    """AI_JUDGE_MAX_ANNOUNCEMENTS 를 넘는 공고는 규칙 결과. 호출은 그래도 1회."""
+    from app.config import get_settings
+    org, fake = setup
+    anns = await _two_announcements(client)
+    monkeypatch.setattr(get_settings(), "ai_judge_max_announcements", 1)
+    r = await client.post(f"/navigator/consult/companies/{org}/eligibility", headers=as_user(1),
+                          json={"announcement_ids": anns, "concern": "품질체계 상한"})
+    assert len(fake.calls) == 1
+    res = {x["announcement_id"]: x for x in r.json()["results"]}
+    assert res[anns[0]]["ai"] is not None and res[anns[1]]["ai"] is None
+
+
+async def test_staff_flow_two_calls_for_full_consult(client, setup):
+    """화면 흐름 (실행: 자격요건 검토 → 성장경로 미리보기, 결과 저장) 전체에서 종합 상담 LLM 호출은 2회."""
+    org, fake = setup
+    await _two_announcements(client)
+    body = {"concern": "수요처 확보 화면 흐름"}
+    n = len(fake.calls)
+    assert (await client.post(f"/navigator/consult/companies/{org}/eligibility", headers=as_user(1),
+                              json=body)).status_code == 200
+    assert (await client.post(f"/navigator/consult/companies/{org}/route", headers=as_user(1),
+                              json=body)).status_code == 200
+    r = await client.post(f"/navigator/consult/companies/{org}/consultations", headers=as_user(1),
+                          json={"task": "C", **body})
+    assert r.status_code == 201, r.text
+    purposes = [("sections" in json.loads(u)) and "REPORT_DRAFT" or "ELIGIBILITY_JUDGE" for _, u in fake.calls[n:]]
+    assert purposes == ["ELIGIBILITY_JUDGE", "REPORT_DRAFT"]

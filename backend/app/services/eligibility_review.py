@@ -3,8 +3,8 @@
   Q1 신청할 수 있는가: 필수요건(신청자격·신청제한)을 기업정보와 대조. 하나라도 미충족이면 신청 불가
   Q2 선정 가능성(적합도): 평가항목·배점 x D-STATE 영역 점수 + 상담 내용과 사업 목적 (services/fit.py)
 판정은 규칙으로 하고, 요건마다 공고문 근거 조항(인용·쪽)을 붙인다. 근거가 없는 요건은 '근거 조항 없음'으로 표시해
-담당자가 확인하게 한다. AI 판단을 켜면 공고마다 LLM 을 한 번 불러 서술형 요건을 근거 인용으로 판단하고,
-수치 요건은 규칙 결과로 다시 확인한다 (services/ai_judge.py). 결과는 상담 참고자료이며 확정은 담당자가 한다.
+담당자가 확인하게 한다. AI 판단을 켜면 자격검토 한 번에 LLM 을 한 번 불러(검토 공고를 묶어 보냄) 서술형 요건을
+근거 인용으로 판단하고, 수치 요건은 규칙 결과로 다시 확인한다 (services/ai_judge.py). 결과는 상담 참고자료이며 확정은 담당자가 한다.
 """
 from __future__ import annotations
 
@@ -92,11 +92,11 @@ async def review(conn: AsyncConnection, org_id: int, *, concern: str | None = No
     extra = await _ann_extra(conn, ann_ids)
     purpose = await purpose_fit(conn, concern, ann_ids)
     use_ai = ai_gateway.mode() == "llm"
-    ai_left = get_settings().ai_judge_max_announcements
+    ai_max = get_settings().ai_judge_max_announcements
     limits_by_prog: dict[int | None, list[dict]] = {}
     crit = await criteria.active(conn)
 
-    results = []
+    staged = []
     for ann_id in ann_ids:
         ann = anns.get(ann_id)
         if ann is None:
@@ -111,7 +111,6 @@ async def review(conn: AsyncConnection, org_id: int, *, concern: str | None = No
         meta_of = {**ann.req_meta, **{r.id: {"type_name": "공통 참여제한", "quote": f"{a['ref']}: {a['body'][:300]}",
                                               "page": None, "regulation": a["ref"]} for r, a in common}}
         checks = [(req, judge(req, org, ann.as_of)) for req in reqs]
-        verdict = overall(checks)
         rows = []
         for req, ch in checks:
             meta = meta_of[req.id]
@@ -128,15 +127,26 @@ async def review(conn: AsyncConnection, org_id: int, *, concern: str | None = No
             })
         query = " ".join([ann.title] + [r["description"] for r in rows if r["is_mandatory"]] + [concern or ""])
         regs = await regulation.basis_for(conn, program_id=x["program_id"], query=query)
+        staged.append({"ann_id": ann_id, "ann": ann, "x": x, "rows": rows, "verdict": overall(checks), "regs": regs})
+
+    # AI 판단: 자격검토 한 번에 LLM 한 번. 앞에서부터 AI_JUDGE_MAX_ANNOUNCEMENTS 건을 묶어 보내고 나머지는 규칙 결과
+    judged: dict[int, dict] = {}
+    if use_ai:
+        items = [{"ann_id": st["ann_id"], "title": st["ann"].title,
+                  "purpose_text": st["x"]["purpose"] or st["x"]["summary"], "rows": st["rows"],
+                  "body": st["x"]["body_text"], "attachments": st["x"]["attachments"],
+                  "extra_basis": [g for g in st["regs"] if g["confirmed_at"]]}
+                 for st in staged if st["rows"]][:ai_max]
+        judged = await ai_judge.judge_many(conn, org=org, diag=diagnosis, items=items, concern=concern,
+                                           user_id=user_id)
+
+    results = []
+    for st in staged:
+        ann_id, ann, x, rows, verdict, regs = st["ann_id"], st["ann"], st["x"], st["rows"], st["verdict"], st["regs"]
         ai = None
         ann_purpose = purpose.get(ann_id) if concern else None
-        if use_ai and ai_left > 0 and rows:
-            ai_left -= 1
-            j = await ai_judge.judge(conn, org=org, diag=diagnosis, ann_id=ann_id, title=ann.title,
-                                     purpose_text=x["purpose"] or x["summary"], rows=rows, concern=concern,
-                                     body=x["body_text"], attachments=x["attachments"],
-                                     extra_basis=[g for g in regs if g["confirmed_at"]],
-                                     user_id=user_id)
+        if ann_id in judged:
+            j = judged[ann_id]
             rows, ai = j["rows"], j["ai"]
             verdict = verdict_of(rows)
             if j["purpose"] is not None:
