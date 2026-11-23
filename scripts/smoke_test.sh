@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # API 스모크 테스트: 실행 중인 백엔드에 curl 로 주요 흐름을 한 번 돌려 본다.
-#   ① /health  ② 기업 정보  ③ 공고  ④ 공고문 PDF  ⑤ 매칭·판정  ⑥ 알림  ⑦ 외부 수집  ⑧ 공고 등록·조건 확인
+#   ① /health  ② 기업 정보  ③ 공고  ④ 공고문 PDF  ⑤ 매칭·판정  ⑥ 알림  ⑦ 외부 수집  ⑧ 공고 등록·조건 확인  ⑨ 기업 상담
 #
 # 사용법:
 #   BASE_URL=http://localhost:8000 ./scripts/smoke_test.sh
 #
 # 전제: 마이그레이션 + seeds/base.sql + seeds/navigator_companies.sql + seeds/navigator_announcements.sql
-#       (+ navigator_past_announcements.sql) 적용, 서버 실행 중 (기본 EMBEDDER=hash).
+#       (+ navigator_past_announcements.sql, navigator_consult.sql) 적용, 서버 실행 중 (기본 EMBEDDER=hash).
 # 필요 도구: curl, jq   (PDF 픽스처: scripts/fixtures/*.pdf)
 # 재실행 안전: 공고번호에 실행 태그를 붙여 매번 새 데이터로 돈다.
 # 종료 코드: 모두 통과 0, 하나라도 실패 1.
@@ -221,5 +221,13 @@ if [[ -n "$TXT_ANN" ]]; then
     api "조건 확인 저장" 204 PUT "/navigator/announcements/$TXT_ANN/review" "$STAFF" "{\"requirements\":$REQS}"
     api "조건 확인은 담당자만 (VIEWER)" 403 POST "/navigator/announcements/$TXT_ANN/extract" "$VIEWER"
 fi
+
+section "⑨ 기업 상담"
+api "상담 기업 찾기" 200 GET "/navigator/consult/companies?q=%ED%95%9C%EB%B9%9B" "$STAFF"
+check "한빛 검색됨" 'any(.[]; .organization_id == 101)'
+api "D-STATE 진단 (한빛)" 201 POST /navigator/consult/companies/101/dstate "$STAFF"
+check "6개 영역 · 방산진입 준비기업 · 이력 저장" \
+    '(.areas | length) == 6 and .state_type == "DEFENSE_ENTRY" and .diagnosis_id > 0'
+api "진단은 담당자만 (VIEWER)" 403 GET /navigator/consult/companies/101/dstate "$VIEWER"
 
 summary
