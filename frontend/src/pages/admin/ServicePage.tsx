@@ -41,7 +41,7 @@ export function ServicePage() {
               <thead>
                 <tr>
                   <th>기능</th><th>세부 업무</th><th>방산기업</th><th>기업지원 담당자</th><th>지원사업 소관부서</th>
-                  <th>AX 주관부서</th><th>시스템 (성장경로 Agent)</th><th>등급</th>
+                  <th>AX 주관부서</th><th>시스템 (성장경로 AI)</th><th>등급</th>
                 </tr>
               </thead>
               <tbody>
