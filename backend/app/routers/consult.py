@@ -4,16 +4,16 @@
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.auth import CurrentUser, request_id, require_roles
 from app.db import transaction
 from app.errors import NotFound
 from app.routers.navigator import manage_link
-from app.services import dstate, eligibility_review
+from app.services import dstate, eligibility_review, route
 from app.services.bizno import format_bizno
 from app.services.ratelimit import public_rate_limit
 
@@ -31,6 +31,36 @@ class EligibilityRequest(BaseModel):
                                 description="상담 애로사항·관심분야. 사업 목적 부합 평가에 씀")
     announcement_ids: list[int] | None = Field(default=None, description="비우면 접수중·접수전 공개 공고 전체")
     include_closed: bool = False
+
+
+class RouteRequest(BaseModel):
+    concern: str | None = Field(default=None, max_length=2000, description="상담 애로사항·관심분야")
+
+
+AreaCode = Literal["TECH", "QUALITY", "PRODUCTION", "BUSINESS", "DEFENSE", "EXPORT"]
+
+
+class ProgramRouteIn(BaseModel):
+    stage_code: Literal["ENTRY", "TECH_DEV", "SCALE"]
+    next_program_ids: list[int] = Field(default_factory=list, max_length=20)
+    entry_condition: str | None = Field(default=None, max_length=500)
+    entry_min_scores: dict[AreaCode, int] = Field(default_factory=dict, examples=[{"TECH": 60, "DEFENSE": 30}])
+    prep_tasks: list[str] = Field(default_factory=list, max_length=10)
+    expected_output: str | None = Field(default=None, max_length=500)
+    repeatable: bool = False
+    sort_order: int = Field(default=0, ge=0, le=999)
+
+    @field_validator("entry_min_scores")
+    @classmethod
+    def _range(cls, v: dict[str, int]) -> dict[str, int]:
+        if any(not 0 <= x <= 100 for x in v.values()):
+            raise ValueError("진입조건 점수는 0~100")
+        return v
+
+    @field_validator("prep_tasks")
+    @classmethod
+    def _tasks(cls, v: list[str]) -> list[str]:
+        return [t.strip()[:200] for t in v if t.strip()]
 
 
 async def _require_company(conn, org_id: int) -> None:
@@ -119,6 +149,41 @@ async def eligibility(org_id: int, body: EligibilityRequest, _: CurrentUser = De
         return await eligibility_review.review(conn, org_id, concern=body.concern,
                                                announcement_ids=body.announcement_ids,
                                                include_closed=body.include_closed)
+
+
+@router.post("/consult/companies/{org_id}/route")
+async def growth_route(org_id: int, body: RouteRequest, _: CurrentUser = Depends(require_roles(*STAFF))):
+    """맞춤형 성장경로: 단기·중기·장기 단계별 목표, 추천 사업(준비상태), 준비과제, 근거, 미추천 사유. 저장하지 않는다."""
+    async with transaction() as conn:
+        await _require_company(conn, org_id)
+        return await route.build(conn, org_id, concern=body.concern)
+
+
+@router.get("/consult/route/rules")
+async def route_rules(_: CurrentUser = Depends(require_roles(*STAFF))):
+    """성장단계와 지원사업 연계 기준표. 연계 기준이 없는 사업도 함께 보여 준다."""
+    async with transaction() as conn:
+        return await route.rules(conn)
+
+
+@router.put("/consult/route/programs/{program_id}")
+async def save_route(program_id: int, body: ProgramRouteIn, user: CurrentUser = Depends(require_roles(*STAFF)),
+                     rid: str = Depends(request_id)):
+    async with transaction(user.id, rid) as conn:
+        try:
+            await route.save_program_route(conn, program_id, body.model_dump(), user.id)
+        except LookupError:
+            raise NotFound("지원사업", program_id) from None
+        except ValueError as e:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e)) from None
+        return await route.rules(conn)
+
+
+@router.delete("/consult/route/programs/{program_id}", status_code=204)
+async def delete_route(program_id: int, user: CurrentUser = Depends(require_roles(*STAFF)),
+                       rid: str = Depends(request_id)):
+    async with transaction(user.id, rid) as conn:
+        await conn.execute("DELETE FROM ax.program_route WHERE program_id = %s", (program_id,))
 
 
 @router.get("/manage/dstate", dependencies=[Depends(public_rate_limit)])

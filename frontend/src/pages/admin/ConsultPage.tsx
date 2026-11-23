@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import {
-  getDiagnosisHistory, getDstateRules, previewDstate, reviewEligibility, runDstate, saveStaffDstateValues, searchConsultCompanies,
-  type ConsultCompany, type DstateResult, type EligibilityReview, type DstateVariable,
+  getDiagnosisHistory, getDstateRules, growthRoute, previewDstate, reviewEligibility, runDstate, saveStaffDstateValues, searchConsultCompanies,
+  type ConsultCompany, type DstateResult, type EligibilityReview, type DstateVariable, type GrowthRoute,
 } from '../../api/navigator'
 import { changedValues, DstateInput } from '../../components/DstateInput'
 import { RadarChart } from '../../components/RadarChart'
 import { useToast } from '../../components/Toast'
 import { EligibilityPanel } from './EligibilityPanel'
+import { RoutePanel } from './RoutePanel'
+import { RouteRulesCard } from './RouteRulesCard'
 import { Card, Empty, fmtDate, PageHeader, useAction, useAsync } from '../../components/ui'
 
 type Task = 'A' | 'B' | 'C'
@@ -15,12 +17,12 @@ type ResultTab = 'dstate' | 'qualify' | 'route'
 const TASKS: { code: Task; label: string; ready: boolean }[] = [
   { code: 'A', label: 'A. D-STATE 진단', ready: true },
   { code: 'B', label: 'B. 자격요건 검토 (A+B)', ready: true },
-  { code: 'C', label: 'C. 종합 성장경로 (A+B+C)', ready: false },
+  { code: 'C', label: 'C. 종합 성장경로 (A+B+C)', ready: true },
 ]
 const RESULT_TABS: { code: ResultTab; label: string; ready: boolean }[] = [
   { code: 'dstate', label: 'D-STATE 진단결과', ready: true },
   { code: 'qualify', label: '자격요건 검토', ready: true },
-  { code: 'route', label: 'D-ROUTE 성장경로', ready: false },
+  { code: 'route', label: 'D-ROUTE 성장경로', ready: true },
 ]
 
 const fmtDelta = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `${n}` : '변동 없음')
@@ -36,13 +38,14 @@ export function ConsultPage() {
   const [concern, setConcern] = useState('')
   const [includeClosed, setIncludeClosed] = useState(false)
   const [elig, setElig] = useState<EligibilityReview | null>(null)
+  const [route, setRoute] = useState<GrowthRoute | null>(null)
   const [histKey, setHistKey] = useState(0)
   const { busy, run } = useAction()
   const toast = useToast()
 
   useEffect(() => {
     if (orgId == null) return
-    setResult(null); setElig(null)
+    setResult(null); setElig(null); setRoute(null)
     void run(async () => setResult(await previewDstate(orgId)))
   }, [orgId, run])
 
@@ -50,9 +53,14 @@ export function ConsultPage() {
   const execute = () => run(async () => {
     setResult(await runDstate(orgId!))
     setHistKey((k) => k + 1)
-    if (task === 'B') {
-      setElig(await reviewEligibility(orgId!, { concern: concern.trim() || undefined, include_closed: includeClosed }))
+    const c = concern.trim() || undefined
+    if (task === 'B' || task === 'C') {
+      setElig(await reviewEligibility(orgId!, { concern: c, include_closed: includeClosed }))
       setTab('qualify')
+    }
+    if (task === 'C') {
+      setRoute(await growthRoute(orgId!, { concern: c }))
+      setTab('route')
     }
     toast.show({ kind: 'success', title: '진단을 저장했습니다', message: '진단 이력에서 볼 수 있습니다.' })
   })
@@ -77,22 +85,23 @@ export function ConsultPage() {
               <li key={t.code}>
                 <button className={task === t.code ? 'on' : ''} disabled={!t.ready} onClick={() => setTask(t.code)}>
                   <span>{t.label}</span>
-                  {!t.ready && <span className="small muted">다음 단계에서 연결</span>}
                 </button>
               </li>
             ))}
           </ul>
-          <label className="small muted" style={{ display: 'block', margin: '14px 0 6px' }}>상담 내용 (애로사항·관심분야)
-            <textarea rows={3} value={concern} onChange={(e) => setConcern(e.target.value)}
-              placeholder="사업 목적 부합 평가에 씁니다. 비워도 됩니다." />
-          </label>
-          {task === 'B' && (
+          {(task === 'B' || task === 'C') && (
+            <label className="small muted" style={{ display: 'block', margin: '14px 0 6px' }}>상담 내용 (애로사항·관심분야)
+              <textarea rows={3} value={concern} onChange={(e) => setConcern(e.target.value)}
+                placeholder="사업 목적 부합 평가에 씁니다. 비워도 됩니다." />
+            </label>
+          )}
+          {(task === 'B' || task === 'C') && (
             <label className="check small" style={{ marginTop: 8 }}>
               <input type="checkbox" checked={includeClosed} onChange={(e) => setIncludeClosed(e.target.checked)} /> 마감 공고 포함
             </label>
           )}
           <button className="btn btn-primary" style={{ marginTop: 12, width: '100%' }}
-            disabled={busy || orgId == null || task === 'C'} onClick={() => void execute()}>
+            disabled={busy || orgId == null} onClick={() => void execute()}>
             {busy ? '진단 중…' : '실행'}
           </button>
         </Card>
@@ -111,10 +120,13 @@ export function ConsultPage() {
               ))}
               {tab === 'qualify' && (elig ? <EligibilityPanel data={elig} />
                 : <Card><Empty>검토 업무 B를 고르고 실행하면 결과가 나옵니다.</Empty></Card>)}
+              {tab === 'route' && (route ? <RoutePanel data={route} />
+                : <Card><Empty>검토 업무 C를 고르고 실행하면 결과가 나옵니다.</Empty></Card>)}
               {tab === 'dstate' && <HistoryCard key={`${orgId}-${histKey}`} orgId={orgId} />}
             </>
           )}
           <RulesCard />
+          <RouteRulesCard />
           <p className="small muted">진단 결과는 상담 참고자료입니다. 확정과 기업 안내는 담당자가 판단합니다.</p>
         </div>
       </div>
