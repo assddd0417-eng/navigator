@@ -7,7 +7,7 @@ backend/         FastAPI API (backend/README.md)
 frontend/        Vite + React 화면. 기업 화면(로그인 없음) + 기관 담당자 화면 (frontend/README.md)
 db/migrations/   PostgreSQL 16 + pgvector 스키마 (파일별 단일 트랜잭션)
 db/tests/        SQL 스모크 테스트 (샘플 데이터 → 흐름 확인 → ROLLBACK)
-seeds/           base.sql (담당자 계정·사업), navigator_*.sql (가상 기업·공고, navigator_consult.sql 은 상담용 가상 데이터), navigator_eval/ (검증 데이터)
+seeds/           base.sql (담당자 계정·사업), navigator_*.sql (가상 기업·공고, navigator_consult.sql·navigator_route.sql 은 상담용 가상 데이터), navigator_eval/ (검증 데이터)
 scripts/         migrate.sh (체크섬 검증), smoke_test.sh (curl API 스모크), mac_autostart.sh
 docs/            navigator.md (API·판정 규칙), navigator_ux.md (화면 표기), navigator_eval.md (검증 결과)
 ```
@@ -17,7 +17,7 @@ docs/            navigator.md (API·판정 규칙), navigator_ux.md (화면 표�
 ```bash
 export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/navigator
 ./scripts/migrate.sh                                                         # 1. 스키마
-for f in base navigator_companies navigator_announcements navigator_past_announcements navigator_consult; do
+for f in base navigator_companies navigator_announcements navigator_past_announcements navigator_consult navigator_route; do
   psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -f seeds/$f.sql            # 2. 시드 (여러 번 실행해도 안전)
 done
 (cd backend && uvicorn app.main:app --port 8000) &                            # 3. API (기본 EMBEDDER=hash)

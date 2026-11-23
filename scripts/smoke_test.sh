@@ -234,5 +234,11 @@ api "자격요건 검토 (한빛 · 컨설팅 공고)" 200 POST /navigator/consu
 check "접수 공고 판정 · 적합도 등급 · 신청 안내" \
     '(.results | length) >= 2 and (.results[] | select(.announcement_no == "NAV-2026-101") | .fit.grade) != null
      and (.results[] | select(.announcement_no == "NAV-2026-107") | .guide.company_burden) == "컨설팅 비용 25%"'
+api "성장경로 연계 기준" 200 GET /navigator/consult/route/rules "$STAFF"
+check "3단계 · 연계 기준 8건 이상" '(.stages | length) == 3 and ([.programs[] | select(.stage_code != null)] | length) >= 8'
+api "성장경로 (한빛)" 200 POST /navigator/consult/companies/101/route "$STAFF" '{"concern":"품질체계 구축과 군 수요처 확보"}'
+check "단기·중기·장기 · 추천 사업 · 안내 문구" \
+    '(.steps | length) == 3 and .steps[0].is_current and ([.steps[].programs[]] | length) >= 3 and (.notice | length) > 0'
+api "성장경로는 담당자만 (VIEWER)" 403 POST /navigator/consult/companies/101/route "$VIEWER" '{}'
 
 summary

@@ -95,6 +95,10 @@
 | `PUT /navigator/consult/companies/{org_id}/dstate/values` | 담당자 확인값 `{"values":{...}}` 저장 (출처 STAFF). `null` 이면 지움 |
 | `GET /navigator/consult/companies/{org_id}/diagnoses` | 진단 이력 (최신 순) |
 | `POST /navigator/consult/companies/{org_id}/eligibility` | 요청 본문 `{concern, announcement_ids, include_closed}`. 공고별 신청 가능 여부·적합도·근거·보완 포인트·신청 안내. 저장 안 함. 자세한 내용은 [자격검토 (상담)](#자격검토-상담) |
+| `POST /navigator/consult/companies/{org_id}/route` | 요청 본문 `{concern}`. 성장단계별 목표·추천 사업 (준비상태)·준비과제·근거·미추천 사유·경로 요약. 저장 안 함. 자세한 내용은 [성장경로 (상담)](#성장경로-상담) |
+| `GET /navigator/consult/route/rules` | 성장단계와 지원사업 연계 기준표. 연계 기준이 없는 사업도 함께 나온다 |
+| `PUT /navigator/consult/route/programs/{program_id}` | 사업의 연계 기준 저장 (`stage_code`, `next_program_ids`, `entry_condition`, `entry_min_scores`, `prep_tasks`, `expected_output`, `repeatable`, `sort_order`). 응답은 기준표 전체 |
+| `DELETE /navigator/consult/route/programs/{program_id}` | 사업의 연계 기준 삭제. 사업 자체는 남는다. 204 |
 
 ### 알림
 
@@ -457,6 +461,83 @@ weighted 모드는 비교 대상이 없으면 0.5. 정렬 방식·가중치·규
 
 가상 공고 NAV-2026-107 ('26-1차 방산 중소기업 컨설팅 지원사업(가상)) 은 실제 공고 평가표를 본떠 만들었다. 재무상황 10 (역량 BUSINESS), 기술성 15 (역량 TECH·DEFENSE), 컨설팅 목적성 15 (사업 목적), 수행방안 40 과 기대효과 20 (신청서 기반, 상담 단계 제외), 우대 가점 국방벤처센터 협약 1.5, 방산혁신기업 100 선정 2.
 
+## 성장경로 (상담)
+
+`POST /navigator/consult/companies/{org_id}/route` 가 내는 결과 (`services/route.py`). 기업의 상태유형으로 현재 단계를 정하고, 그 단계부터 마지막 단계까지 지원사업을 잇는다. 저장하지 않는다. 결과는 상담 참고자료이고, 확정은 담당자가 한다.
+
+### 성장단계
+
+| 단계 | 목표 | 단계 근거 영역 (`growth_stage.areas`) |
+|------|------|------|
+| 방산진입 단계 (`ENTRY`) | 방산 수요 확보와 진입 기반 마련 | DEFENSE, QUALITY |
+| 기술개발 단계 (`TECH_DEV`) | 보유기술의 군 수요 기반 사업화 | TECH, BUSINESS |
+| 양산·수출 단계 (`SCALE`) | 양산 실적 기반 해외시장 진출 | PRODUCTION, EXPORT |
+
+### 현재 단계 결정
+
+D-STATE 상태유형으로 정한다.
+
+| 상태유형 | 현재 단계 |
+|------|------|
+| 기초역량 정비 (`FOUNDATION`), 방산진입 준비기업 (`DEFENSE_ENTRY`) | 방산진입 |
+| 기술개발·사업화 전환기업 (`TECH_TRANSITION`) | 기술개발 |
+| 양산·공급망 고도화기업 (`MASS_PRODUCTION`), 수출 확장기업 (`EXPORT_EXPAND`) | 양산·수출 |
+
+- 경로는 현재 단계부터 마지막 단계까지 잇는다. 첫 단계가 단기, 다음이 중기, 마지막이 장기다.
+- 양산·수출 단계 기업은 남은 단계가 하나뿐이라 단기만 나온다.
+
+### 연계 기준표
+
+사업마다 `program_route` 에 한 줄을 둔다. 담당자가 `PUT /navigator/consult/route/programs/{program_id}` 로 입력하고, `GET /navigator/consult/route/rules` 로 본다.
+
+| 항목 | 뜻 |
+|------|------|
+| `stage_code` | 성장단계 (`ENTRY`, `TECH_DEV`, `SCALE`) |
+| `next_program_ids` | 다음 연계 사업 ID 목록. 자기 자신은 넣을 수 없다 |
+| `entry_condition` | 진입조건 문장. 화면과 요약에 그대로 쓴다 |
+| `entry_min_scores` | 영역별 최소 점수 (0~100). 예 `{"DEFENSE": 40}`. 미달이면 준비상태가 내려간다 |
+| `prep_tasks` | 준비과제 목록 (최대 10개) |
+| `expected_output` | 예상 산출물 |
+| `repeatable` | `true` 면 이미 수혜한 사업도 다시 추천한다 |
+| `sort_order` | 같은 단계 안의 순서. 작은 값이 먼저 |
+
+### 추천 규칙
+
+- 단계마다 최대 2개를 추천한다. 나머지는 따로 보여 준다.
+- 정렬은 준비상태 (즉시 신청, 보완 후 신청, 진입조건 준비) 순, 다음은 적합도 점수 높은 순, 다음은 `sort_order` 순이다.
+- 근거 공고가 없는 사업은 추천하지 않는다. 사유는 "근거 공고 없음 (공고 등록 후 추천)"이다. 근거 공고는 접수중·접수전 공고 중 판정이 가장 나은 것이고, 없으면 가장 최근 공개 공고다.
+- 이미 수혜한 사업은 `repeatable` 이 `false` 면 미추천한다. 지원 이력의 사업 ID 가 같거나, 사업명이 서로 포함 관계이면 같은 사업으로 본다 (4자 이상).
+- 단기 단계에서 신청 불가 공고가 있으면 미추천한다. 사유는 미충족 필수요건을 적는다. 보완 방법은 그 요건을 확인하는 담당자 질문으로 준다.
+- 중기·장기 단계에서는 신청 불가여도 추천하고, 준비상태를 진입조건 준비로 둔다.
+
+### 준비상태
+
+| 상태 | 기준 |
+|------|------|
+| 즉시 신청 | 단기 단계. 공고 판정이 신청 가능이고 진입 점수를 모두 충족 |
+| 보완 후 신청 | 단기 단계. 판정이 확인 필요이거나, 신청 가능이어도 진입 점수가 미달 |
+| 진입조건 준비 | 중기·장기 단계, 또는 단기 단계인데 검토할 접수중·접수전 공고가 없음 |
+
+진입 점수 미달 영역은 결과의 `entry_unmet` 에 기업 점수와 기준 점수로 붙는다.
+
+### 유사 기업 근거
+
+- 기준은 D-STATE 6개 영역 점수의 거리 (유클리드)다. 점수가 가까운 기업 최대 12곳을 본다. 자기 회사는 뺀다.
+- 참여 비율: 유사 기업 중 이 사업에 참여한 곳 수 ÷ 비교한 곳 수. 단계 근거 문장은 첫 번째 추천 사업 기준이다.
+- 평균 간격: 이 사업에 참여한 유사 기업이 이전 단계 추천 사업에도 참여했다면, 두 참여 연도 차이의 평균이다. 2단계 이후 근거 문장에만 쓴다.
+- 지원 이력은 참여·수혜로 기록된 건만 쓴다.
+
+### 경로 요약
+
+요약은 템플릿 문장이다. 강점 영역이 있으면 앞에 "○○ 강점(점수)을 바탕으로"를 붙이고, 단계마다 "단기에는 사업명 참여로 단계 목표"를 이어 붙인다. 추천 사업이 하나도 없으면 "추천할 경로가 없음. 사업 연계 기준과 공고 등록이 필요함."이 나온다.
+
+### 결과 저장과 안내
+
+- 경로 결과는 저장하지 않는다. 상담할 때마다 다시 계산한다.
+- 모든 응답에 안내 문구를 붙인다. "추천 경로는 상담 참고자료이며 사업 선정·지원을 보장하지 않습니다."
+
+가상 시드 `seeds/navigator_route.sql` 은 `navigator_consult.sql` 다음에 실행한다. 사업 3개를 더한다 (국방벤처 혁신기술 지원 `P-INNOV`, 방산 중소수출길 지원 `P-EXPORT`, 방산전시회 참가 지원 `P-EXPO`). 세 사업에 근거 공고 1건씩 (NAV-2027-108, NAV-2026-109, NAV-2025-110) 을 넣고, 단계별 연계 기준 8건 (방산진입 2, 기술개발 4, 양산·수출 2) 과 유사 사례 지원 이력 4건 (102 누리 3건, 103 새봄 1건) 을 넣는다. 시드는 `program_route` 를 전부 지우고 다시 넣으므로, 담당자가 입력한 연계 기준도 함께 사라진다. 운영 DB 에서는 돌리지 않는다.
+
 ## 화면
 
 | 주소 | 대상 | 내용 |
@@ -527,7 +608,7 @@ weighted 모드는 비교 대상이 없으면 0.5. 정렬 방식·가중치·규
 ```bash
 export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/navigator
 ./scripts/migrate.sh
-for f in base navigator_companies navigator_announcements navigator_past_announcements navigator_consult; do
+for f in base navigator_companies navigator_announcements navigator_past_announcements navigator_consult navigator_route; do
   psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f seeds/$f.sql
 done
 (cd backend && NAVIGATOR_DEV_EXPOSE_LINK=true uvicorn app.main:app --reload --port 8000) &
@@ -580,3 +661,5 @@ curl -s -X POST localhost:8000/navigator/announcements -H 'X-User-Id: 1' -H 'Con
 - 조달청 부정당제재 정보 연동 (지금은 회사 정보 입력)
 - 사업 목적 부합 LLM 평가 (지금은 임베딩 관련도)
 - 평가표 자동 추출 (지금은 담당자가 확인 화면에서 입력)
+- LLM 추천 사유 문장 생성 (지금은 템플릿)
+- 실제 사업 연계 기준표는 기관 확인 후 입력

@@ -770,3 +770,106 @@ export interface EligibilityReview {
 }
 export const reviewEligibility = (orgId: number, body: { concern?: string; include_closed?: boolean }) =>
   api<EligibilityReview>(`/navigator/consult/companies/${orgId}/eligibility`, { method: 'POST', body })
+
+// ---- D-ROUTE 성장경로 (직원) ----
+export type RouteReadiness = 'IMMEDIATE' | 'AFTER_FIX' | 'PREPARE'
+export interface RouteProgram {
+  program_id: number
+  program_code: string
+  name: string
+  stage: string
+  readiness: RouteReadiness
+  readiness_label: string
+  announcement_id: number | null
+  announcement_title: string | null
+  announcement_state: string | null
+  q1_label: string | null
+  fit_grade: string | null
+  fit_score: number | null
+  entry_condition: string | null
+  entry_unmet: { area: string; label: string; min: number; score: number }[]
+  prep_tasks: string[]
+  expected_output: string | null
+  todo: string[]
+  submit_documents: SubmitDoc[]
+  basis_quotes: string[]
+  reason: string
+  similar: { count: number; total: number; avg_gap_years: number | null }
+}
+export interface RouteStep {
+  order: number
+  horizon: string
+  stage: string
+  stage_label: string
+  goal: string
+  is_current: boolean
+  programs: RouteProgram[]
+  other_programs: RouteProgram[]
+  tasks: string[]
+  basis: string
+}
+export interface RouteNotRecommended {
+  program_id: number
+  program_code?: string
+  name: string
+  stage?: string | null
+  reason: string
+  fix: string | string[] | null
+  announcement_id?: number | null
+}
+export interface GrowthRoute {
+  organization_id: number
+  company_name: string
+  state_label: string
+  total_score: number
+  weakest_area: string | null
+  weakest_label: string | null
+  strength: { area: string; label: string; score: number; text: string } | null
+  current_stage: string | null
+  steps: RouteStep[]
+  not_recommended: RouteNotRecommended[]
+  similar_count?: number
+  summary: string
+  notice: string
+}
+export const growthRoute = (orgId: number, body: { concern?: string }) =>
+  api<GrowthRoute>(`/navigator/consult/companies/${orgId}/route`, { method: 'POST', body })
+
+export interface RouteRuleStage { code: string; name_ko: string; goal: string; areas: string[] }
+export interface RouteRuleProgram {
+  program_id: number
+  program_code: string
+  name: string
+  purpose: string | null
+  stage_code: string | null
+  next_program_ids: number[]
+  entry_condition: string | null
+  entry_min_scores: Record<string, number>
+  prep_tasks: string[]
+  expected_output: string | null
+  repeatable: boolean
+  sort_order: number
+  updated_at: string | null
+  announcement_count: number
+  next_programs: { program_id: number; name: string }[]
+}
+export interface RouteRules {
+  stages: RouteRuleStage[]
+  programs: RouteRuleProgram[]
+  areas: { code: string; label: string }[]
+}
+export interface ProgramRouteBody {
+  stage_code: string
+  next_program_ids: number[]
+  entry_condition: string
+  entry_min_scores: Record<string, number>
+  prep_tasks: string[]
+  expected_output: string
+  repeatable: boolean
+  sort_order: number
+}
+export const routeRules = () => api<RouteRules>('/navigator/consult/route/rules')
+export const saveProgramRoute = (id: number, body: ProgramRouteBody) =>
+  api<RouteRules>(`/navigator/consult/route/programs/${id}`, { method: 'PUT', body })
+export const deleteProgramRoute = (id: number) =>
+  api<void>(`/navigator/consult/route/programs/${id}`, { method: 'DELETE' })
