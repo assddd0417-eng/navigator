@@ -134,7 +134,8 @@ async def review(conn: AsyncConnection, org_id: int, *, concern: str | None = No
             ai_left -= 1
             j = await ai_judge.judge(conn, org=org, diag=diagnosis, ann_id=ann_id, title=ann.title,
                                      purpose_text=x["purpose"] or x["summary"], rows=rows, concern=concern,
-                                     body=x["body_text"], attachments=x["attachments"], extra_basis=regs,
+                                     body=x["body_text"], attachments=x["attachments"],
+                                     extra_basis=[g for g in regs if g["confirmed_at"]],
                                      user_id=user_id)
             rows, ai = j["rows"], j["ai"]
             verdict = verdict_of(rows)

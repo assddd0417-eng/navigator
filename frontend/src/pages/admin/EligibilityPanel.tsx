@@ -153,9 +153,9 @@ function CriteriaLine({ r }: { r: EligibilityResult }) {
   return (
     <div className="small muted" style={{ marginBottom: 8 }}>
       판단기준 확인: 공고 요건 {cr.requirements_confirmed_at ? `확인 ${fmtDay(cr.requirements_confirmed_at)}` : '확인 전'}
-      {' · '}운영규정 {cr.regulations_confirmed_at ? `확인 ${fmtDay(cr.regulations_confirmed_at)}` : '없음'}
+      {' · '}운영규정 {cr.regulations_confirmed_at ? `확인 ${fmtDay(cr.regulations_confirmed_at)}` : '확인된 규정 없음'}
       {cr.unconfirmed_regulations.length > 0 && (
-        <div><span className="badge badge-warn">확인 전 규정</span> {cr.unconfirmed_regulations.join(', ')}</div>
+        <div><span className="badge badge-warn">확인 전 규정 (판정에 쓰지 않음)</span> {cr.unconfirmed_regulations.join(', ')}</div>
       )}
     </div>
   )

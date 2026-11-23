@@ -23,6 +23,8 @@ def test_split_and_guess():
     assert regulation.guess_checks(arts[1]["body"]) == (["TAX_DELINQUENT", "PROCUREMENT_SANCTIONED"], None)
     assert regulation.guess_checks(arts[2]["body"]) == (["DUPLICATE"], 2)
     assert regulation.guess_checks(arts[3]["body"]) == ([], None)
+    assert regulation.guess_checks("국가연구개발사업 참여제한 내용은 없습니다.") == ([], None)
+    assert regulation.guess_checks("국가연구개발사업 참여제한 중인 기업은 신청할 수 없다.") == (["RND_RESTRICTED"], None)
     assert [a["article_no"] for a in regulation.split_articles("첫 문단\n\n둘째 문단")] == ["1", "2"]
 
 
@@ -88,6 +90,18 @@ async def test_regulation_flow(client, setup):
     assert r.status_code == 201, r.text
     ann = r.json()["id"]
 
+    # 확인 전 규정은 근거 목록에 '확인 전'으로만 나오고 판정에는 쓰지 않는다
+    res = (await client.post(f"/navigator/consult/companies/{org}/eligibility", headers=as_user(1),
+                             json={"announcement_ids": [ann]})).json()["results"][0]
+    assert not [c for c in res["checks"] if c["requirement_id"] < 0] and res["verdict"] == "NEEDS_INFO"
+    assert any(g["ref"].endswith("제3조(참여제한)") and g["confirmed_at"] is None for g in res["regulations"])
+    assert res["criteria"]["regulations_confirmed_at"] is None
+    assert res["criteria"]["unconfirmed_regulations"] == ["시험 운영규정(공통)"]
+
+    # 소관부서 확인 후에는 공통 참여제한으로 판정에 쓰고 확인일이 나온다. 조문을 고치면 다시 확인해야 한다
+    assert (await client.post(f"/navigator/regulations/{reg['id']}/confirm", headers=as_user(1))).status_code == 403
+    r = await client.post(f"/navigator/regulations/{reg['id']}/confirm", headers=as_user(3))
+    assert r.json()["confirmed_at"] is not None
     res = (await client.post(f"/navigator/consult/companies/{org}/eligibility", headers=as_user(1),
                              json={"announcement_ids": [ann]})).json()["results"][0]
     common = [c for c in res["checks"] if c["requirement_id"] < 0]
@@ -96,16 +110,6 @@ async def test_regulation_flow(client, setup):
     assert common[0]["result"] == "MET" and common[1]["result"] == "UNMET"
     assert common[1]["regulation_ref"].endswith("제4조(중복지원 제한)") and common[1]["has_basis"]
     assert res["verdict"] == "INELIGIBLE"
-    assert any(g["ref"].endswith("제3조(참여제한)") for g in res["regulations"])
-    assert res["criteria"]["regulations_confirmed_at"] is None
-    assert res["criteria"]["unconfirmed_regulations"] == ["시험 운영규정(공통)"]
-
-    # 소관부서 확인 후에는 확인일이 나온다. 조문을 고치면 다시 확인해야 한다
-    assert (await client.post(f"/navigator/regulations/{reg['id']}/confirm", headers=as_user(1))).status_code == 403
-    r = await client.post(f"/navigator/regulations/{reg['id']}/confirm", headers=as_user(3))
-    assert r.json()["confirmed_at"] is not None
-    res = (await client.post(f"/navigator/consult/companies/{org}/eligibility", headers=as_user(1),
-                             json={"announcement_ids": [ann]})).json()["results"][0]
     assert res["criteria"]["regulations_confirmed_at"] and not res["criteria"]["unconfirmed_regulations"]
 
     arts = [{"article_no": "제3조", "title": "참여제한", "body": "부정당업자는 신청할 수 없다.", "checks": []}]

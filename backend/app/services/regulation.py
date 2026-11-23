@@ -2,7 +2,8 @@
 
   등록     본문을 '제N조(제목)' 단위로 나눠 조문으로 저장한다. 조문 글에서 참여제한 항목(체납·부도·참여제한·
            부정당제재·중복지원)을 찾아 checks 후보로 넣고, 소관부서가 고친다
-  확인     소관부서가 내용을 확인하면 confirmed_at (판단기준 확인일) 을 남긴다
+  확인     소관부서가 내용을 확인하면 confirmed_at (판단기준 확인일) 을 남긴다. 확인 전 규정은 근거 목록에
+           "확인 전"으로만 보이고 판정(공통 참여제한, AI 판단 근거)에는 쓰지 않는다
   검색     벡터 관련도 + 낱말 겹침으로 후보를 뽑고, 사업 일치·참여제한 조문을 더해 다시 정렬한다
   공통 참여제한  공통운영규정과 그 사업의 운영규정 조문 checks 를 모든 공고의 필수요건으로 더한다
                 (공고에 같은 항목이 있으면 더하지 않는다)
@@ -46,8 +47,16 @@ def split_articles(text: str) -> list[dict]:
     return out
 
 
+NEGATED = re.compile(r"^\s*(에\s*관한\s*|관련\s*)?(내용|사항|규정|조항|대상)?\s*(은|는|이|가)?\s*(해당\s*)?(사항\s*)?(없습니다|없음|없다)")
+
+
+def _found(pat: str, body: str) -> bool:
+    """'참여제한 내용은 없습니다' 처럼 바로 뒤에서 부정하는 문장은 빼고 찾는다."""
+    return any(not NEGATED.match(body[m.end():]) for m in re.finditer(pat, body))
+
+
 def guess_checks(body: str) -> tuple[list[str], int | None]:
-    checks = [code for code, pat in CHECK_WORDS.items() if re.search(pat, body or "")]
+    checks = [code for code, pat in CHECK_WORDS.items() if _found(pat, body or "")]
     years = None
     if "DUPLICATE" in checks:
         m = re.search(r"(\d+)\s*년", body)
@@ -214,7 +223,7 @@ async def basis_for(conn: AsyncConnection, *, program_id: int | None, query: str
     """자격 판단 근거로 쓸 조문: 검색 상위 + 참여제한 조문 (중복 없이)."""
     found = await search(conn, query, program_id=program_id)
     seen = {r["id"] for r in found}
-    for r in await limit_articles(conn, program_id):
+    for r in await limit_articles(conn, program_id, confirmed_only=False):
         if r["id"] not in seen:
             found.append(r)
             seen.add(r["id"])
@@ -223,13 +232,15 @@ async def basis_for(conn: AsyncConnection, *, program_id: int | None, query: str
              "confirmed_at": r["confirmed_at"]} for r in found]
 
 
-async def limit_articles(conn: AsyncConnection, program_id: int | None) -> list[dict]:
+async def limit_articles(conn: AsyncConnection, program_id: int | None, *, confirmed_only: bool = True) -> list[dict]:
+    """참여제한 항목이 있는 조문. 판정에 쓸 때는 소관부서가 확인한 규정만."""
     rows = await (await conn.execute(
         """SELECT a.id, a.article_no, a.title, a.body, a.checks, a.within_years, g.id AS regulation_id,
                   g.title AS regulation_title, g.kind, g.program_id, g.confirmed_at
              FROM ax.regulation_article a JOIN ax.regulation g ON g.id = a.regulation_id
             WHERE g.is_active AND a.checks <> '{}' AND (g.kind = 'COMMON' OR g.program_id = %s)
-            ORDER BY g.kind, g.id, a.sort_order""", (program_id,))).fetchall()
+              AND (NOT %s OR g.confirmed_at IS NOT NULL)
+            ORDER BY g.kind, g.id, a.sort_order""", (program_id, confirmed_only))).fetchall()
     for r in rows:
         r["ref"] = ref_of(r["regulation_title"], r)
     return rows

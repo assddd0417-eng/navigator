@@ -71,6 +71,12 @@ def test_radar_scores():
     assert cr.scores(empty) == cr.scores_empty()
 
 
+def test_radar_level_label():
+    """기업 화면은 숫자 대신 평균과 견준 라벨만 쓴다."""
+    assert [cr.level_label(v, 50) for v in (None, 60, 55, 40)] == ["미입력", "평균보다 높음", "평균 수준", "평균보다 낮음"]
+    assert [cr.level_label(v, None) for v in (70, 40, 39)] == ["높음", "보통", "낮음"]
+
+
 async def test_radar_in_profile(client, database):
     limiter.reset()
     with psycopg.connect(TEST_URL, autocommit=True) as c:

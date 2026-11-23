@@ -8,7 +8,7 @@ from app.auth import CurrentUser, request_id, require_roles
 from app.db import transaction
 from app.errors import NotFound
 from app.routers.navigator import _bizno, manage_link
-from app.services import mailer
+from app.services import governance, mailer
 from app.services import navigator_outreach as outreach
 from app.services.bizno import format_bizno
 from app.services.company_profile import find_by_bizno, full_view
@@ -36,6 +36,23 @@ def _verdicts(raw: str | None) -> tuple[str, ...] | None:
     return vs
 
 
+async def _guard_org(conn, user: CurrentUser, org_id: int) -> None:
+    if not await governance.can_view(conn, user, org_id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "이 기업정보를 볼 권한이 없습니다")
+
+
+async def _visible(conn, user: CurrentUser, res: dict) -> dict:
+    """열람 권한이 없는 기업은 결과에서 뺀다 (공고 → 기업 방향)."""
+    if res["run"]["organization_id"] is not None:
+        await _guard_org(conn, user, res["run"]["organization_id"])
+        return res
+    recs = [r for r in res["recommendations"] if await governance.can_view(conn, user, r["organization_id"])]
+    if len(recs) != len(res["recommendations"]):
+        res["recommendations"] = recs
+        res["summary"] = {v: sum(r["verdict"] == v for r in recs) for v in res["summary"]}
+    return res
+
+
 @router.post("/matching/announcements/{ann_id}", status_code=201)
 async def run_announcement_matching(ann_id: int, verdict: str | None = Query(None, description="ELIGIBLE,NEEDS_INFO"),
                                     user: CurrentUser = Depends(require_roles(*STAFF)),
@@ -43,7 +60,7 @@ async def run_announcement_matching(ann_id: int, verdict: str | None = Query(Non
     vs = _verdicts(verdict)
     async with transaction(user.id, rid) as conn:
         run_id = await match_announcement(conn, ann_id, requested_by=user.id)
-        return await run_results(conn, run_id, verdicts=vs)
+        return await _visible(conn, user, await run_results(conn, run_id, verdicts=vs))
 
 
 @router.post("/matching/companies/{org_id}", status_code=201)
@@ -52,6 +69,7 @@ async def run_company_matching(org_id: int, include_closed: bool = False, past: 
                                user: CurrentUser = Depends(require_roles(*STAFF)), rid: str = Depends(request_id)):
     vs = _verdicts(verdict)
     async with transaction(user.id, rid) as conn:
+        await _guard_org(conn, user, org_id)
         run_id = await match_company(conn, org_id, include_closed=include_closed, past=past,
                                      requested_by=user.id, via="STAFF")
         res = await run_results(conn, run_id, verdicts=vs)
@@ -60,7 +78,7 @@ async def run_company_matching(org_id: int, include_closed: bool = False, past: 
 
 @router.get("/matching/announcements/{ann_id}")
 async def latest_announcement_run(ann_id: int, verdict: str | None = None,
-                                  _: CurrentUser = Depends(require_roles(*STAFF))):
+                                  user: CurrentUser = Depends(require_roles(*STAFF))):
     """마지막 실행 결과. 없으면 run=null."""
     vs = _verdicts(verdict)
     async with transaction() as conn:
@@ -71,12 +89,13 @@ async def latest_announcement_run(ann_id: int, verdict: str | None = None,
             (ann_id,))).fetchone()
         if row is None:
             return {"run": None, "summary": {v: 0 for v in VERDICTS}, "recommendations": []}
-        return await run_results(conn, row["id"], verdicts=vs)
+        return await _visible(conn, user, await run_results(conn, row["id"], verdicts=vs))
 
 
 @router.get("/matching/companies/{org_id}/profile")
-async def staff_company_profile(org_id: int, _: CurrentUser = Depends(require_roles(*STAFF))):
+async def staff_company_profile(org_id: int, user: CurrentUser = Depends(require_roles(*STAFF))):
     async with transaction() as conn:
+        await _guard_org(conn, user, org_id)
         if not await (await conn.execute(
                 "SELECT 1 FROM ax.company_profile WHERE organization_id = %s", (org_id,))).fetchone():
             raise NotFound("기업 프로필", org_id)
@@ -88,9 +107,9 @@ async def staff_company_profile(org_id: int, _: CurrentUser = Depends(require_ro
 
 
 @router.get("/matching/runs/{run_id}")
-async def get_run(run_id: int, verdict: str | None = None, _: CurrentUser = Depends(require_roles(*STAFF))):
+async def get_run(run_id: int, verdict: str | None = None, user: CurrentUser = Depends(require_roles(*STAFF))):
     async with transaction() as conn:
-        return await run_results(conn, run_id, verdicts=_verdicts(verdict))
+        return await _visible(conn, user, await run_results(conn, run_id, verdicts=_verdicts(verdict)))
 
 
 async def _company_run(conn, org_id: int, include_closed: bool, refresh: bool, via: str, past: bool = False) -> int:
@@ -191,17 +210,29 @@ class OutreachIn(BaseModel):
 
 
 @router.get("/matching/announcements/{ann_id}/outreach")
-async def outreach_candidates(ann_id: int, _: CurrentUser = Depends(require_roles(*STAFF))):
+async def outreach_candidates(ann_id: int, user: CurrentUser = Depends(require_roles(*STAFF))):
     """마지막 매칭 결과의 적합·확인 필요 기업, 권유 메일 동의 여부, 보낸 기록."""
     async with transaction() as conn:
-        return await outreach.candidates(conn, ann_id)
+        return await _visible_candidates(conn, user, await outreach.candidates(conn, ann_id))
+
+
+async def _visible_candidates(conn, user: CurrentUser, res: dict) -> dict:
+    res["companies"] = [c for c in res["companies"] if await governance.can_view(conn, user, c["organization_id"])]
+    return res
 
 
 @router.post("/matching/announcements/{ann_id}/outreach")
 async def send_outreach(ann_id: int, body: OutreachIn, user: CurrentUser = Depends(require_roles(*STAFF)),
                         rid: str = Depends(request_id)):
     """권유 메일 발송. 동의하지 않았거나 이미 보낸 기업은 건너뛰고 skipped 에 이유를 적는다."""
-    res = await outreach.send(ann_id, body.organization_ids, (body.note or "").strip() or None, user.id, rid)
     async with transaction() as conn:
-        res["candidates"] = await outreach.candidates(conn, ann_id)
+        allowed = [o for o in body.organization_ids if await governance.can_view(conn, user, o)]
+    hidden = [{"organization_id": o, "company_name": None, "reason": "NOT_IN_RESULT",
+               "reason_label": outreach.SKIP_KO["NOT_IN_RESULT"]}
+              for o in dict.fromkeys(body.organization_ids) if o not in allowed]
+    res = (await outreach.send(ann_id, allowed, (body.note or "").strip() or None, user.id, rid) if allowed
+           else {"announcement_id": ann_id, "sent": 0, "failed": 0, "skipped": []})
+    res["skipped"] += hidden
+    async with transaction() as conn:
+        res["candidates"] = await _visible_candidates(conn, user, await outreach.candidates(conn, ann_id))
     return res

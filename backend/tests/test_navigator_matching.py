@@ -267,3 +267,29 @@ async def test_staff_latest_run_and_profile(client):
     assert body["visibility"] == "STAFF" and body["credit_ratings"] and "***" in body["registered_email"]
     assert (await client.get(f"/navigator/matching/companies/{HANBIT}/profile",
                              headers=as_user(VIEWER))).status_code == 403
+
+
+async def test_company_access_matching(client):
+    """열람 권한을 막은 기업은 공고별 적합 기업·프로필·참여 권유 대상에서도 빠진다."""
+    _seed()
+    org = HANBIT
+    put = lambda ids: client.put(f"/navigator/consult/companies/{org}/access", headers=as_user(4),
+                                 json={"department_ids": ids})
+    assert (await put([2])).status_code == 200
+    try:
+        body = (await client.post("/navigator/matching/announcements/101", headers=as_user(1))).json()
+        assert org not in [r["organization_id"] for r in body["recommendations"]]
+        assert sum(body["summary"].values()) == len(body["recommendations"])
+        latest = (await client.get("/navigator/matching/announcements/101", headers=as_user(1))).json()
+        assert org not in [r["organization_id"] for r in latest["recommendations"]]
+        assert (await client.get(f"/navigator/matching/runs/{body['run']['id']}", headers=as_user(1))).json()[
+            "recommendations"] == body["recommendations"]
+        assert (await client.get(f"/navigator/matching/companies/{org}/profile",
+                                 headers=as_user(1))).status_code == 403
+        assert (await client.post(f"/navigator/matching/companies/{org}", headers=as_user(1))).status_code == 403
+        cands = (await client.get("/navigator/matching/announcements/101/outreach", headers=as_user(1))).json()
+        assert org not in [c["organization_id"] for c in cands["companies"]]
+    finally:
+        assert (await put([])).status_code == 200
+    body = (await client.post("/navigator/matching/announcements/101", headers=as_user(1))).json()
+    assert org in [r["organization_id"] for r in body["recommendations"]]

@@ -211,8 +211,11 @@ def extract_rules(text: str, posted_on: date | None = None) -> Extraction:
             "·".join(names[c] for c in order) + " 없음", checks[order[0]])
 
     reqs = sorted(found.values(), key=lambda s: (not s.is_mandatory, list(RULE_MODELS).index(s.req_type_code)))
+    reqs += extract_preferences(text)
     ex = Extraction("rules", fields=extract_fields(text, posted_on), requirements=reqs,
                     tech_needs=extract_tech_needs(lines))
+    for note in amount_notes(text):
+        ex.warnings.append(f"지원 한도 예외가 있습니다. 한도 칸은 일반 금액으로 넣었습니다: {note[:120]}")
     ex.warnings.append("규칙으로는 자주 나오는 조건만 찾습니다. 원문을 보고 빠진 조건은 직접 추가하세요.")
     return ex
 
@@ -260,6 +263,84 @@ def parse_krw(s: str) -> list[int]:
     return out
 
 
+_BURDEN = re.compile(r"(기업\s*부담\s*금?|민간\s*부담\s*금?|자부담)\s*(?:[:：은는이]\s*)?(?:사업비의\s*|총\s*사업비의\s*)?"
+                     r"(\d{1,2}(?:\.\d)?)\s*%")
+
+
+def _is_note(ln: str) -> bool:
+    """'*', '※' 로 시작하거나 '~의 경우' 로 범위를 좁히는 주석 줄."""
+    return bool(re.match(r"\s*[*※]", ln)) or bool(re.search(r"경우[^\n]{0,20}\d[\d,]*\s*(?:억|천\s*만|백\s*만|만)?\s*원", ln))
+
+
+def amount_notes(text: str) -> list[str]:
+    """본 금액과 다른 예외 금액 주석. 담당자가 확인하도록 경고로 보여 준다."""
+    out = []
+    for ln in text.splitlines():
+        ln = ln.strip()
+        note = ln.lstrip("*※ ").strip()
+        if _is_note(ln) and re.search(r"한도|최대", ln) and parse_krw(ln) and note not in out:
+            out.append(note)
+    return out[:3]
+
+
+_DOC_HEAD = re.compile(r"(신청|제출)\s*(서류|자료)")
+_DOC_MARK = re.compile(r"(?:^|\s)([①-⑳➀-➉](?:\s*-\s*\d)?\.?|\d{1,2}\s*-\s*\d\.)\s*")
+_DOC_CUT = re.compile(r"\s(?:공고문|국세청|중소기업현황|담당자가|사/세무사|각\s*\d|각자|또는\s*서명|컨설턴트\(|컨설턴트가|양식|\[첨부|\[붙임)")
+_DOC_WORD = re.compile(r"서$|서\(|증$|증\(|증명|확인서|동영상|계획서|목록|사본|명세|재무제표|등본|서약")
+
+
+def _doc_name(raw: str) -> str:
+    name = _DOC_CUT.split(" " + raw, maxsplit=1)[0]
+    name = re.sub(r"[*※]", "", name)
+    return re.sub(r"\s+", " ", name).strip(" .,-·")
+
+
+def extract_documents(text: str) -> list[dict]:
+    """'신청 서류' 표의 ①②… 항목 이름만. 표가 PDF 에서 섞여 나오므로 서류 이름처럼 보이는 것만 남긴다."""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    for i, ln in enumerate(lines):
+        if not _DOC_HEAD.search(ln) or len(ln) > 200 and not _DOC_MARK.search(ln):
+            continue
+        out: list[dict] = []
+        for j, cur in enumerate(lines[i:i + 30]):
+            if j > 0 and (re.match(r"^\d{1,2}\s+\S", cur) or re.match(r"^[가-하]\.\s", cur)) and not _DOC_HEAD.search(cur):
+                break
+            marks = list(_DOC_MARK.finditer(cur))
+            for k, m in enumerate(marks):
+                end = marks[k + 1].start() if k + 1 < len(marks) else len(cur)
+                name = _doc_name(cur[m.end():end])
+                if not name and k == 0:   # "… 지원 신청서 및 ➀ 공고문 [첨부1] 양식" 처럼 이름이 표시 앞에 있는 줄
+                    before = re.split(r"내\s*용", cur[:m.start()])[-1]
+                    name = _doc_name(re.sub(r"\s*(및|과|와)\s*$", "", before.strip())[-60:])
+                if 2 <= len(name) <= 60 and _DOC_WORD.search(name) and name not in {d["name"] for d in out}:
+                    out.append({"name": name, "required": True})
+            if re.search(r"해당\s*시[^\n]{0,10}제출\s*서류", cur) and out:
+                out.append({"name": "우대·감점 증빙 서류", "required": False})
+        if len(out) >= 2:
+            return out[:20]
+    return []
+
+
+_PREFER_LINE = re.compile(r"^\W*우\s*대\s*(?:사\s*항)?\s*[:：]\s*(.+)$")
+_PREFER_ITEM = re.compile(r"([^,，;()]{3,80}?)\s*\((\d+(?:\.\d+)?)\s*(%|점)\)")
+
+
+def extract_preferences(text: str) -> list[Suggestion]:
+    """'우대 : A(2%), B(1.5%)' 줄에서 우대 항목을 기타 조건(우대)으로 뽑는다."""
+    out: list[Suggestion] = []
+    for ln in text.splitlines():
+        m = _PREFER_LINE.match(ln.strip())
+        if not m:
+            continue
+        body = re.sub(r"\((?![\d.]+\s*(?:%|점)\))[^)]*\)", "", m.group(1))   # 설명 괄호는 뺀다
+        for it in _PREFER_ITEM.finditer(body):
+            name = re.sub(r"\s+", " ", it.group(1)).strip(" ,·∙-")
+            desc = f"{name} 우대 (가점 {it.group(2)}{it.group(3)})"
+            if name and desc not in {s.description for s in out}:
+                out.append(Suggestion("OTHER", {}, False, desc, _quote(ln.strip())))
+    return out[:10]
+
+
 def extract_fields(text: str, posted_on: date | None = None) -> dict:
     fields: dict = {}
     start, end = receipt_period(text, posted_on)
@@ -268,13 +349,19 @@ def extract_fields(text: str, posted_on: date | None = None) -> dict:
     if end:
         fields["receipt_end"] = end.isoformat()
     # 총 예산이 아니라 한 기업이 받을 수 있는 금액
-    amounts = []
+    # "* 기술분야 컨설팅의 경우 5천만 원 한도" 같은 예외 주석 줄은 본 금액이 없을 때만 쓴다
+    amounts, note_amounts = [], []
     for ln in text.splitlines():
         ln = re.split(r"[(（]?\s*(?:총\s*)?(?:예산|사업비)", ln)[0]   # "(총 예산 3억원)" 앞까지만
         if re.search(r"한도|최대|과제당|기업당|업체당", ln):
-            amounts += parse_krw(ln)
-    if amounts:
-        fields["support_amount_krw"] = max(amounts)
+            (note_amounts if _is_note(ln) else amounts).extend(parse_krw(ln))
+    if amounts or note_amounts:
+        fields["support_amount_krw"] = max(amounts or note_amounts)
+    if m := _BURDEN.search(text):
+        fields["company_burden"] = f"{m.group(1).replace(' ', '')} {m.group(2)}%"
+    docs = extract_documents(text)
+    if docs:
+        fields["submit_documents"] = docs
     if m := re.search(r"(?:사업|협약|지원|수행|개발)\s*기간\s*[:：]?[^\n]{0,40}?(\d{1,2})\s*(개월|년)", text):
         n = int(m.group(1)) * (12 if m.group(2) == "년" else 1)
         if 0 < n <= 120:

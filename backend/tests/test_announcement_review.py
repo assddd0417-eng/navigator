@@ -65,6 +65,39 @@ def test_rules_extract_inline_headings():
     assert ex.tech_needs[0]["is_core"] and not ex.tech_needs[1]["is_core"]
 
 
+CONSULT = """다. 지원범위 : 기업당 1개 과제, 3천만원* 한도(전문가 컨설팅 비용의 75% 이내)
+* 정부지원금 한도를 의미하며, 기술분야 컨설팅의 경우 5천만 원 한도로 지원
+* 컨설팅 비용 중 정부지원 비율이 75%이며, 기업부담금 25% 별도
+라. 신청 서류 구분 연번 자료·서류명 내 용 방산 중소기업 컨설팅 지원 신청서 및 ➀ 공고문 [첨부1] 양식, 신청기업이 작성·날인
+② 방산 중소기업 컨설팅 과제수행계획서 공고문 [첨부2] 양식, 컨설턴트가 작성
+③ 한정하여 촬영
+④ 개인정보제공동의서(컨설턴트용) 또는 서명
+⑤ 사업자등록증 국세청 발급
+⑥ 중소기업 확인서(유효기간 내) 중소기업현황정보시스템 발급 국세청 표준재무제표증명본 또는 회계
+⑦ 최근 2년(2024, 2023) 재무제표 사/세무사 확인증명본
+⑨ 청렴서약서 컨설턴트(컨설턴트용) 각자 날인
+※ 우대‧감점 등 해당시 제출 서류 목록은 [붙임 4] 참조
+5 지원대상기업 선정 및 지원 절차
+∙ 우 대 : ‘방산혁신기업 100’ 선정기업(2%), 국방벤처센터 협약기업(1.5%), 최근 2년간 일자리창출 우수기업 (고용우수, 노사문화 우수 등)(1%)
+"""
+
+
+def test_rules_extract_consulting_notice():
+    """예외 금액 주석, 기업부담, 신청 서류 표, 우대 항목 (실제 컨설팅 공고문 줄)."""
+    ex = rx.extract_rules(CONSULT)
+    assert ex.fields["support_amount_krw"] == 30_000_000          # 기술분야 5천만원은 예외 주석
+    assert any("5천만 원" in w for w in ex.warnings)
+    assert ex.fields["company_burden"] == "기업부담금 25%"
+    assert [d["name"] for d in ex.fields["submit_documents"]] == [
+        "방산 중소기업 컨설팅 지원 신청서", "방산 중소기업 컨설팅 과제수행계획서", "개인정보제공동의서(컨설턴트용)",
+        "사업자등록증", "중소기업 확인서(유효기간 내)", "최근 2년(2024, 2023) 재무제표", "청렴서약서",
+        "우대·감점 증빙 서류"]
+    assert ex.fields["submit_documents"][-1]["required"] is False
+    prefer = [s.description for s in ex.requirements if s.req_type_code == "OTHER" and not s.is_mandatory]
+    assert prefer == ["‘방산혁신기업 100’ 선정기업 우대 (가점 2%)", "국방벤처센터 협약기업 우대 (가점 1.5%)",
+                      "최근 2년간 일자리창출 우수기업 우대 (가점 1%)"]
+
+
 @pytest.mark.parametrize("s,expected", [("최대 5,000만원", [50_000_000]), ("3천만 원 한도", [30_000_000]),
                                         ("1.5억원", [150_000_000]), ("757,000원", [])])
 def test_parse_krw(s, expected):

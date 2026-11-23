@@ -197,7 +197,7 @@ export interface FullProfile {
   access_link?: { expires_at: string }
 }
 
-export type RadarAxis = { code: string; label: string; note: string; value: number | null; average: number | null }
+export type RadarAxis = { code: string; label: string; note: string; value: number | null; average: number | null; level_label?: string }
 export type Radar = { axes: RadarAxis[]; company_count: number }
 
 export type ProductCategory = 'WEAPON_SYSTEM' | 'COMPONENT' | 'MATERIAL' | 'SOFTWARE' | 'EQUIPMENT' | 'SERVICE' | 'OTHER'

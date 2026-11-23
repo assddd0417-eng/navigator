@@ -11,8 +11,11 @@ function point(i: number, n: number, v: number): [number, number] {
 
 const path = (vals: number[]) => vals.map((v, i) => point(i, vals.length, v).map((x) => x.toFixed(1)).join(',')).join(' ')
 
-/** 역량 6축 레이더. 값이 없는 축(신용등급 미입력)은 0으로 그리고 표에 ‘미입력’으로 적는다. */
-export function RadarChart({ radar, compact = false, who = '우리 회사' }: { radar: Radar; compact?: boolean; who?: string }) {
+/** 역량 6축 레이더. 값이 없는 축(신용등급 미입력)은 0으로 그리고 표에 ‘미입력’으로 적는다.
+ *  labelsOnly: 기업 화면. 숫자 대신 ‘평균보다 높음’ 같은 라벨만 보인다. */
+export function RadarChart({ radar, compact = false, who = '우리 회사', labelsOnly = false }: {
+  radar: Radar; compact?: boolean; who?: string; labelsOnly?: boolean
+}) {
   const axes = radar.axes
   const n = axes.length
   const mine = axes.map((a) => a.value ?? 0)
@@ -32,7 +35,7 @@ export function RadarChart({ radar, compact = false, who = '우리 회사' }: { 
         <polygon points={path(mine)} className="radar-mine" />
         {mine.map((v, i) => {
           const [x, y] = point(i, n, v)
-          return <circle key={i} cx={x} cy={y} r={3} className="radar-dot"><title>{`${axes[i].label} ${axes[i].value ?? '미입력'}`}</title></circle>
+          return <circle key={i} cx={x} cy={y} r={3} className="radar-dot"><title>{`${axes[i].label} ${labelsOnly ? axes[i].level_label ?? '' : axes[i].value ?? '미입력'}`}</title></circle>
         })}
         {axes.map((a, i) => {
           const [x, y] = point(i, n, 122)
@@ -47,6 +50,18 @@ export function RadarChart({ radar, compact = false, who = '우리 회사' }: { 
           <span><i className="sw sw-mine" />{who}</span>
           {hasAvg && <span><i className="sw sw-avg" />등록 기업 평균 ({radar.company_count}곳)</span>}
         </div>
+        {labelsOnly ? (
+          <table className="radar-table small">
+            <tbody>
+              {axes.map((a) => (
+                <tr key={a.code}>
+                  <th>{a.label}</th>
+                  <td className={a.value == null ? 'muted' : ''}>{a.level_label ?? '–'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
         <table className="radar-table small">
           <thead><tr><th /><td className="num muted">점수</td>{hasAvg && <td className="num muted">평균</td>}</tr></thead>
           <tbody>
@@ -59,7 +74,10 @@ export function RadarChart({ radar, compact = false, who = '우리 회사' }: { 
             ))}
           </tbody>
         </table>
-        {!compact && hasAvg && <div className="small muted">입력한 회사 정보로 계산한 0~100 점수입니다. 항목에 마우스를 올리면 계산 기준이 보입니다.</div>}
+        )}
+        {!compact && hasAvg && (labelsOnly
+          ? <div className="small muted">입력한 회사 정보로 등록 기업 평균과 견준 결과입니다. 특허·인증·제품 등을 채우면 바뀝니다.</div>
+          : <div className="small muted">입력한 회사 정보로 계산한 0~100 점수입니다. 항목에 마우스를 올리면 계산 기준이 보입니다.</div>)}
       </div>
     </div>
   )
