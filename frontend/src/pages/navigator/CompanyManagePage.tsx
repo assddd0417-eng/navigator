@@ -3,10 +3,11 @@ import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from
 import { Link } from 'react-router-dom'
 import { ApiError } from '../../api/client'
 import {
-  answerQuestions, autofillProfile, CERT_TYPES, deleteEvidence, PRODUCT_CATEGORIES, SUPPORT_RESULTS, uploadEvidence, getMyAlerts, getMyMatches, getMyProfile, getMyQuestions, REGIONS, SIZE_LABELS, updateMyProfile,
-  type Evidence, type FullProfile, type MatchRun, type ProductCategory, type ProfileUpdate, type Question, type SupportResult,
+  answerQuestions, autofillProfile, CERT_TYPES, deleteEvidence, PRODUCT_CATEGORIES, SUPPORT_RESULTS, uploadEvidence, getMyAlerts, getMyDstate, getMyMatches, saveMyDstate, getMyProfile, getMyQuestions, REGIONS, SIZE_LABELS, updateMyProfile,
+  type DstateVariable, type Evidence, type FullProfile, type MatchRun, type ProductCategory, type ProfileUpdate, type Question, type SupportResult,
 } from '../../api/navigator'
 import { useToast } from '../../components/Toast'
+import { changedValues, DstateInput } from '../../components/DstateInput'
 import { Card, Empty, useAction } from '../../components/ui'
 import { AlertsPanel } from './AlertsPanel'
 import { OutreachConsent } from './OutreachConsent'
@@ -29,7 +30,7 @@ function readToken(): string | null {
 
 type Tab = 'matches' | 'past' | 'alerts' | 'manage'
 /** 관리 탭 안의 화면 */
-type ManageView = 'profile' | 'recipients' | 'consent'
+type ManageView = 'profile' | 'dstate' | 'recipients' | 'consent'
 
 export function CompanyManagePage() {
   const [token] = useState(readToken)
@@ -41,6 +42,7 @@ export function CompanyManagePage() {
   const [matches, setMatches] = useState<MatchRun | null>(null)
   const [questions, setQuestions] = useState<Question[] | null>(null)
   const [unread, setUnread] = useState(0)
+  const [dstateMissing, setDstateMissing] = useState<number | null>(null)
   const [profileKey, setProfileKey] = useState(0)
   const { run } = useAction()
   const toast = useToast()
@@ -55,6 +57,7 @@ export function CompanyManagePage() {
       .then((p) => {
         setProfile(p); void loadMatches(); void loadQuestions()
         getMyAlerts(token).then((a) => setUnread(a.unread)).catch(() => undefined)
+        getMyDstate(token).then((d) => setDstateMissing(d.missing.length)).catch(() => undefined)
       })
       .catch((e) => setInvalid(e instanceof ApiError ? e.detail : '회사 정보를 불러오지 못했습니다.'))
   }, [token, loadMatches, loadQuestions])
@@ -149,6 +152,9 @@ export function CompanyManagePage() {
           <button role="tab" className={manageView === 'profile' ? 'on' : ''} onClick={() => setManageView('profile')}>
             회사 정보 {missing.length > 0 && <span className="tab-count">{missing.length}</span>}
           </button>
+          <button role="tab" className={manageView === 'dstate' ? 'on' : ''} onClick={() => setManageView('dstate')}>
+            성장 진단 정보 {dstateMissing != null && dstateMissing > 0 && <span className="tab-count">{dstateMissing}</span>}
+          </button>
           <button role="tab" className={manageView === 'recipients' ? 'on' : ''} onClick={() => setManageView('recipients')}>
             알림 받는 사람
           </button>
@@ -157,6 +163,8 @@ export function CompanyManagePage() {
           </button>
         </div>
       )}
+
+      {tab === 'manage' && manageView === 'dstate' && <DstatePanel token={token!} onMissing={setDstateMissing} />}
 
       {tab === 'manage' && manageView === 'recipients' && <AlertsPanel token={token!} onUnread={setUnread} part="recipients" />}
 
@@ -619,5 +627,58 @@ function EditRows<T extends object>({ rows, setRows, empty, render, addLabel }: 
       ))}
       <div><button type="button" className="btn btn-sm" onClick={() => setRows([...rows, { ...empty }])}>+ {addLabel}</button></div>
     </div>
+  )
+}
+
+/** 기관 담당자가 상담에 쓰는 진단 변수. 점수는 보여 주지 않는다 */
+function DstatePanel({ token, onMissing }: { token: string; onMissing: (n: number) => void }) {
+  const [vars, setVars] = useState<DstateVariable[] | null>(null)
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const { busy, run } = useAction()
+  const toast = useToast()
+
+  useEffect(() => {
+    getMyDstate(token).then((d) => { setVars(d.variables); onMissing(d.missing.length) }).catch(() => undefined)
+  }, [token, onMissing])
+
+  if (!vars) return <div className="page-loading">불러오는 중…</div>
+  const values = changedValues(vars, drafts)
+  const count = Object.keys(values).length
+  const save = () => run(async () => {
+    const d = await saveMyDstate(token, values)
+    setVars(d.variables)
+    onMissing(d.missing.length)
+    setDrafts({})
+    toast.show({ kind: 'success', title: '저장했습니다' })
+  })
+  return (
+    <Card title="성장 진단 정보" actions={
+      <button className="btn btn-primary" disabled={busy || count === 0} onClick={() => void save()}>
+        {busy ? '저장 중…' : count ? `${count}개 저장` : '저장'}
+      </button>
+    }>
+      <p className="small muted">기관 담당자가 상담할 때 쓰는 정보입니다. 모르는 항목은 비워 두세요.</p>
+      <div className="stack">
+        {vars.map((v) => (
+          <div key={v.code}>
+            <strong>{v.name}</strong>
+            {v.value_type === 'PROFILE' ? (
+              <div>
+                {v.missing ? <span className="badge badge-warn">미확보</span> : v.display}
+                <div className="small muted">회사 정보에서 고칩니다</div>
+              </div>
+            ) : (
+              <>
+                <div className="small muted">{v.question}</div>
+                <DstateInput v={v} draft={drafts[v.code]} onChange={(d) => setDrafts({ ...drafts, [v.code]: d })} />
+                <div className="small muted">
+                  {v.missing ? '아직 비어 있음' : `현재 ${v.display}`}{v.source_label ? ` · ${v.source_label}` : ''}
+                </div>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+    </Card>
   )
 }

@@ -17,6 +17,7 @@ export function RadarChart({ radar, compact = false, who = '우리 회사' }: { 
   const n = axes.length
   const mine = axes.map((a) => a.value ?? 0)
   const avg = axes.map((a) => a.average ?? 0)
+  const hasAvg = axes.some((a) => a.average != null)
   return (
     <div className={`radar${compact ? ' radar-compact' : ''}`}>
       <svg viewBox={`0 0 ${SIZE} ${SIZE}`} role="img" aria-label="역량 레이더">
@@ -27,7 +28,7 @@ export function RadarChart({ radar, compact = false, who = '우리 회사' }: { 
           const [x, y] = point(i, n, 100)
           return <line key={i} x1={C} y1={C} x2={x} y2={y} className="radar-grid" />
         })}
-        <polygon points={path(avg)} className="radar-avg" />
+        {hasAvg && <polygon points={path(avg)} className="radar-avg" />}
         <polygon points={path(mine)} className="radar-mine" />
         {mine.map((v, i) => {
           const [x, y] = point(i, n, v)
@@ -44,21 +45,21 @@ export function RadarChart({ radar, compact = false, who = '우리 회사' }: { 
       <div className="radar-side">
         <div className="radar-legend small">
           <span><i className="sw sw-mine" />{who}</span>
-          <span><i className="sw sw-avg" />등록 기업 평균 ({radar.company_count}곳)</span>
+          {hasAvg && <span><i className="sw sw-avg" />등록 기업 평균 ({radar.company_count}곳)</span>}
         </div>
         <table className="radar-table small">
-          <thead><tr><th /><td className="num muted">점수</td><td className="num muted">평균</td></tr></thead>
+          <thead><tr><th /><td className="num muted">점수</td>{hasAvg && <td className="num muted">평균</td>}</tr></thead>
           <tbody>
             {axes.map((a) => (
               <tr key={a.code} title={a.note}>
                 <th>{a.label}</th>
                 <td className="num">{a.value ?? <span className="muted">미입력</span>}</td>
-                <td className="num muted">{a.average ?? '–'}</td>
+                {hasAvg && <td className="num muted">{a.average ?? '–'}</td>}
               </tr>
             ))}
           </tbody>
         </table>
-        {!compact && <div className="small muted">입력한 회사 정보로 계산한 0~100 점수입니다. 항목에 마우스를 올리면 계산 기준이 보입니다.</div>}
+        {!compact && hasAvg && <div className="small muted">입력한 회사 정보로 계산한 0~100 점수입니다. 항목에 마우스를 올리면 계산 기준이 보입니다.</div>}
       </div>
     </div>
   )

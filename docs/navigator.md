@@ -14,6 +14,8 @@
 | 알림 | `backend/app/routers/navigator_alerts.py`, `backend/app/services/navigator_alerts.py` |
 | 판정 | `backend/app/services/eligibility.py` (DB 없이 테스트 가능한 순수 함수) |
 | 매칭 | `backend/app/services/navigator_matching.py`, 벡터 `navigator_embedding.py` |
+| 기업 상담 API | `backend/app/routers/consult.py` |
+| D-STATE 진단 | `backend/app/services/dstate.py` (DB 없이 테스트 가능한 순수 함수 + 조회) |
 | 외부 수집 | 연결 부품 `backend/app/services/external/{nts,kipris,dart,bizinfo}.py` (mock 데이터 `fixtures/*_mock.json`), 실행 `services/collector.py`, API `routers/navigator_sources.py`, 명령 `python -m app.collect` |
 | 관리 링크 / 메일 | `services/access_link.py` / `services/mailer.py` |
 | 화면 | `frontend/src/pages/navigator/`, `frontend/src/pages/admin/NavigatorStaffPage.tsx`, `NavigatorSourcesPage.tsx`, 표기 기준 [navigator_ux.md](navigator_ux.md) |
@@ -43,6 +45,8 @@
 | `POST /navigator/manage/past-matches?refresh=` | 관리 링크 | 참여할 수 있었던 사업: 최근 마감 공고 중 적합·확인 필요. 공고마다 `next_round`(같은 사업의 지금 열린 공고), `participated` |
 | `GET /navigator/manage/questions` | 관리 링크 | 보완질문 (부적격 공고 제외, 요건당 1회). `answer_type`: `integer` / `boolean` |
 | `POST /navigator/manage/answers` | 관리 링크 | `{"answers":[{"requirement_id":1,"value":7}]}` 저장 후 재판정 결과 반환 |
+| `GET /navigator/manage/dstate` | 관리 링크 | D-STATE 진단 보완 질문과 지금 값. 점수는 보여 주지 않음 |
+| `PUT /navigator/manage/dstate` | 관리 링크 | 진단 보완 답변 `{"values":{...}}` 저장 (출처 SELF). `null` 이면 지움 |
 
 관리 링크는 `X-Manage-Token` 헤더로 보낸다.
 
@@ -75,6 +79,17 @@
 | `POST /navigator/matching/companies/{org_id}?include_closed=&past=` | 기업 → 공고 매칭. `past=true` 면 최근 마감 공고만 |
 | `GET /navigator/matching/companies/{org_id}/profile` | 기업 프로필 (이메일 마스킹) |
 | `GET /navigator/matching/runs/{run_id}` | 저장된 실행 조회 |
+
+### 기업 상담 (담당자)
+
+| 메서드·경로 | 설명 |
+|-------------|------|
+| `GET /navigator/consult/companies?q=` | 상담 기업 찾기: 상호 또는 사업자번호 일부. 빈 값이면 최근 수정 순 |
+| `GET /navigator/consult/dstate/rules` | 진단 기준: 영역별 산정식, 상태유형 조건, 변수사전 |
+| `GET /navigator/consult/companies/{org_id}/dstate` | 지금 값으로 진단. 저장 안 함 |
+| `POST /navigator/consult/companies/{org_id}/dstate` | 진단 실행 후 이력 저장. 응답에 직전 진단 `previous` 포함 |
+| `PUT /navigator/consult/companies/{org_id}/dstate/values` | 담당자 확인값 `{"values":{...}}` 저장 (출처 STAFF). `null` 이면 지움 |
+| `GET /navigator/consult/companies/{org_id}/diagnoses` | 진단 이력 (최신 순) |
 
 ### 알림
 
@@ -188,6 +203,93 @@
 
 관리 링크: 256비트 랜덤, DB 에는 SHA-256 만 저장, 기본 30일, 재발송 시 이전 링크 폐기.
 화면에서는 열자마자 주소창에서 지우고 sessionStorage 에만 둔다.
+
+## D-STATE 성장준비도 진단
+
+영역별 점수는 산정식으로만 계산하고 LLM 을 쓰지 않는다. 같은 입력이면 같은 결과 (`rule_version` `dstate-2026.11`).
+
+### 영역별 산정식
+
+영역 점수는 100 에서 자른다.
+
+| 영역 | 코드 | 산정식 |
+|------|------|--------|
+| 기술 | TECH | 기본 22 + TRL×7 + 시제품(개발 중 8 / 보유 16) + R&D 인력비율(최대 10) |
+| 품질·인증 | QUALITY | 기본 25 + DQMS(준비 35 / 보유 65) + 방산이력(과제 5 / 납품 10) |
+| 생산·공급망 | PRODUCTION | 기본 20 + 직원 수(최대 25) + 매출(최대 25) + 시제품(개발 중 9 / 보유 18) |
+| 사업화·재무 | BUSINESS | 기본 18 + 업력(최대 22) + 매출(최대 28) + R&D 인력비율(최대 20) |
+| 방산진입 | DEFENSE | 기본 12 + 방산이력(과제 28 / 납품 48) + 적용 무기체계(후보 15 / 특정 25) + 수요(협의 12 / 확인 25) |
+| 수출 | EXPORT | 기본 10 + 수출경험(민수 35 / 방산 60) + 목표시장(후보 15 / 특정 28) |
+
+### 구간 배점
+
+| 항목 | 적용 | 구간 (이상이면 해당 비율) |
+|------|------|------|
+| 직원 수 | 생산 (×25) | 100명 100%, 50명 75%, 10명 50%, 1명 20% |
+| 매출 | 생산 (×25), 사업화 (×28) | 100억 원 100%, 50억 원 75%, 10억 원 50%, 1원 25% |
+| 업력 | 사업화 (×22) | 10년 100%, 7년 75%, 3년 50%, 0년 25% |
+| R&D 인력비율 | 기술 (×10), 사업화 (×20) | 20% 100%, 10% 70%, 5% 40%, 0.01% 20% |
+
+- R&D 인력비율 = 연구개발 인력 / 직원 수 (1 을 넘으면 1). 값이 없으면 배점 0.
+- 구간 경계는 소관부서 협의 전 잠정값이다.
+
+### 상태유형
+
+위에서부터 먼저 맞는 것으로 정한다.
+
+| 순서 | 코드 | 상태유형 | 조건 |
+|------|------|----------|------|
+| 1 | EXPORT_EXPAND | 수출 확장기업 | 수출 ≥ 75, 방산진입 ≥ 70 |
+| 2 | MASS_PRODUCTION | 양산·공급망 고도화기업 | 품질·인증 ≥ 65, 생산·공급망 ≥ 70, 방산진입 ≥ 60 |
+| 3 | DEFENSE_ENTRY | 방산진입 준비기업 | 기술 ≥ 70, 방산진입 < 50 |
+| 4 | TECH_TRANSITION | 기술개발·사업화 전환기업 | 기술 ≥ 60, 방산진입 ≥ 45 |
+| 5 | FOUNDATION | 기초역량 정비기업 | 그 외 |
+
+### 진단 변수사전
+
+| 코드 | 이름 | 원천 |
+|------|------|------|
+| TRL | 기술성숙도(TRL) | 보유 기술(TRL) 입력 또는 보완 답변 |
+| PROTOTYPE | 시제품 | 보완 답변 |
+| RND_STAFF | 연구개발 인력 | 보완 답변 |
+| EMPLOYEE_COUNT | 직원 수 | 회사 정보 (DART 확인값 우선) |
+| REVENUE | 매출 | 회사 정보 (DART 확인값 우선) |
+| BUSINESS_AGE | 업력 | 회사 정보 (국세청 개업일) |
+| DQMS | 국방품질경영체제(DQMS) | 인증 목록(국방품질경영체제) 또는 보완 답변 |
+| DEFENSE_HISTORY | 방산 참여이력 | 회사 정보(군 납품 실적) 또는 보완 답변 |
+| WEAPON_SYSTEM | 적용 무기체계 | 보완 답변 |
+| DEMAND | 수요 확인 | 보완 답변 |
+| EXPORT_EXPERIENCE | 수출 경험 | 회사 정보(수출 실적) 또는 보완 답변 |
+| TARGET_MARKET | 목표 수출시장 | 보완 답변 |
+
+### 변수값 우선순위
+
+- 담당자 입력(STAFF)이 있으면 그 값.
+- 단계형(LEVEL): 회사 정보에서 읽은 값과 기업 답변(SELF) 중 높은 단계.
+- 숫자형: 회사 정보 값, 없으면 기업 답변.
+- 회사 정보 항목(직원 수, 매출, 업력)은 기업 답변으로 고치지 않는다.
+
+### 미확보
+
+확인되지 않은 변수는 값을 추정하지 않고 '미확보'로 둔다. 해당 배점은 0 이다. 미확보 변수 코드는 결과 `missing` 에 나온다.
+
+### 결과 구성
+
+- 종합: 6개 영역 점수의 평균을 반올림.
+- 우선 보완영역: 최저 영역 (동점이면 위 표 순서).
+- 강점: 50점 이상인 상위 3개 영역.
+- 우선 보완과제: 점수가 낮은 3개 영역의 과제.
+- 요약문: 템플릿 문장. LLM 을 쓰지 않는다.
+
+### 이력
+
+- 실행(POST) 하면 `company_diagnosis` 에 점수, 상태유형, 최저 영역, 영역별 점수, 입력값 스냅샷(출처 포함), 미확보 목록, 요약문을 저장한다. 행은 고치지 않고 실행마다 새로 쓴다.
+- 응답 `previous` 로 직전 진단을 보여 주어 재상담 때 비교한다.
+- 저장 없는 조회와 변수값 저장(PUT values)은 이력을 남기지 않는다.
+
+### 외부 연동
+
+DISIS·PMS·DTiMS 기업정보 연계는 연동 예정이다. 지금은 회사 정보, 기업 답변, 담당자 입력으로 진단한다.
 
 ## 값 출처
 
@@ -358,7 +460,7 @@ weighted 모드는 비교 대상이 없으면 0.5. 정렬 방식·가중치·규
 ```bash
 export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/navigator
 ./scripts/migrate.sh
-for f in base navigator_companies navigator_announcements navigator_past_announcements; do
+for f in base navigator_companies navigator_announcements navigator_past_announcements navigator_consult; do
   psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f seeds/$f.sql
 done
 (cd backend && NAVIGATOR_DEV_EXPOSE_LINK=true uvicorn app.main:app --reload --port 8000) &

@@ -19,7 +19,8 @@ npm run dev            # http://localhost:5173  (/api/* → http://localhost:800
 |---|---|---|
 | 기업 (로그인 없음) | `/navigator` | 사업자번호 조회 → 지원 가능 공고 · 참여할 수 있었던 사업 · 알림 · 회사 정보 (이메일 확인 코드로 열기) |
 | 기업 | `/navigator/register` | 회사 등록 |
-| 기관 담당자 (`/login`) | `/staff/navigator` | 공고별 적합 기업, 참여 권유 |
+| 기관 담당자 (`/login`) | `/staff/consult` | 기업 상담: D-STATE 성장준비도 진단, 진단 변수 보완, 진단 이력 |
+| 기관 담당자 | `/staff/navigator` | 공고별 적합 기업, 참여 권유 |
 | 기관 담당자 | `/staff/announcements` | 공고 등록·조건 확인 |
 | 기관 담당자 | `/staff/sources` | 외부 수집 |
 

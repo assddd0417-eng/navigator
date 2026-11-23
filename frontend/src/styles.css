@@ -92,6 +92,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary-sof
 .card-header h3 { font-size: 15px; }
 .card-actions { display: flex; align-items: center; gap: 8px; }
 .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 16px; }
+.grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
 .grid-side { display: grid; grid-template-columns: 300px 1fr; gap: 16px; align-items: start; }
 .stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 

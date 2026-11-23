@@ -577,3 +577,105 @@ export const saveReview = (id: number, body: { fields: AnnFields; requirements: 
   api<void>(`/navigator/announcements/${id}/review`, { method: 'PUT', body })
 export const createAnnouncementFromText = (body: { title: string; agency_name?: string; announcement_no?: string; body_text: string; source_url?: string; posted_on?: string }) =>
   api<{ id: number }>('/navigator/announcements/text', { method: 'POST', body })
+
+// D-STATE 성장준비도 진단
+export type DstateValueType = 'LEVEL' | 'INTEGER' | 'PROFILE'
+export interface DstateVariable {
+  code: string
+  name: string
+  definition: string
+  value_type: DstateValueType
+  options: { code: string; label: string }[]
+  areas: string[]
+  areas_label: string[]
+  source_desc: string
+  question: string
+  value: string | number | null
+  display: string | null
+  source: 'PROFILE' | 'CERT' | 'SELF' | 'STAFF' | null
+  source_label: string | null
+  checked_on: string | null
+  missing: boolean
+}
+export interface DstateArea {
+  code: string
+  label: string
+  score: number
+  base: number
+  items: { variable: string; points: number }[]
+  missing: string[]
+  formula: string
+}
+export interface DstateNote { area: string; label: string; score: number; text: string }
+export interface DstatePrevious {
+  diagnosis_id: number
+  total_score: number
+  state_type: string
+  state_label: string
+  scores: Record<string, number>
+  created_at: string
+}
+export interface DstateResult {
+  rule_version: string
+  as_of: string
+  organization_id: number
+  company_name: string
+  total_score: number
+  state_type: string
+  state_label: string
+  weakest_area: string
+  weakest_label: string
+  areas: DstateArea[]
+  strengths: DstateNote[]
+  tasks: DstateNote[]
+  missing: string[]
+  summary: string
+  variables: DstateVariable[]
+  diagnosis_id: number | null
+  created_at?: string
+  previous: DstatePrevious | null
+}
+export interface ConsultCompany {
+  organization_id: number
+  name: string
+  business_reg_no: string | null
+  company_size: string | null
+  main_business: string | null
+  region: string | null
+  business_status: string | null
+  last_diagnosed_at: string | null
+}
+export interface DstateRules {
+  rule_version: string
+  areas: { code: string; label: string; formula: string }[]
+  state_types: { code: string; label: string; condition: string }[]
+}
+export interface DiagnosisHistoryRow {
+  id: number
+  total_score: number
+  state_type: string
+  state_label: string
+  weakest_area: string
+  weakest_label: string | null
+  scores: Record<string, number>
+  missing: string[]
+  created_at: string
+  created_by_name: string | null
+}
+export type DstateValues = Record<string, string | number | null>
+
+export const searchConsultCompanies = (q: string) =>
+  api<ConsultCompany[]>('/navigator/consult/companies', { query: { q } })
+export const getDstateRules = () => api<DstateRules>('/navigator/consult/dstate/rules')
+export const previewDstate = (orgId: number) => api<DstateResult>(`/navigator/consult/companies/${orgId}/dstate`)
+export const runDstate = (orgId: number) =>
+  api<DstateResult>(`/navigator/consult/companies/${orgId}/dstate`, { method: 'POST' })
+export const saveStaffDstateValues = (orgId: number, values: DstateValues) =>
+  api<DstateResult>(`/navigator/consult/companies/${orgId}/dstate/values`, { method: 'PUT', body: { values } })
+export const getDiagnosisHistory = (orgId: number) =>
+  api<DiagnosisHistoryRow[]>(`/navigator/consult/companies/${orgId}/diagnoses`)
+
+export interface MyDstate { variables: DstateVariable[]; missing: string[] }
+export const getMyDstate = (token: string) => api<MyDstate>('/navigator/manage/dstate', manage(token))
+export const saveMyDstate = (token: string, values: DstateValues) =>
+  api<MyDstate>('/navigator/manage/dstate', { ...manage(token), method: 'PUT', body: { values } })
