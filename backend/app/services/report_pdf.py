@@ -76,7 +76,8 @@ def _styles() -> dict[str, ParagraphStyle]:
     return {
         "title": ParagraphStyle("title", base, fontName=bold, fontSize=16, leading=22, spaceAfter=4),
         "meta": ParagraphStyle("meta", base, fontSize=9, leading=13, textColor=colors.HexColor("#5f6b7a")),
-        "h": ParagraphStyle("h", base, fontName=bold, fontSize=11.5, leading=16, spaceBefore=10, spaceAfter=3),
+        "h": ParagraphStyle("h", base, fontName=bold, fontSize=11.5, leading=16, spaceBefore=10, spaceAfter=3,
+                        keepWithNext=1),   # 제목이 쪽 끝에 혼자 남지 않게 다음 내용과 같은 쪽에 둔다
         "body": base,
         "cell": ParagraphStyle("cell", base, fontSize=9, leading=13),
         "cellh": ParagraphStyle("cellh", base, fontName=bold, fontSize=9, leading=13),
@@ -110,11 +111,19 @@ def _build(story: list, label: str, title: str) -> bytes:
 
 
 def _sections(report: list[dict], st: dict, skip_empty: bool) -> list:
-    out = []
+    """항목마다 제목과 본문을 한 덩어리로 둔다. 본문이 빈 항목(담당자 의견 등)은 다음 항목과 같은 쪽에 둔다."""
+    out, pending = [], []
     for s in report:
         if skip_empty and not s["text"]:
             continue
-        out.append(KeepTogether([_p(s["title"], st["h"]), _p(s["text"], st["body"])]))
+        block = pending + [_p(s["title"], st["h"]), _p(s["text"], st["body"])]
+        if not s["text"].strip():
+            pending = block
+            continue
+        out.append(KeepTogether(block))
+        pending = []
+    if pending:
+        out.append(KeepTogether(pending))
     return out
 
 
@@ -169,14 +178,15 @@ def company_pdf(company_name: str, c: dict) -> bytes:
         story.append(_table(["공고", "기관", "마감일", "신청 가능 여부", "적합도"], rows,
                             [w * 0.42, w * 0.18, w * 0.13, w * 0.15, w * 0.12], st))
     if c["steps"]:
-        story.append(_p("성장 경로", st["h"]))
+        head = [_p("성장 경로", st["h"])]
         for s in c["steps"]:
             block = [_p(f"{s['horizon']} · {s['stage_label']}", st["cellh"]), _p(s["goal"], st["body"])]
             if s["programs"]:
                 block.append(_p(", ".join(f"{p['name']} · {p['readiness_label']}" for p in s["programs"]), st["cell"]))
             block += [_p(f"· {t}", st["small"]) for t in s["tasks"]]
             block.append(Spacer(1, 5))
-            story.append(KeepTogether(block))
+            story.append(KeepTogether(head + block))   # 제목은 첫 단계와 같은 쪽에
+            head = []
     return _build(story, f"상담 결과 · {company_name}", title)
 
 

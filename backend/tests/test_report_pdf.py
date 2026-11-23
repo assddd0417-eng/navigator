@@ -112,3 +112,43 @@ def test_korean_font_embedded():
     assert report_pdf.fmt_date("2026-11-23T09:57:00+00:00") == "26. 11. 23. 오후 6:57"
     if reg == report_pdf.FONT:
         assert b"NavKR" in pdf or b"FontFile2" in pdf    # TTF 를 넣었다 (뷰어 글꼴에 기대지 않음)
+
+
+HEADINGS = {"검토한지원사업", "성장경로", "기업개요", "성장준비도진단", "지원사업검토결과", "추천성장경로", "보완요청사항",
+            "담당자의견", "유의사항"}
+
+
+def _orphans(pdf: bytes) -> list[tuple[int, str]]:
+    """쪽 맨 아래(쪽 번호 줄 바로 위)에 제목만 남은 곳 (본문이 빈 항목의 제목 포함)."""
+    out = []
+    with pdfplumber.open(io.BytesIO(pdf)) as doc:
+        for i, p in enumerate(doc.pages, 1):
+            lines = [_flat(x) for x in (p.extract_text() or "").splitlines() if x.strip()]
+            body = [x for x in lines if not x.endswith("쪽")]
+            if body and body[-1] in HEADINGS and i < len(doc.pages):
+                out.append((i, body[-1]))
+    return out
+
+
+def _company(filler: int) -> dict:
+    ann = {"title": "결과서 시험 공고(가상)", "agency_name": "(가상)기관", "receipt_end": "2026-12-31",
+           "q1_label": "신청 가능", "fit_grade": "중", "todo": ["품질체계 구축"]}
+    return {"task_label": "종합 성장경로", "confirmed_at": "2026-11-23T09:57:00+00:00", "state_label": "방산진입 준비기업",
+            "report": [{"key": "overview", "title": "기업 개요", "text": "\n".join(["가나다 문장"] * filler)}],
+            "announcements": [ann] * 6,
+            "steps": [{"horizon": "단기", "stage_label": "방산진입", "goal": "수요처 확보",
+                       "programs": [{"name": "컨설팅 지원", "readiness_label": "즉시 신청"}], "tasks": ["품질체계"]}] * 3}
+
+
+def test_heading_not_left_alone_at_page_end():
+    """제목이 쪽 끝에 혼자 남지 않는다 (기업 판본 표·경로, 담당자 판본 결과서 항목)."""
+    for n in range(20, 50):
+        assert _orphans(report_pdf.company_pdf("(가상)쪽나눔", _company(n))) == [], n
+    for n in range(1, 40, 2):
+        c = {"company_name": "(가상)쪽나눔", "task_label": "종합 성장경로", "created_at": "2026-11-23T09:57:00+00:00",
+             "created_by_name": "공고담당", "status": "DRAFT", "status_label": "검토 중", "concern": "수요처",
+             "report": [{"key": f"s{i}", "title": t,
+                         "text": "" if t == "담당자 의견" else "\n".join(["가나다 문장"] * (n if i == 0 else 4))}
+                        for i, t in enumerate(["기업 개요", "성장준비도 진단", "지원사업 검토 결과", "추천 성장경로",
+                                                "보완 요청 사항", "담당자 의견", "유의사항"])]}
+        assert _orphans(report_pdf.staff_pdf(c)) == [], n
