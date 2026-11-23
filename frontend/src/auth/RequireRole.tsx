@@ -14,7 +14,6 @@ export function RequireRole({ roles, children }: { roles: RoleCode[]; children: 
   if (!canAccess(role, roles)) {
     return (
       <div className="forbidden">
-        <div className="forbidden-icon">🔒</div>
         <h2>이 화면은 {roles.map((r) => ROLES[r].label).join('·')}만 볼 수 있습니다</h2>
         <p>
           지금 역할은 <strong>{role ? ROLES[role].label : '역할 없음'}</strong>입니다.

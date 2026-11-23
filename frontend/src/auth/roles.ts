@@ -57,26 +57,25 @@ const AX_ONLY: RoleCode[] = ['AX_ADMIN']
 export interface MenuItem {
   path: string
   label: string
-  icon: string
   roles: RoleCode[]
   /** 사이드바 묶음: 업무 / 관리 / 부가 기능 */
   section: 'work' | 'manage' | 'extra'
 }
 
 export const MENU: MenuItem[] = [
-  { path: '/staff/consult', label: '성장경로 상담', icon: '🗂️', roles: STAFF_ONLY, section: 'work' },
-  { path: '/staff/consult/review', label: '상담 이력 점검', icon: '📝', roles: STAFF_AX, section: 'work' },
-  { path: '/staff/service', label: '서비스 안내', icon: '📖', roles: ALL_ROLES, section: 'work' },
-  { path: '/staff/announcements', label: '공고 등록·조건 확인', icon: '📋', roles: STAFF_OWNER, section: 'manage' },
-  { path: '/staff/route-rules', label: '성장경로 기준', icon: '🛤️', roles: ALL_ROLES, section: 'manage' },
-  { path: '/staff/criteria', label: '판정기준', icon: '⚖️', roles: ['PROGRAM_OWNER', 'AX_ADMIN'], section: 'manage' },
-  { path: '/staff/variables', label: '진단 변수사전', icon: '🧮', roles: AX_ONLY, section: 'manage' },
-  { path: '/staff/regulations', label: '운영규정·지침', icon: '📜', roles: ['PROGRAM_OWNER', 'AX_ADMIN'], section: 'manage' },
-  { path: '/staff/access', label: '기업정보 열람 권한', icon: '🔐', roles: AX_ONLY, section: 'manage' },
-  { path: '/staff/prompts', label: '프롬프트 관리', icon: '✍️', roles: AX_ONLY, section: 'manage' },
-  { path: '/staff/ai-calls', label: 'AI 호출 기록', icon: '🧾', roles: AX_ONLY, section: 'manage' },
-  { path: '/staff/sources', label: '외부 수집', icon: '🔄', roles: STAFF_OWNER, section: 'manage' },
-  { path: '/staff/navigator', label: '공고별 적합 기업', icon: '🧭', roles: STAFF_ONLY, section: 'extra' },
+  { path: '/staff/consult', label: '성장경로 상담', roles: STAFF_ONLY, section: 'work' },
+  { path: '/staff/consult/review', label: '상담 이력 점검', roles: STAFF_AX, section: 'work' },
+  { path: '/staff/service', label: '서비스 안내', roles: ALL_ROLES, section: 'work' },
+  { path: '/staff/announcements', label: '공고 등록·조건 확인', roles: STAFF_OWNER, section: 'manage' },
+  { path: '/staff/route-rules', label: '성장경로 기준', roles: ALL_ROLES, section: 'manage' },
+  { path: '/staff/criteria', label: '판정기준', roles: ['PROGRAM_OWNER', 'AX_ADMIN'], section: 'manage' },
+  { path: '/staff/variables', label: '진단 변수사전', roles: AX_ONLY, section: 'manage' },
+  { path: '/staff/regulations', label: '운영규정·지침', roles: ['PROGRAM_OWNER', 'AX_ADMIN'], section: 'manage' },
+  { path: '/staff/access', label: '기업정보 열람 권한', roles: AX_ONLY, section: 'manage' },
+  { path: '/staff/prompts', label: '프롬프트 관리', roles: AX_ONLY, section: 'manage' },
+  { path: '/staff/ai-calls', label: 'AI 호출 기록', roles: AX_ONLY, section: 'manage' },
+  { path: '/staff/sources', label: '외부 수집', roles: STAFF_OWNER, section: 'manage' },
+  { path: '/staff/navigator', label: '공고별 적합 기업', roles: STAFF_ONLY, section: 'extra' },
 ]
 
 /** 경로별 허용 역할 (App.tsx 라우트와 같은 규칙). 긴 경로를 먼저 둔다 */

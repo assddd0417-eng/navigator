@@ -139,7 +139,7 @@ export function CompanyManagePage() {
             </div>
           )}
           {!matches ? <div className="page-loading">불러오는 중…</div> : matches.recommendations.length === 0 ? (
-            <div className="empty">지금 접수 중인 공고가 없습니다. 새 공고가 올라오면 알림으로 알려 드립니다.</div>
+            <div className="empty">지금 접수 중인 공고가 없습니다. 새 공고가 올라오면 알림 탭과 이메일로 알립니다.</div>
           ) : (
             <GroupedMatches run={matches} audience="company"
               hints={{ NEEDS_INFO: '아래 질문에 답하면 바로 다시 판정합니다' }}
@@ -239,7 +239,7 @@ function ProfilePanel({ token, profile, missing, onSaved }: {
   return (
     <CompanyInfoForm profile={profile} missing={missing} token={token} submitLabel="저장하고 다시 판정"
       top={<>
-        <Card title="회사 역량 한눈에" actions={<span className="small muted">저장하면 다시 계산합니다</span>}>
+        <Card title="회사 역량" actions={<span className="small muted">저장하면 다시 계산합니다</span>}>
           <RadarChart radar={profile.radar} labelsOnly />
         </Card>
         <div className="manage-box">
@@ -365,7 +365,7 @@ export function CompanyInfoForm({ profile, missing = [], token, identity, setIde
     <form className="stack" onSubmit={save}>
       {top}
       {missing.length > 0 && (
-        <div className="notice small">비어 있는 항목: {missing.join(', ')}. 채울수록 판정이 정확해집니다.</div>
+        <div className="notice small">비어 있는 항목: {missing.join(', ')}. 비어 있으면 일부 공고는 판정하지 못합니다.</div>
       )}
       <Card title="기본 정보" actions={<span className="small muted">직접 입력한 값은 기관 확인 전까지 ‘직접 입력’으로 표시됩니다</span>}>
         <div className="form">
@@ -379,7 +379,7 @@ export function CompanyInfoForm({ profile, missing = [], token, identity, setIde
                 <label title="국세청 사업자 확인에 씁니다">대표자명 *<input required value={identity.representative_name} onChange={setId('representative_name')} /></label>
                 <label title="국세청 사업자 확인에 씁니다">개업일 *<input required type="date" value={identity.opened_on} onChange={setId('opened_on')} /></label>
                 <label className="grow">새 공고 알림 받을 이메일 *<input required type="email" value={identity.email} onChange={setId('email')} />
-                  <span className="field-hint">조건에 맞는 공고가 올라오면 이 주소로 알려 드립니다</span></label>
+                  <span className="field-hint">조건에 맞는 공고 알림을 이 주소로 보냅니다</span></label>
               </div>
             </>
           ) : (

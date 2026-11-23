@@ -33,14 +33,14 @@ export function describeApiError(e: ApiError): Omit<Toast, 'id'> {
   const meta = e.requestId ? `문의 시 알려 줄 번호: ${e.requestId}` : undefined
   switch (e.status) {
     case 0:
-      return { kind: 'error', title: '서버에 연결하지 못했습니다', message: '잠시 뒤 다시 시도해 주세요. 계속되면 담당자에게 서버가 켜져 있는지 확인해 달라고 해 주세요.' }
+      return { kind: 'error', title: '서버에 연결하지 못했습니다', message: '잠시 뒤 다시 시도해 주세요. 계속되면 시스템 담당자에게 문의하세요.' }
     case 401:
       return { kind: 'error', title: '다시 로그인해 주세요', message: e.detail, meta }
     case 403:
       return {
         kind: 'forbidden',
-        title: '지금 역할로는 할 수 없는 일입니다',
-        message: `서버가 권한을 확인하고 막았습니다.\n이유: ${e.detail}`,
+        title: '권한이 없습니다',
+        message: e.detail,
         meta,
       }
     case 404:
@@ -58,8 +58,6 @@ export function describeApiError(e: ApiError): Omit<Toast, 'id'> {
       return { kind: 'error', title: '서버에서 문제가 생겼습니다', message: '잠시 뒤 다시 시도해 주세요.', meta }
   }
 }
-
-const ICONS: Record<ToastKind, string> = { success: '✅', info: 'ℹ️', error: '⚠️', forbidden: '🔒' }
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
@@ -87,7 +85,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       <div className="toast-stack" role="status" aria-live="polite">
         {toasts.map((t) => (
           <div key={t.id} className={`toast toast-${t.kind}`}>
-            <span className="toast-icon">{ICONS[t.kind]}</span>
             <div className="toast-body">
               <strong>{t.title}</strong>
               {t.message && <p>{t.message}</p>}

@@ -172,7 +172,6 @@ blockquote { margin: 4px 0 0; padding: 6px 10px; border-left: 3px solid var(--pr
 
 /* ---- 권한 거부 화면 ---- */
 .forbidden { text-align: center; padding: 60px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
-.forbidden-icon { font-size: 44px; }
 
 /* ---- 토스트 ---- */
 .toast-stack { position: fixed; right: 20px; bottom: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 100; max-width: min(420px, calc(100vw - 32px)); }
@@ -184,7 +183,6 @@ blockquote { margin: 4px 0 0; padding: 6px 10px; border-left: 3px solid var(--pr
 .toast-success { border-left-color: var(--ok); }
 .toast-error { border-left-color: var(--warn); }
 .toast-forbidden { border-left-color: var(--bad); background: #fff8f7; }
-.toast-icon { font-size: 18px; line-height: 1.2; }
 .toast-body { flex: 1; min-width: 0; }
 .toast-body p { margin: 4px 0 0; font-size: 13px; overflow-wrap: anywhere; }
 .toast-body small { color: var(--muted); font-size: 11px; }

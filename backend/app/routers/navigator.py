@@ -38,7 +38,7 @@ async def _send_link(email: str, company_name: str, link: access_link.IssuedLink
     if first:   # 등록 메일은 알림 주소 확인용. 회사 정보는 화면에서 바로 입력하므로 링크를 넣지 않는다
         try:    # 등록은 이미 저장됐으니 메일 실패로 요청을 실패시키지 않는다
             await mailer.send_async(email, f"[Navigator] {company_name} 등록 완료",
-                                    f"{company_name} 등록이 완료되었습니다.\n조건에 맞는 새 공고가 올라오면 이 주소로 알려 드립니다.\n"
+                                    f"{company_name} 등록이 완료되었습니다.\n조건에 맞는 새 공고가 올라오면 이 주소로 알림을 보냅니다.\n"
                                     "본인이 등록하지 않았다면 이 메일을 무시하세요.")
         except mailer.MailError as e:
             log.warning("등록 메일 실패: %s", e)

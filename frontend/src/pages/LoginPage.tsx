@@ -59,7 +59,7 @@ export function LoginPage() {
                 <div className="role-card-user">{u.name} · {u.department}</div>
                 <p>{meta.description}</p>
                 <ul>{meta.can.map((c) => <li key={c}>{c}</li>)}</ul>
-                <div className="role-card-foot">{pending === u.id ? '확인 중…' : '시작하기 →'}</div>
+                <div className="role-card-foot">{pending === u.id ? '확인 중…' : '이 역할로 시작'}</div>
               </button>
             )
           })}

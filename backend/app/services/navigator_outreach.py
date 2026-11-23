@@ -95,7 +95,7 @@ def _mail(ann: dict, rec: dict, sender: dict, note: str | None, token: str) -> t
     lines = [
         f"{rec['company_name']} 담당자님께,",
         "",
-        f"{ann['agency_name'] or '기관'} 담당자가 아래 공고 참여를 권해 드립니다.",
+        f"{ann['agency_name'] or '기관'} 담당자가 아래 공고 참여를 권합니다.",
         "",
         f"공고: {ann['title']}",
         f"접수: {period}",

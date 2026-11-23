@@ -85,7 +85,7 @@ export function AlertsPanel({ token, onUnread, part }: {
       <Card title="새 공고 알림" actions={unread > 0 &&
         <button className="btn btn-sm" disabled={busy} onClick={() => void readAll()}>모두 읽음</button>}>
         {!alerts ? <div className="page-loading">불러오는 중…</div> : alerts.length === 0 ? (
-          <Empty>아직 알림이 없습니다. 새 공고가 공개되면 조건에 맞는 공고만 여기와 이메일로 알려 드립니다.</Empty>
+          <Empty>아직 알림이 없습니다. 새 공고가 공개되면 조건에 맞는 공고만 여기와 이메일로 알립니다.</Empty>
         ) : (
           <ul className="alert-list">
             {alerts.map((a) => (
