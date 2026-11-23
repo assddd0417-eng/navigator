@@ -55,7 +55,7 @@
 | 메서드·경로 | 인증 | 설명 |
 |-------------|------|------|
 | `GET /navigator/announcements?receipt_state=&q=&review=` | - | 목록. 비로그인은 PUBLISHED 만. 담당자는 `review=PENDING`(조건 확인 전)·`DONE` |
-| `GET /navigator/announcements/{id}` | - | 상세 (자격요건, 원문 인용·쪽, 요구기술) |
+| `GET /navigator/announcements/{id}` | - | 상세 (자격요건·우대 가점, 원문 인용·쪽, 요구기술, 평가항목, 기업부담, 제출서류) |
 | `GET /navigator/announcements/{id}/chunks?q=` | - | 공고문 원문 청크 |
 | `POST /navigator/announcements` | 담당자 | 직접 등록. 요건 하나라도 형식 오류면 전체 롤백 |
 | `POST /navigator/announcements/upload` | 담당자 | 공고문 PDF → 원문 청크 저장 → DRAFT 공고 |
@@ -67,6 +67,10 @@
 | `POST /navigator/announcements/{id}/extract` | 담당자 | 조건·접수기간·지원 한도·지원 기간·대상·목적 후보. 저장 안 함 |
 | `PUT /navigator/announcements/{id}/review` | 담당자 | 확인 저장: 공고 칸 수정 + 조건·요구기술 통째 교체 + 확인 표시, `publish: true` 면 공개(조건 0개면 422) |
 | `GET /navigator/announcements/requirement-types` | 담당자 | 조건 종류·인증 코드 |
+
+- 등록 `POST /navigator/announcements` 은 최상위에 `company_burden`, `submit_documents`, `eval_items` 를 받는다. 확인 저장 `PUT .../review` 는 `fields.company_burden`, `fields.submit_documents` 와 `eval_items` 를 받는다. `eval_items` 를 생략하면 기존 평가항목을 그대로 둔다 (배열을 보내면 통째로 바꾼다).
+- 요건의 `bonus_points` (우대 요건 충족 시 가점, 0~100) 은 두 API 의 `requirements` 항목에 넣는다.
+- `submit_documents` 는 `[{"name": "중소기업 확인서", "required": true}]` 형식.
 
 담당자 = `STAFF`. 접수 상태(UPCOMING / OPEN / CLOSED)는 날짜로 계산한다 (`v_announcement`).
 
@@ -90,6 +94,7 @@
 | `POST /navigator/consult/companies/{org_id}/dstate` | 진단 실행 후 이력 저장. 응답에 직전 진단 `previous` 포함 |
 | `PUT /navigator/consult/companies/{org_id}/dstate/values` | 담당자 확인값 `{"values":{...}}` 저장 (출처 STAFF). `null` 이면 지움 |
 | `GET /navigator/consult/companies/{org_id}/diagnoses` | 진단 이력 (최신 순) |
+| `POST /navigator/consult/companies/{org_id}/eligibility` | 요청 본문 `{concern, announcement_ids, include_closed}`. 공고별 신청 가능 여부·적합도·근거·보완 포인트·신청 안내. 저장 안 함. 자세한 내용은 [자격검토 (상담)](#자격검토-상담) |
 
 ### 알림
 
@@ -312,7 +317,20 @@ DISIS·PMS·DTiMS 기업정보 연계는 연동 예정이다. 지금은 회사 �
 | `DEFENSE_COMPANY` | 방산업체 지정 | `{"required":true}` |
 | `RND_EXPERIENCE` | R&D 수행 경험 | `{"min_count":1,"role":"LEAD","within_years":5}` |
 | `PATENT` | 특허 | `{"min_count":1,"status":"REGISTERED","ipc_prefixes":["H04"]}` |
+| `DUPLICATE_SUPPORT` | 중복수혜 제한 | `{"within_years":1}` |
+| `NO_DISQUALIFICATION` | 결격사유 없음 | `{"checks":["TAX_DELINQUENT","PROCUREMENT_SANCTIONED"]}` |
 | `OTHER` | 기타 | `{}` (description 으로 판단, 항상 보완질문) |
+
+- `NO_DISQUALIFICATION` 의 `checks`: `TAX_DELINQUENT` 체납, `INSOLVENT` 부도·자본잠식, `RND_RESTRICTED` 국가 R&D 참여제한, `PROCUREMENT_SANCTIONED` 부정당제재. 생략하면 앞의 세 개만 본다.
+- `PROCUREMENT_SANCTIONED` 는 조달청 연동 예정이다. 지금은 회사 정보의 `procurement_sanctioned` (기업·담당자 입력) 을 본다. 값이 없으면 보완질문.
+- `DUPLICATE_SUPPORT` 의 같은 사업 판단 (하나라도 맞으면 같은 사업):
+  - 공고 연결: 지원 이력이 가리키는 공고 id 가 같거나, `series_key` (묶음 키) 가 같다.
+  - 같은 사업 코드: 지원 이력의 사업 (`program`) 코드가 공고와 같다.
+  - 사업 이름: 공고의 사업 이름이 기업이 입력한 지원사업 이름에 들어 있다.
+  - 공고 제목: 기업이 입력한 지원사업 이름이 공고 제목에 들어 있다 (연도·차수 숫자는 빼고, 6자 이상만).
+  - 수혜만 센다: `SELECTED`·`COMPLETED`·`SUCCESS` 결과만. 탈락·신청만 한 이력은 수혜가 아니다.
+  - 기간: 기준일 (접수 마감일) 연도에서 N년 전 이상. 연도가 없는 이력은 기간 안으로 본다.
+  - 지원 이력이 하나도 없으면 "최근 N년 안에 같은 사업에 선정되거나 수행한 적이 없나요?" 보완질문.
 
 인증 코드와 신용등급은 코드표(`code_certification_type`, `code_credit_grade`)에 있는 값만 받는다.
 
@@ -389,6 +407,55 @@ weighted 모드는 비교 대상이 없으면 0.5. 정렬 방식·가중치·규
 ### 공개 조회
 
 `GET /navigator/companies/{brn}/matches` 는 신용등급·매출 요건의 결과를 `null` 로 가리고, 그 요건을 빼고 판정과 연계이유를 다시 계산한다 (가린 요건 때문에 부적격이라는 사실이 드러나지 않도록). 보완질문은 주지 않는다.
+
+## 자격검토 (상담)
+
+`POST /navigator/consult/companies/{org_id}/eligibility` 가 공고별로 내는 결과 (`services/eligibility_review.py`, 적합도는 `services/fit.py`). 저장하지 않는다. 결과는 상담 참고자료이고, 확정은 담당자가 한다.
+
+### Q1 신청 가능 여부
+
+기존 판정 (필수 요건만 본다) 을 그대로 쓴다.
+
+| 판정 | 화면 표기 |
+|------|------|
+| ELIGIBLE | 신청 가능 |
+| NEEDS_INFO | 확인 필요 |
+| INELIGIBLE | 신청 불가 |
+
+### 공고문 점검 항목
+
+| 점검 항목 | 공고문 내용 | 저장 위치 |
+|------|------|------|
+| 신청자격·신청제한 (필수요건) | 신청자격과 제한 조건 | `announcement_requirement` (`is_mandatory = true`) |
+| 평가기준·배점 (적합도) | 평가항목과 배점 | `announcement_eval_item` (`kind`: CAPABILITY·PURPOSE·APPLICATION) |
+| 우대 (적합도 가점) | 우대 요건과 가점 | `announcement_requirement.bonus_points` |
+| 지원내용·기업부담 (안내) | 지원 한도·기간, 기업 부담 비율 | `announcement.support_amount_krw`, `support_period_months`, `company_burden` |
+| 제출서류 (안내) | 서류 이름, 필수 여부 | `announcement.submit_documents` |
+
+### Q2 적합도
+
+| 종류 | 평가 방법 | 충족도 |
+|------|------|------|
+| 역량 (CAPABILITY) | 연결한 D-STATE 영역 점수의 평균. 70 이상 충분, 40~69 부분, 40 미만 미흡 | 충분·부분·미흡 |
+| 사업 목적 (PURPOSE) | 상담 애로사항·관심분야와 공고 목적·개요의 임베딩 관련도 최댓값. 높음·보통·낮음 경계는 `services/levels.py` | 높음 충분, 보통 부분, 낮음 미흡 |
+| 신청서 기반 (APPLICATION) | 상담 단계에서는 평가하지 않는다. 배점에서도 뺀다 | - |
+
+- 점수 = Σ(배점 × 충족도) ÷ 평가한 배점 합 × 100 + 우대 가점, 100 에서 자른다. 충족도는 충분 100%, 부분 50%, 미흡 0%. 우대 가점은 충족한 우대 요건의 `bonus_points` 합.
+- 등급: 상 70 이상, 중 50~69, 하 50 미만.
+- 평가 항목이 없으면 적합도를 내지 않고 '평가 기준 없음'으로 표시한다. 상담 내용이 없으면 사업 목적 항목은 평가하지 않고 배점에서 뺀다.
+- 설계상 사업 목적 부합은 LLM 으로 보지만, 지금은 임베딩 관련도로 대신한다.
+
+### 보완 포인트
+
+- 미충족·확인 필요 필수요건 (담당자 확인 질문 포함).
+- 부분·미흡 역량 항목을 충분으로 올렸을 때의 적합도와 보완과제 (해당 영역 D-STATE 과제) 상위 2개.
+
+### 근거
+
+- 요건마다 공고문 인용과 쪽 번호 (`source_quote`, `source_page`) 를 붙인다.
+- 인용이 없으면 `has_basis = false` 로 표시하고 결과의 `unsupported` 목록에 넣어 담당자가 확인하게 한다.
+
+가상 공고 NAV-2026-107 ('26-1차 방산 중소기업 컨설팅 지원사업(가상)) 은 실제 공고 평가표를 본떠 만들었다. 재무상황 10 (역량 BUSINESS), 기술성 15 (역량 TECH·DEFENSE), 컨설팅 목적성 15 (사업 목적), 수행방안 40 과 기대효과 20 (신청서 기반, 상담 단계 제외), 우대 가점 국방벤처센터 협약 1.5, 방산혁신기업 100 선정 2.
 
 ## 화면
 
@@ -510,3 +577,6 @@ curl -s -X POST localhost:8000/navigator/announcements -H 'X-User-Id: 1' -H 'Con
 - 알림 발송을 큐로 분리 (지금은 공고 등록 요청 안에서 처리)
 - 사진·스캔 증빙 OCR (지금은 PDF·한글 파일 글자만 읽음)
 - 실제 공고·기업 데이터로 관련도 경계와 TECH·PURPOSE 비율 다시 맞추기 (bge-m3 경계는 합성 100쌍 기준)
+- 조달청 부정당제재 정보 연동 (지금은 회사 정보 입력)
+- 사업 목적 부합 LLM 평가 (지금은 임베딩 관련도)
+- 평가표 자동 추출 (지금은 담당자가 확인 화면에서 입력)

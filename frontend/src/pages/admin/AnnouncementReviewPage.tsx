@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import {
   createAnnouncementFromText, extractRequirements, getAnnouncement, getAnnouncementSource, getRequirementTypes, listAnnouncements, saveReview,
-  type AnnDetail, type AnnFields, type AnnSource, type Extraction, type ReqDraft, type TechDraft,
+  type AnnDetail, type AnnFields, type EvalItem, type AnnSource, type Extraction, type ReqDraft, type TechDraft,
 } from '../../api/navigator'
 import { useAuth } from '../../auth/AuthContext'
 import { Card, Empty, fmtDate, PageHeader, useAction, useAsync } from '../../components/ui'
@@ -16,7 +16,16 @@ const toRow = (r: ReqDraft): Row => ({ ...r, ruleText: JSON.stringify(r.rule ?? 
 const fieldsOf = (a: AnnDetail): AnnFields => ({
   receipt_start: a.receipt_start, receipt_end: a.receipt_end, support_amount_krw: a.support_amount_krw,
   support_period_months: a.support_period_months, target_desc: a.target_desc, summary: a.summary,
+  company_burden: a.company_burden, submit_documents: a.submit_documents ?? [],
 })
+
+const AREAS: [string, string][] = [['TECH', '기술'], ['QUALITY', '품질·인증'], ['PRODUCTION', '생산·공급망'],
+  ['BUSINESS', '사업화·재무'], ['DEFENSE', '방산진입'], ['EXPORT', '수출']]
+const KINDS: [EvalItem['kind'], string][] = [['CAPABILITY', '역량'], ['PURPOSE', '사업 목적'], ['APPLICATION', '신청서 기반']]
+const DISQ: [string, string][] = [['TAX_DELINQUENT', '체납'], ['INSOLVENT', '부도·자본잠식'], ['RND_RESTRICTED', 'R&D 참여제한'],
+  ['PROCUREMENT_SANCTIONED', '부정당제재']]
+const parseRule = (t: string): Record<string, unknown> => { try { return JSON.parse(t || '{}') } catch { return {} } }
+
 
 export function AnnouncementReviewPage() {
   const { role } = useAuth()
@@ -118,6 +127,7 @@ function Review({ annId, canEdit, onSaved }: { annId: number; canEdit: boolean; 
   const types = useAsync(getRequirementTypes, [])
   const [fields, setFields] = useState<AnnFields>({})
   const [rows, setRows] = useState<Row[]>([])
+  const [evals, setEvals] = useState<EvalItem[] | null>(null)
   const [techs, setTechs] = useState<TechDraft[]>([])
   const [ex, setEx] = useState<Extraction | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
@@ -126,6 +136,7 @@ function Review({ annId, canEdit, onSaved }: { annId: number; canEdit: boolean; 
   useEffect(() => {
     if (!ann.data) return
     setFields(fieldsOf(ann.data))
+    setEvals(ann.data.eval_items ?? [])
     setRows(ann.data.requirements.map((r) => toRow({ ...r, quote_found: true })))
     setTechs(ann.data.tech_needs.map(({ tech_name, description, is_core }) => ({ tech_name, description, is_core })))
   }, [ann.data])
@@ -152,7 +163,8 @@ function Review({ annId, canEdit, onSaved }: { annId: number; canEdit: boolean; 
         const rule = JSON.parse(r.ruleText || '{}') as Record<string, unknown>
         setRow(i, { ruleError: undefined })
         return { req_type_code: r.req_type_code, rule, is_mandatory: r.is_mandatory, description: r.description.trim(),
-          source_quote: r.source_quote, origin: r.origin ?? 'MANUAL' }
+          source_quote: r.source_quote, origin: r.origin ?? 'MANUAL',
+          bonus_points: r.is_mandatory ? null : r.bonus_points ?? null }
       } catch {
         bad = true; setRow(i, { ruleError: '규칙 형식이 JSON 이 아닙니다' })
         return r
@@ -160,8 +172,12 @@ function Review({ annId, canEdit, onSaved }: { annId: number; canEdit: boolean; 
     })
     if (bad) return
     if (reqs.some((r) => !r.description)) { setMsg('조건 문장이 빈 줄이 있습니다.'); return }
+    if (evals?.some((e) => !e.name.trim() || (e.kind === 'CAPABILITY' && !e.areas.length))) {
+      setMsg('평가항목의 이름을 쓰고, 역량 항목은 영역을 하나 이상 고르세요.'); return
+    }
     void run(async () => {
-      await saveReview(annId, { fields: clean(fields), requirements: reqs, tech_needs: techs.filter((t) => t.tech_name.trim()), confirm: true, publish })
+      await saveReview(annId, { fields: clean({ ...fields, submit_documents: (fields.submit_documents ?? []).filter((d) => d.name.trim()) }),
+        requirements: reqs, eval_items: evals ?? undefined, tech_needs: techs.filter((t) => t.tech_name.trim()), confirm: true, publish })
       setMsg(publish ? '확인하고 공개했습니다. 이제 기업 추천과 알림에 쓰입니다.' : '확인 완료로 저장했습니다.')
       ann.reload(); onSaved()
     })
@@ -210,7 +226,62 @@ function Review({ annId, canEdit, onSaved }: { annId: number; canEdit: boolean; 
             </div>
             <label>지원 대상<textarea rows={2} value={fields.target_desc ?? ''} onChange={(e) => setFields({ ...fields, target_desc: e.target.value || null })} /></label>
             <label>사업 목적<textarea rows={2} value={fields.summary ?? ''} onChange={(e) => setFields({ ...fields, summary: e.target.value || null })} /></label>
+            <label>기업부담<input value={fields.company_burden ?? ''} placeholder="예: 총사업비의 25%"
+              onChange={(e) => setFields({ ...fields, company_burden: e.target.value || null })} /></label>
           </div>
+
+          <h4 style={{ margin: '16px 0 6px' }}>제출서류</h4>
+          <div className="stack" style={{ gap: 6 }}>
+            {(fields.submit_documents ?? []).map((d, i) => {
+              const setDoc = (patch: Partial<typeof d>) => setFields({ ...fields,
+                submit_documents: (fields.submit_documents ?? []).map((x, j) => (j === i ? { ...x, ...patch } : x)) })
+              return (
+                <div key={i} className="form-row">
+                  <input value={d.name} placeholder="서류 이름" onChange={(e) => setDoc({ name: e.target.value })} />
+                  <select value={d.required ? '1' : '0'} style={{ flex: '0 0 90px' }} onChange={(e) => setDoc({ required: e.target.value === '1' })}>
+                    <option value="1">필수</option><option value="0">해당 시</option>
+                  </select>
+                  <button className="btn btn-sm btn-ghost"
+                    onClick={() => setFields({ ...fields, submit_documents: (fields.submit_documents ?? []).filter((_, j) => j !== i) })}>삭제</button>
+                </div>
+              )
+            })}
+          </div>
+          <button className="btn btn-sm" style={{ marginTop: 8 }}
+            onClick={() => setFields({ ...fields, submit_documents: [...(fields.submit_documents ?? []), { name: '', required: true }] })}>서류 추가</button>
+
+          <h4 style={{ margin: '16px 0 6px' }}>평가항목·배점 (합계 {(evals ?? []).reduce((n, e) => n + (Number(e.points) || 0), 0)}점)</h4>
+          <p className="small muted">평가항목은 기업 상담의 적합도(상·중·하) 계산에 씁니다.</p>
+          <div className="stack" style={{ gap: 10 }}>
+            {(evals ?? []).map((e, i) => {
+              const setEv = (patch: Partial<EvalItem>) => setEvals((xs) => (xs ?? []).map((x, j) => (j === i ? { ...x, ...patch } : x)))
+              return (
+                <div key={i} className="req-edit">
+                  <div className="form-row">
+                    <input value={e.name} placeholder="평가항목 이름" onChange={(ev) => setEv({ name: ev.target.value })} />
+                    <input type="number" min={0} step={0.5} style={{ flex: '0 0 80px' }} value={e.points} title="배점"
+                      onChange={(ev) => setEv({ points: Number(ev.target.value) })} />
+                    <select value={e.kind} style={{ flex: '0 0 120px' }} onChange={(ev) => setEv({ kind: ev.target.value as EvalItem['kind'] })}>
+                      {KINDS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                    <button className="btn btn-sm btn-ghost" onClick={() => setEvals((xs) => (xs ?? []).filter((_, j) => j !== i))}>삭제</button>
+                  </div>
+                  {e.kind === 'CAPABILITY' && (
+                    <div className="chips" style={{ marginTop: 0 }}>
+                      {AREAS.map(([code, label]) => {
+                        const on = e.areas.includes(code)
+                        return <button key={code} type="button" className={`chip ${on ? 'chip-on' : ''}`}
+                          onClick={() => setEv({ areas: on ? e.areas.filter((a) => a !== code) : [...e.areas, code] })}>{label}</button>
+                      })}
+                    </div>
+                  )}
+                  <input value={e.source_quote ?? ''} placeholder="근거 조항 (공고문 인용)" onChange={(ev) => setEv({ source_quote: ev.target.value || null })} />
+                </div>
+              )
+            })}
+          </div>
+          {canEdit && <button className="btn btn-sm" style={{ marginTop: 8 }}
+            onClick={() => setEvals((xs) => [...(xs ?? []), { name: '', points: 10, kind: 'CAPABILITY', areas: [] }])}>평가항목 추가</button>}
 
           <h4 style={{ margin: '16px 0 6px' }}>지원 조건 {rows.length}개 (필수 {rows.filter((r) => r.is_mandatory).length})</h4>
           {!rows.length && <Empty>아직 조건이 없습니다. ‘조건 뽑기’를 누르거나 직접 추가하세요.</Empty>}
@@ -232,6 +303,35 @@ function Review({ annId, canEdit, onSaved }: { annId: number; canEdit: boolean; 
                   <button className="btn btn-sm btn-ghost" onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))}>삭제</button>
                 </div>
                 <input value={r.description} placeholder="조건 문장 (기업에게 보이는 문장)" onChange={(e) => setRow(i, { description: e.target.value })} />
+                {!r.is_mandatory && (
+                  <label className="small">우대 가점
+                    <input type="number" min={0} max={100} step={0.5} style={{ width: 90, marginLeft: 6 }} value={r.bonus_points ?? ''}
+                      onChange={(e) => setRow(i, { bonus_points: e.target.value ? Number(e.target.value) : null })} /> 점
+                  </label>
+                )}
+                {r.req_type_code === 'DUPLICATE_SUPPORT' && (
+                  <label className="small">최근
+                    <input type="number" min={1} style={{ width: 70, margin: '0 6px' }}
+                      value={Number(parseRule(r.ruleText).within_years ?? 1)}
+                      onChange={(e) => setRow(i, { ruleText: JSON.stringify({ within_years: Number(e.target.value) || 1 }), ruleError: undefined })} />
+                    년 내 같은 사업 수혜 제한
+                  </label>
+                )}
+                {r.req_type_code === 'NO_DISQUALIFICATION' && (
+                  <div className="chips" style={{ marginTop: 0 }}>
+                    {DISQ.map(([code, label]) => {
+                      const cur = (parseRule(r.ruleText).checks as string[] | undefined) ?? []
+                      const on = cur.includes(code)
+                      return (
+                        <button key={code} type="button" className={`chip ${on ? 'chip-on' : ''}`}
+                          onClick={() => {
+                            const next = on ? cur.filter((x) => x !== code) : [...cur, code]
+                            if (next.length) setRow(i, { ruleText: JSON.stringify({ ...parseRule(r.ruleText), checks: next }), ruleError: undefined })
+                          }}>{label}</button>
+                      )
+                    })}
+                  </div>
+                )}
                 {r.req_type_code !== 'OTHER' && (
                   <input className="mono small" value={r.ruleText} title="판정에 쓰는 규칙"
                     onChange={(e) => setRow(i, { ruleText: e.target.value, ruleError: undefined })} />

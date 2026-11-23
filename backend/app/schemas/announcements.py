@@ -98,7 +98,7 @@ class PatentRule(_Rule):
 
 
 class NoDisqualificationRule(_Rule):
-    checks: list[Literal["TAX_DELINQUENT", "INSOLVENT", "RND_RESTRICTED"]] = Field(
+    checks: list[Literal["TAX_DELINQUENT", "INSOLVENT", "RND_RESTRICTED", "PROCUREMENT_SANCTIONED"]] = Field(
         default=["TAX_DELINQUENT", "INSOLVENT", "RND_RESTRICTED"], min_length=1)
 
 
@@ -111,6 +111,10 @@ class ExportRule(_Rule):
     min_krw: int = Field(default=1, ge=0)
 
 
+class DuplicateSupportRule(_Rule):
+    within_years: int = Field(default=1, ge=1, le=10, description="최근 N년 안의 같은 사업 수혜")
+
+
 class OtherRule(_Rule):
     model_config = ConfigDict(extra="allow")   # 규칙으로 못 쓰는 요건: 문장(description)이 본체
 
@@ -121,7 +125,7 @@ RULE_MODELS: dict[str, type[_Rule]] = {
     "EMPLOYEE_COUNT": EmployeeCountRule, "REVENUE": RevenueRule, "BUSINESS_STATUS": BusinessStatusRule,
     "DEFENSE_COMPANY": DefenseCompanyRule, "RND_EXPERIENCE": RndExperienceRule, "PATENT": PatentRule,
     "NO_DISQUALIFICATION": NoDisqualificationRule, "DEFENSE_SUPPLY": DefenseSupplyRule, "EXPORT": ExportRule,
-    "OTHER": OtherRule,
+    "DUPLICATE_SUPPORT": DuplicateSupportRule, "OTHER": OtherRule,
 }
 
 
@@ -145,6 +149,7 @@ class RequirementIn(BaseModel):
     source_quote: str | None = Field(default=None, max_length=2000)
     source_page: int | None = Field(default=None, gt=0)
     origin: Literal["MANUAL", "AI_EXTRACTED"] = Field(default="MANUAL", description="AI_EXTRACTED = 뽑은 후보를 담당자가 확인")
+    bonus_points: float | None = Field(default=None, ge=0, le=100, description="우대 요건 충족 시 적합도 가점")
 
 
 class RequirementUpdate(BaseModel):
@@ -153,6 +158,32 @@ class RequirementUpdate(BaseModel):
     description: str | None = Field(default=None, min_length=1, max_length=1000)
     source_quote: str | None = None
     source_page: int | None = Field(default=None, gt=0)
+    bonus_points: float | None = Field(default=None, ge=0, le=100)
+
+
+DstateArea = Literal["TECH", "QUALITY", "PRODUCTION", "BUSINESS", "DEFENSE", "EXPORT"]
+
+
+class EvalItemIn(BaseModel):
+    """공고 평가항목. CAPABILITY 는 연결한 D-STATE 영역 점수로, PURPOSE 는 상담 내용과 사업 목적 비교로 평가.
+    APPLICATION 은 신청서로만 볼 수 있어 상담 단계 적합도에서 뺀다."""
+    name: str = Field(min_length=1, max_length=200)
+    points: float = Field(gt=0, le=100)
+    kind: Literal["CAPABILITY", "PURPOSE", "APPLICATION"] = "CAPABILITY"
+    areas: list[DstateArea] = []
+    source_quote: str | None = Field(default=None, max_length=2000)
+    source_page: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def _areas(self):
+        if self.kind == "CAPABILITY" and not self.areas:
+            raise ValueError(f"평가항목 '{self.name}': 역량 항목은 D-STATE 영역을 하나 이상 고르세요")
+        return self
+
+
+class SubmitDocument(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    required: bool = True
 
 
 class TechNeedIn(BaseModel):
@@ -177,6 +208,8 @@ class AnnouncementFields(BaseModel):
     receipt_end: date | None = None
     source_url: str | None = None
     status: Status | None = None
+    company_burden: str | None = Field(default=None, max_length=500, description="기업부담 (예: 컨설팅 비용 25%)")
+    submit_documents: list[SubmitDocument] | None = None
 
     @model_validator(mode="after")
     def _dates(self):
@@ -193,6 +226,7 @@ class AnnouncementCreate(AnnouncementFields):
     status: Status = "PUBLISHED"
     requirements: list[RequirementIn] = []
     tech_needs: list[TechNeedIn] = []
+    eval_items: list[EvalItemIn] = []
 
 
 class AnnouncementUpdate(AnnouncementFields):
@@ -224,5 +258,6 @@ class AnnouncementReview(BaseModel):
     fields: AnnouncementUpdate = AnnouncementUpdate()
     requirements: list[RequirementIn] = []
     tech_needs: list[TechNeedIn] = []
+    eval_items: list[EvalItemIn] | None = Field(default=None, description="평가항목·배점. 생략하면 그대로 둔다")
     confirm: bool = Field(default=True, description="조건 확인 완료로 표시")
     publish: bool = Field(default=False, description="확인과 함께 공개 (구독 기업 알림)")

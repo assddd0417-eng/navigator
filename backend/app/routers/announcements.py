@@ -3,6 +3,7 @@ from pathlib import PurePath
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Response, UploadFile, status
 from psycopg import AsyncConnection
+from psycopg.types.json import Jsonb
 
 from app.auth import CurrentUser, get_current_user, request_id, require_roles
 from app.db import transaction
@@ -11,7 +12,8 @@ from app.repositories.sql import evidence_from_chunk, insert, update
 from app.services.announcement_docs import parse_file, store_document
 from app.config import get_settings
 from app.schemas.announcements import (AnnouncementCreate, AnnouncementCreated, AnnouncementFromText,
-                                       AnnouncementReview, AnnouncementUpdate, RequirementIn, RequirementUpdate,
+                                       AnnouncementReview, AnnouncementUpdate, EvalItemIn, RequirementIn,
+                                       RequirementUpdate,
                                        TechNeedIn, normalize_rule)
 from app.schemas.common import Created
 from app.schemas.documents import ChunkIn, DocumentCreate
@@ -23,6 +25,13 @@ from app.services.requirement_extract import extract, source_text
 router = APIRouter(prefix="/navigator/announcements", tags=["Navigator 공고"])
 STAFF = ("STAFF",)
 RECEIPT_LABEL = {"UPCOMING": "접수전", "OPEN": "접수중", "CLOSED": "마감", "DRAFT": "작성중", "CANCELLED": "취소"}
+
+
+def _jsonb_fields(data: dict) -> dict:
+    """제출서류는 jsonb 배열 칸이라 목록을 그대로 넘기면 배열로 들어간다."""
+    if "submit_documents" in data:
+        data["submit_documents"] = Jsonb(data["submit_documents"] or [])
+    return data
 
 
 def _unprocessable(msg: str) -> HTTPException:
@@ -74,7 +83,21 @@ async def _insert_requirement(conn: AsyncConnection, ann_id: int, document_id: i
     return await insert(conn, "announcement_requirement", {
         "announcement_id": ann_id, "req_type_code": r.req_type_code, "rule": rule,
         "is_mandatory": r.is_mandatory, "description": r.description, "evidence_id": evidence_id,
-        "source_quote": quote, "source_page": page, "sort_order": sort_order, "origin": r.origin})
+        "source_quote": quote, "source_page": page, "sort_order": sort_order, "origin": r.origin,
+        "bonus_points": r.bonus_points})
+
+
+async def replace_eval_items(conn: AsyncConnection, ann_id: int, items: list[EvalItemIn]) -> None:
+    await conn.execute("DELETE FROM ax.announcement_eval_item WHERE announcement_id = %s", (ann_id,))
+    for i, e in enumerate(items):
+        await insert(conn, "announcement_eval_item", {**e.model_dump(), "announcement_id": ann_id, "sort_order": i})
+
+
+async def eval_items(conn: AsyncConnection, ann_id: int) -> list[dict]:
+    return await (await conn.execute(
+        """SELECT id, name, points, kind, areas, source_quote, source_page, sort_order
+             FROM ax.announcement_eval_item WHERE announcement_id = %s ORDER BY sort_order, id""",
+        (ann_id,))).fetchall()
 
 
 async def _insert_tech_need(conn: AsyncConnection, ann_id: int, t: TechNeedIn, sort_order: int) -> int:
@@ -104,8 +127,12 @@ async def _announcement(conn: AsyncConnection, ann_id: int, user: CurrentUser | 
 
 async def _create(conn: AsyncConnection, body: AnnouncementCreate, user: CurrentUser,
                   extra: dict | None = None) -> AnnouncementCreated:
-    data = {**body.model_dump(exclude={"requirements", "tech_needs"}), "created_by": user.id, **(extra or {})}
-    ann_id = await insert(conn, "announcement", data)
+    data = {**body.model_dump(exclude={"requirements", "tech_needs", "eval_items"}), "created_by": user.id,
+            **(extra or {})}
+    if data.get("submit_documents") is None:
+        data.pop("submit_documents", None)
+    ann_id = await insert(conn, "announcement", _jsonb_fields(data))
+    await replace_eval_items(conn, ann_id, body.eval_items)
     req_ids = [await _insert_requirement(conn, ann_id, data.get("document_id"), r, i)
                for i, r in enumerate(body.requirements)]
     tech_ids = [await _insert_tech_need(conn, ann_id, t, i) for i, t in enumerate(body.tech_needs)]
@@ -213,7 +240,7 @@ async def get_announcement(ann_id: int, user: CurrentUser | None = Depends(optio
             """SELECT r.id, r.req_type_code, t.name_ko AS req_type_name, r.rule, r.is_mandatory,
                       CASE WHEN r.is_mandatory THEN '필수' ELSE '우대' END AS mandatory_label,
                       r.description, r.source_quote, r.source_page, r.evidence_id, e.chunk_id AS evidence_chunk_id,
-                      r.origin, r.sort_order
+                      r.origin, r.sort_order, r.bonus_points
                  FROM ax.announcement_requirement r
                  JOIN ax.code_requirement_type t ON t.code = r.req_type_code
                  LEFT JOIN ax.evidence e ON e.id = r.evidence_id
@@ -222,6 +249,9 @@ async def get_announcement(ann_id: int, user: CurrentUser | None = Depends(optio
             """SELECT id, tech_name, description, tech_taxonomy_id, ipc_codes, is_core, sort_order
                  FROM ax.announcement_tech_need WHERE announcement_id = %s ORDER BY sort_order, id""",
             (ann_id,))).fetchall()
+        a["eval_items"] = await eval_items(conn, ann_id)
+        a.update(await (await conn.execute(
+            "SELECT company_burden, submit_documents FROM ax.announcement WHERE id = %s", (ann_id,))).fetchone())
         a["document"] = None
         if a["document_id"]:
             a["document"] = await (await conn.execute(
@@ -257,7 +287,7 @@ async def update_announcement(ann_id: int, body: AnnouncementUpdate,
         start, end = data.get("receipt_start", cur["receipt_start"]), data.get("receipt_end", cur["receipt_end"])
         if start and end and end < start:
             raise _unprocessable("접수 마감일이 접수 시작일보다 빠릅니다")
-        await update(conn, "announcement", ann_id, data)
+        await update(conn, "announcement", ann_id, _jsonb_fields(data))
         await _changed(conn, ann_id)
     # 공개로 바뀔 때 구독 기업에 알림
     if data.get("status") == "PUBLISHED" and cur["status"] != "PUBLISHED":
@@ -403,7 +433,7 @@ async def save_review(ann_id: int, body: AnnouncementReview, user: CurrentUser =
             raise _unprocessable("지원 조건이 하나도 없으면 공개할 수 없습니다")
         if body.confirm:
             data["requirements_confirmed_by"] = user.id
-        await update(conn, "announcement", ann_id, data,
+        await update(conn, "announcement", ann_id, _jsonb_fields(data),
                      "requirements_confirmed_at = now()" if body.confirm else "")
         await conn.execute("DELETE FROM ax.announcement_requirement WHERE announcement_id = %s", (ann_id,))
         await conn.execute("DELETE FROM ax.announcement_tech_need WHERE announcement_id = %s", (ann_id,))
@@ -411,6 +441,8 @@ async def save_review(ann_id: int, body: AnnouncementReview, user: CurrentUser =
             await _insert_requirement(conn, ann_id, a["document_id"], r, i)
         for i, t in enumerate(body.tech_needs):
             await _insert_tech_need(conn, ann_id, t, i)
+        if body.eval_items is not None:
+            await replace_eval_items(conn, ann_id, body.eval_items)
         await _changed(conn, ann_id)
     if body.publish and a["status"] != "PUBLISHED":
         await safe_dispatch(ann_id, rid)

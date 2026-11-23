@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
@@ -19,7 +20,10 @@ STATUS_KO = {"ACTIVE": "계속사업자", "SUSPENDED": "휴업", "CLOSED": "폐�
 CERT_KO = {"VENTURE": "벤처기업 확인", "INNOBIZ": "이노비즈", "MAINBIZ": "메인비즈", "RND_LAB": "기업부설연구소",
            "RND_DEPT": "연구개발전담부서", "ISO9001": "ISO 9001", "AS9100": "AS9100", "DEFENSE_COMPANY": "방산업체 지정",
            "DEFENSE_QMS": "국방품질경영체제 인증", "SME_CONFIRM": "중소기업 확인", "OTHER": "기타"}
-DISQUALIFY_KO = {"TAX_DELINQUENT": "국세·지방세 체납", "INSOLVENT": "부도·자본잠식", "RND_RESTRICTED": "국가 R&D 참여제한"}
+DISQUALIFY_KO = {"TAX_DELINQUENT": "국세·지방세 체납", "INSOLVENT": "부도·자본잠식", "RND_RESTRICTED": "국가 R&D 참여제한",
+                 "PROCUREMENT_SANCTIONED": "부정당제재"}
+DEFAULT_DISQUALIFY = ["TAX_DELINQUENT", "INSOLVENT", "RND_RESTRICTED"]
+SUPPORT_DONE = ("SELECTED", "COMPLETED", "SUCCESS")   # 수혜로 보는 결과
 STARTUP_MAX_YEARS = 7   # 창업기업: 개업 7년 이내 (중소기업창업 지원법)
 
 
@@ -54,6 +58,16 @@ class Patent:
 
 
 @dataclass
+class Support:
+    program_name: str
+    year: int | None
+    result: str
+    series_key: str | None = None   # 연결된 공고의 묶음 키
+    program_id: int | None = None
+    announcement_id: int | None = None
+
+
+@dataclass
 class CompanyFacts:
     organization_id: int
     name: str
@@ -70,6 +84,8 @@ class CompanyFacts:
     defense_goods: bool | None = None
     military_supply_krw: int | None = None
     export_krw: int | None = None
+    procurement_sanctioned: bool | None = None
+    support: list[Support] = field(default_factory=list)
     certs: list[Cert] = field(default_factory=list)
     credits: list[Credit] = field(default_factory=list)
     rnd: list[Rnd] = field(default_factory=list)
@@ -254,7 +270,7 @@ def judge(req: Requirement, c: CompanyFacts, as_of: date) -> Check:
                      detail={"count": len(hits), "titles": [p.title for p in hits][:3]})
 
     if t == "NO_DISQUALIFICATION":
-        checks = r.get("checks") or list(DISQUALIFY_KO)
+        checks = r.get("checks") or DEFAULT_DISQUALIFY
         vals = {k: getattr(c, k.lower()) for k in checks}
         hit = [DISQUALIFY_KO[k] for k, v in vals.items() if v]
         if hit:
@@ -291,8 +307,43 @@ def judge(req: Requirement, c: CompanyFacts, as_of: date) -> Check:
         ok = c.export_krw >= lo
         return Check("MET" if ok else "UNMET", f"수출 실적 요건 {'충족' if ok else '미달'}", detail={"meets": ok})
 
+    if t == "DUPLICATE_SUPPORT":
+        within = r.get("within_years", 1)
+        since = as_of.year - within
+        name = r.get("_program_name") or ""
+
+        def same(s: Support) -> bool:
+            if r.get("_announcement_id") and s.announcement_id == r["_announcement_id"]:
+                return True
+            if r.get("_series_key") and s.series_key == r["_series_key"]:
+                return True
+            if r.get("_program_id") and s.program_id == r["_program_id"]:
+                return True
+            if name and _norm(name) in _norm(s.program_name):
+                return True
+            # 공고 제목에 지원사업 이름이 들어 있으면 같은 사업 (연도·차수·숫자는 빼고 비교)
+            given, title = _norm(s.program_name, digits=False), _norm(r.get("_title") or "", digits=False)
+            return len(given) >= 6 and given in title
+
+        hits = [s for s in c.support if s.result in SUPPORT_DONE and (s.year is None or s.year >= since) and same(s)]
+        if hits:
+            h = hits[0]
+            return Check("UNMET", f"최근 {within}년 같은 사업 수혜: {h.program_name}"
+                                  f"{f' ({h.year})' if h.year else ''}", detail={"program": h.program_name})
+        if not c.support:
+            return _answer(req, c, f"최근 {within}년 안에 같은 사업에 선정되거나 수행한 적이 없나요? (예/아니오)")
+        return Check("MET", f"입력된 지원사업 이력에 최근 {within}년 같은 사업 수혜 없음",
+                     detail={"checked": len(c.support)})
+
     # OTHER
     return _answer(req, c, f"다음 요건을 충족하나요? {req.description} (예/아니오)")
+
+
+def _norm(s: str, digits: bool = True) -> str:
+    s = s.replace("(가상)", "")
+    if not digits:
+        s = re.sub(r"\d+\s*(년도|년|차)|제\s*\d+\s*차|공고|모집", "", s)
+    return "".join(ch for ch in s if ch.isalnum() and (digits or not ch.isdigit()))
 
 
 def overall(checks: list[tuple[Requirement, Check]]) -> str:
