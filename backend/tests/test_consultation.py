@@ -123,6 +123,9 @@ async def test_consultation_flow(client, setup):
     assert c2["compare"]["consultation_id"] == c1["id"] and len(c2["compare"]["areas"]) == 6
     assert any(x["announcement_id"] == ann and x["before"] == "신청 불가" for x in c2["compare"]["verdict_changes"])
     assert c2["route"] is not None and "추천 성장경로" in [s["title"] for s in c2["report"]]
+    # 입력값이 그대로면 진단은 새로 쌓지 않고 직전 진단을 쓴다
+    assert c2["diagnosis_id"] == c1["diagnosis_id"]
+    assert len((await client.get(f"/navigator/consult/companies/{org}/diagnoses", headers=as_user(1))).json()) == 1
 
     hist = (await client.get(f"/navigator/consult/companies/{org}/consultations", headers=as_user(1))).json()
     assert [x["id"] for x in hist] == [c2["id"], c1["id"]] and hist[1]["override_count"] == 1

@@ -61,6 +61,9 @@ export function ConsultPage() {
   const execute = () => run(async () => {
     setResult(await runDstate(orgId!))
     setHistKey((k) => k + 1)
+    void companies.reload()
+    if (task === 'A') setElig(null)
+    if (task !== 'C') setRoute(null)
     const c = concern.trim() || undefined
     if (task === 'B' || task === 'C') {
       setElig(await reviewEligibility(orgId!, { concern: c, include_closed: includeClosed }))
@@ -99,14 +102,17 @@ export function ConsultPage() {
       <div className="grid-side">
         <Card title={<><span className="step-label" style={{ display: 'block' }}>STEP 1</span>기업 및 수행 업무 선택</>}>
           <RequestList items={requests.data} loading={requests.loading} orgId={orgId} company={company}
-            onPick={pickRequest} onChanged={() => void requests.reload()} />
+            requestId={requestId} onPick={pickRequest} onChanged={() => void requests.reload()} />
           <form className="form-row" style={{ marginBottom: 10 }} onSubmit={(e) => { e.preventDefault(); setQuery(q.trim()) }}>
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="상호 또는 사업자번호" aria-label="기업 검색" />
           </form>
           {companies.loading ? <div className="page-loading">불러오는 중…</div> : !companies.data?.length ? <Empty>기업이 없습니다.</Empty> : (
             <ul className="select-list">
               {companies.data.map((c) => <CompanyButton key={c.organization_id} c={c} on={c.organization_id === orgId}
-                onClick={() => { setOrgId(c.organization_id); setRequestId(null) }} />)}
+                onClick={() => {
+                  if (requestId != null) setConcern('')
+                  setOrgId(c.organization_id); setRequestId(null)
+                }} />)}
             </ul>
           )}
           <div className="small muted" style={{ margin: '14px 0 6px' }}>검토 업무</div>
@@ -166,7 +172,7 @@ export function ConsultPage() {
                 : <Card><Empty>검토 업무 C를 고르고 실행하면 결과가 나옵니다.</Empty></Card>)}
               {tab === 'report' && (consultation && consultation.organization_id === orgId
                 ? <ConsultReportPanel key={`${consultation.id}-${consultKey}`} data={consultation}
-                  onChange={(c) => { setConsultation(c); setConsultKey((k) => k + 1) }} />
+                  onChange={(c) => { setConsultation(c); setConsultKey((k) => k + 1); void requests.reload() }} />
                 : <Card><Empty>결과를 저장하거나 아래 상담 이력에서 고르면 상담결과서가 열립니다.</Empty></Card>)}
               <ConsultHistoryCard key={`c-${orgId}-${consultKey}`} orgId={orgId} onOpen={(id) => void openConsultation(id)} />
               {tab === 'dstate' && <HistoryCard key={`${orgId}-${histKey}`} orgId={orgId} />}
@@ -446,8 +452,8 @@ function RulesCard() {
 
 const STATUS_TONE: Record<string, string> = { REQUESTED: 'warn', IN_PROGRESS: 'info', DONE: 'ok', CANCELED: 'muted' }
 
-function RequestList({ items, loading, orgId, company, onPick, onChanged }: {
-  items: ConsultRequest[] | null; loading: boolean; orgId: number | null; company: ConsultCompany | null
+function RequestList({ items, loading, orgId, company, requestId, onPick, onChanged }: {
+  items: ConsultRequest[] | null; loading: boolean; orgId: number | null; company: ConsultCompany | null; requestId: number | null
   onPick: (r: ConsultRequest) => void; onChanged: () => void
 }) {
   const [adding, setAdding] = useState(false)
@@ -484,13 +490,13 @@ function RequestList({ items, loading, orgId, company, onPick, onChanged }: {
       {loading ? <div className="small muted">불러오는 중…</div> : !open.length ? <div className="small muted">대기 중인 요청이 없습니다.</div> : (
         <ul className="select-list" style={{ maxHeight: 220, marginTop: 6 }}>
           {open.map((r) => (
-            <li key={r.id}>
-              <button onClick={() => onPick(r)}>
+            <li key={r.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+              <button className={r.id === requestId ? 'on' : ''} style={{ flex: 1, minWidth: 0 }} onClick={() => onPick(r)}>
                 <span>{r.company_name} <span className={`badge badge-${STATUS_TONE[r.status]}`}>{r.status_label}</span></span>
                 <span className="small muted">{r.concern.split('\n')[0]}</span>
               </button>
-              <button className="link-btn small" style={{ width: 'auto', padding: '0 10px' }} disabled={busy}
-                onClick={() => void cancel(r.id)}>취소</button>
+              <button className="link-btn small" style={{ width: 'auto', padding: '8px 6px', flexShrink: 0 }} disabled={busy}
+                title="요청 취소" onClick={() => void cancel(r.id)}>취소</button>
             </li>
           ))}
         </ul>

@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
@@ -434,7 +435,10 @@ async def save_values(conn: AsyncConnection, org_id: int, values: dict[str, Any]
             (org_id, code, origin, Jsonb(v), user_id))
 
 
-async def run(conn: AsyncConnection, org_id: int, *, save: bool, user_id: int | None = None) -> dict | None:
+async def run(conn: AsyncConnection, org_id: int, *, save: bool, user_id: int | None = None,
+              reuse_same: bool = False) -> dict | None:
+    """reuse_same: 직전 저장 진단과 기준·입력값이 같으면 새로 저장하지 않고 그 진단을 쓴다
+    (실행 후 바로 결과서를 저장할 때 진단 이력이 두 줄씩 쌓이지 않게)."""
     inp = await load_input(conn, org_id)
     if inp is None:
         return None
@@ -444,8 +448,16 @@ async def run(conn: AsyncConnection, org_id: int, *, save: bool, user_id: int | 
     result["organization_id"] = org_id
     result["company_name"] = inp.name
     result["diagnosis_id"] = None
+    snap = {c: {"value": v.value, "source": v.source} for c, v in inp.values.items()}
+    if save and reuse_same:
+        last = await (await conn.execute(
+            """SELECT id, created_at, rule_version, inputs FROM ax.company_diagnosis
+                WHERE organization_id = %s ORDER BY id DESC LIMIT 1""", (org_id,))).fetchone()
+        if last and last["rule_version"] == RULE_VERSION and last["inputs"] == json.loads(json.dumps(snap, default=str)):
+            result["diagnosis_id"] = last["id"]
+            result["created_at"] = last["created_at"].isoformat()
+            save = False
     if save:
-        snap = {c: {"value": v.value, "source": v.source} for c, v in inp.values.items()}
         row = await (await conn.execute(
             """INSERT INTO ax.company_diagnosis (organization_id, rule_version, total_score, state_type, weakest_area,
                                                  scores, inputs, missing, summary, created_by)
