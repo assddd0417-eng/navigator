@@ -322,8 +322,8 @@ label.check input { width: auto; }
 
 /* 역량 레이더 */
 .radar { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
-.radar svg { width: 260px; height: 260px; flex-shrink: 0; overflow: visible; }
-.radar-compact svg { width: 200px; height: 200px; }
+.radar svg { width: 260px; height: 260px; flex-shrink: 0; overflow: visible; margin: 0 64px; }  /* 축 이름이 svg 밖으로 나가므로 옆 표와 겹치지 않게 */
+.radar-compact svg { width: 200px; height: 200px; margin: 0 56px; }
 .radar-grid { fill: none; stroke: var(--border); stroke-width: 1; }
 .radar-avg { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 4 3; }
 .radar-mine { fill: var(--primary); fill-opacity: .18; stroke: var(--primary); stroke-width: 2; }

@@ -143,7 +143,7 @@ async def run(conn: AsyncConnection, org_id: int, *, task: str, concern: str | N
             raise ConsultError("이 기업의 상담 요청이 아님")
         if not concern:
             concern = req["concern"]
-    diag = await dstate.run(conn, org_id, save=True, user_id=user_id)
+    diag = await dstate.run(conn, org_id, save=True, user_id=user_id, reuse_same=True)
     elig = rt = None
     if task in ("B", "C"):
         elig = await eligibility_review.review(conn, org_id, concern=concern, diagnosis=diag, user_id=user_id)
