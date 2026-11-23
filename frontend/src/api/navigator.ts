@@ -1003,3 +1003,32 @@ export const getMyConsultations = (token: string) =>
   api<{ consultations: MyConsultation[]; requests: MyConsultRequest[] }>('/navigator/manage/consultations', manage(token))
 export const createMyConsultRequest = (token: string, body: ConsultRequestBody) =>
   api<MyConsultRequest>('/navigator/manage/consult-requests', { ...manage(token), method: 'POST', body })
+
+// ---- 서비스 안내 · 기업정보 열람 권한 ----
+export interface ServiceGate { level: string; gate: string; owner: string; text: string }
+export interface ServiceInfo {
+  service: {
+    name: string
+    summary: string
+    targets: string[]
+    functions: { code: string; name: string; items: string[] }[]
+    goals: string[]
+    flow: string[]
+    integrations: { name: string; status: string }[]
+  }
+  roles: unknown
+  levels: { code: string; label: string; desc: string }[]
+  gates: Record<'dstate' | 'eligibility' | 'route' | 'criteria' | 'history', ServiceGate>
+  raci: { area: string; task: string; company: string; staff: string; owner: string; ax: string; agent: string; level: string }[]
+}
+export const getServiceInfo = () => api<ServiceInfo>('/navigator/service/info')
+
+export interface CompanyAccess {
+  organization_id: number
+  restricted: boolean
+  departments: { id: number; name: string; allowed: boolean }[]
+  text: string
+}
+export const getCompanyAccess = (orgId: number) => api<CompanyAccess>(`/navigator/consult/companies/${orgId}/access`)
+export const saveCompanyAccess = (orgId: number, department_ids: number[]) =>
+  api<CompanyAccess>(`/navigator/consult/companies/${orgId}/access`, { method: 'PUT', body: { department_ids } })

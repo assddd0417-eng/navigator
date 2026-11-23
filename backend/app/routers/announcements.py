@@ -23,7 +23,7 @@ from app.services.ratelimit import public_rate_limit
 from app.services.requirement_extract import extract, source_text
 
 router = APIRouter(prefix="/navigator/announcements", tags=["Navigator 공고"])
-STAFF = ("STAFF",)
+STAFF = ("STAFF", "PROGRAM_OWNER")  # 공고 등록·조건 확인: 기업지원 담당자, 지원사업 소관부서
 RECEIPT_LABEL = {"UPCOMING": "접수전", "OPEN": "접수중", "CLOSED": "마감", "DRAFT": "작성중", "CANCELLED": "취소"}
 
 

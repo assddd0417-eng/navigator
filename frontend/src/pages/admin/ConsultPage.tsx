@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   createConsultation, createConsultRequest, getConsultation, getConsultationHistory, listConsultRequests, setConsultRequestStatus,
-  getDiagnosisHistory, getDstateRules, growthRoute, previewDstate, reviewEligibility, runDstate, saveStaffDstateValues, searchConsultCompanies,
+  getDiagnosisHistory, getDstateRules, growthRoute, previewDstate, reviewEligibility, runDstate, saveStaffDstateValues, searchConsultCompanies, getCompanyAccess,
   type ConsultCompany, type Consultation, type ConsultRequest, type DstateResult, type EligibilityReview, type DstateVariable, type GrowthRoute,
 } from '../../api/navigator'
 import { changedValues, DstateInput } from '../../components/DstateInput'
@@ -10,7 +10,7 @@ import { useToast } from '../../components/Toast'
 import { ConsultReportPanel } from './ConsultReportPanel'
 import { EligibilityPanel } from './EligibilityPanel'
 import { RoutePanel } from './RoutePanel'
-import { RouteRulesCard } from './RouteRulesCard'
+import { GateLine } from '../../components/GateLine'
 import { Card, Empty, fmtDate, PageHeader, useAction, useAsync } from '../../components/ui'
 
 type Task = 'A' | 'B' | 'C'
@@ -92,9 +92,10 @@ export function ConsultPage() {
 
   return (
     <>
-      <PageHeader title="기업 상담" subtitle="기업과 검토 업무를 고르고 실행하면 상담에 쓸 결과가 나옵니다." />
+      <PageHeader eyebrow="AI 서비스 포털 › 방산기업 성장경로" title="방산기업 성장경로 상담"
+        subtitle="기업과 검토 업무를 고르면 성장준비도 진단, 자격요건 검토, 단계별 성장경로를 근거와 함께 보여 줍니다." />
       <div className="grid-side">
-        <Card title="기업 및 검토 업무 선택">
+        <Card title={<><span className="step-label" style={{ display: 'block' }}>STEP 1</span>기업 및 수행 업무 선택</>}>
           <RequestList items={requests.data} loading={requests.loading} orgId={orgId} company={company}
             onPick={pickRequest} onChanged={() => void requests.reload()} />
           <form className="form-row" style={{ marginBottom: 10 }} onSubmit={(e) => { e.preventDefault(); setQuery(q.trim()) }}>
@@ -135,8 +136,10 @@ export function ConsultPage() {
         </Card>
 
         <div className="stack">
+          <div className="step-label" style={{ marginBottom: -8 }}>STEP 2 결과 화면</div>
           {orgId == null ? <Card><Empty>왼쪽에서 상담할 기업을 고르세요.</Empty></Card> : (
             <>
+              <AccessLine orgId={orgId} name={company?.name ?? result?.company_name ?? ''} />
               {result && (
                 <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                   <button className="btn btn-primary" disabled={busy} onClick={() => void saveDraft()}>결과 저장 · 상담결과서 초안</button>
@@ -148,6 +151,9 @@ export function ConsultPage() {
                     title={t.ready ? undefined : '다음 단계에서 연결'} onClick={() => setTab(t.code)}>{t.label}</button>
                 ))}
               </div>
+              {tab !== 'dstate' && tab !== 'qualify' && <GateLine gate="route" />}
+              {tab === 'dstate' && <GateLine gate="dstate" />}
+              {tab === 'qualify' && <GateLine gate="eligibility" />}
               {tab === 'dstate' && (!result ? <div className="page-loading">불러오는 중…</div> : (
                 <DstatePanel result={result} company={company} onChange={setResult} orgId={orgId} />
               ))}
@@ -164,11 +170,20 @@ export function ConsultPage() {
             </>
           )}
           <RulesCard />
-          <RouteRulesCard />
           <p className="small muted">진단 결과는 상담 참고자료입니다. 확정과 기업 안내는 담당자가 판단합니다.</p>
         </div>
       </div>
     </>
+  )
+}
+
+function AccessLine({ orgId, name }: { orgId: number; name: string }) {
+  const acc = useAsync(() => getCompanyAccess(orgId), [orgId])
+  return (
+    <div className="access-line">
+      <strong>{name}</strong>
+      {' · 열람 범위: '}{acc.data ? acc.data.text : acc.loading ? '확인 중…' : '확인하지 못했습니다.'}
+    </div>
   )
 }
 

@@ -1,9 +1,13 @@
+import type { ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { RequireRole } from './auth/RequireRole'
-import { homePath, STAFF_ROLES } from './auth/roles'
+import { homePath, STAFF_ROLES, type RoleCode } from './auth/roles'
 import { Layout } from './components/Layout'
 import { ToastProvider } from './components/Toast'
+import { AccessPage } from './pages/admin/AccessPage'
+import { RouteRulesPage } from './pages/admin/RouteRulesPage'
+import { ServicePage } from './pages/admin/ServicePage'
 import { AnnouncementReviewPage } from './pages/admin/AnnouncementReviewPage'
 import { ConsultPage } from './pages/admin/ConsultPage'
 import { ConsultReviewPage } from './pages/admin/ConsultReviewPage'
@@ -14,6 +18,11 @@ import { CompanyManagePage } from './pages/navigator/CompanyManagePage'
 import { CompanyRegisterPage } from './pages/navigator/CompanyRegisterPage'
 import { CompanySearchPage } from './pages/navigator/CompanySearchPage'
 import { SubscriptionLinkPage } from './pages/navigator/SubscriptionLinkPage'
+
+/** 화면별 허용 역할 */
+function Only({ roles, children }: { roles: RoleCode[]; children: ReactNode }) {
+  return <RequireRole roles={roles}>{children}</RequireRole>
+}
 
 /** 첫 화면: 로그인한 담당자는 담당자 화면, 그 밖에는 기업 화면 */
 function Home() {
@@ -38,11 +47,14 @@ export default function App() {
             <Route path="/navigator/outreach/optout" element={<SubscriptionLinkPage mode="outreach-optout" />} />
             {/* 기관 담당자 화면: 로그인 */}
             <Route element={<RequireRole roles={STAFF_ROLES}><Layout /></RequireRole>}>
-              <Route path="/staff/consult" element={<ConsultPage />} />
-              <Route path="/staff/consult/review" element={<ConsultReviewPage />} />
-              <Route path="/staff/navigator" element={<NavigatorStaffPage />} />
-              <Route path="/staff/announcements" element={<AnnouncementReviewPage />} />
-              <Route path="/staff/sources" element={<NavigatorSourcesPage />} />
+              <Route path="/staff/consult" element={<Only roles={['STAFF']}><ConsultPage /></Only>} />
+              <Route path="/staff/consult/review" element={<Only roles={['STAFF', 'AX_ADMIN']}><ConsultReviewPage /></Only>} />
+              <Route path="/staff/service" element={<ServicePage />} />
+              <Route path="/staff/announcements" element={<Only roles={['STAFF', 'PROGRAM_OWNER']}><AnnouncementReviewPage /></Only>} />
+              <Route path="/staff/route-rules" element={<RouteRulesPage />} />
+              <Route path="/staff/access" element={<Only roles={['AX_ADMIN']}><AccessPage /></Only>} />
+              <Route path="/staff/sources" element={<Only roles={['STAFF', 'PROGRAM_OWNER']}><NavigatorSourcesPage /></Only>} />
+              <Route path="/staff/navigator" element={<Only roles={['STAFF']}><NavigatorStaffPage /></Only>} />
             </Route>
             <Route path="*" element={<Home />} />
           </Routes>

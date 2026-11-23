@@ -28,9 +28,9 @@ function readToken(): string | null {
   try { return sessionStorage.getItem(TOKEN_KEY) } catch { return null }
 }
 
-type Tab = 'matches' | 'past' | 'alerts' | 'manage'
+type Tab = 'consult' | 'matches' | 'past' | 'alerts' | 'manage'
 /** 관리 탭 안의 화면 */
-type ManageView = 'profile' | 'dstate' | 'consult' | 'recipients' | 'consent'
+type ManageView = 'profile' | 'recipients' | 'consent'
 
 export function CompanyManagePage() {
   const [token] = useState(readToken)
@@ -103,6 +103,9 @@ export function CompanyManagePage() {
         </div>
       </div>
       <div className="seg tabs" role="tablist">
+        <button role="tab" className={tab === 'consult' ? 'on' : ''} onClick={() => setTab('consult')}>
+          상담·결과 안내 {dstateMissing != null && dstateMissing > 0 && <span className="tab-count">{dstateMissing}</span>}
+        </button>
         <button role="tab" className={tab === 'matches' ? 'on' : ''} onClick={() => setTab('matches')}>
           지원 가능 공고 {matches && <span className="tab-count tab-count-ok">{eligible}</span>}
         </button>
@@ -116,6 +119,14 @@ export function CompanyManagePage() {
           관리 {missing.length > 0 && <span className="tab-count">{missing.length}</span>}
         </button>
       </div>
+
+      {tab === 'consult' && (
+        <div className="stack">
+          <ConsultPanel token={token!} />
+          <h3>보완 정보 (담당자가 요청한 진단 정보)</h3>
+          <DstatePanel token={token!} onMissing={setDstateMissing} />
+        </div>
+      )}
 
       {tab === 'matches' && (
         <Card title="지원 가능 공고" actions={
@@ -152,12 +163,6 @@ export function CompanyManagePage() {
           <button role="tab" className={manageView === 'profile' ? 'on' : ''} onClick={() => setManageView('profile')}>
             회사 정보 {missing.length > 0 && <span className="tab-count">{missing.length}</span>}
           </button>
-          <button role="tab" className={manageView === 'dstate' ? 'on' : ''} onClick={() => setManageView('dstate')}>
-            성장 진단 정보 {dstateMissing != null && dstateMissing > 0 && <span className="tab-count">{dstateMissing}</span>}
-          </button>
-          <button role="tab" className={manageView === 'consult' ? 'on' : ''} onClick={() => setManageView('consult')}>
-            상담
-          </button>
           <button role="tab" className={manageView === 'recipients' ? 'on' : ''} onClick={() => setManageView('recipients')}>
             알림 받는 사람
           </button>
@@ -166,10 +171,6 @@ export function CompanyManagePage() {
           </button>
         </div>
       )}
-
-      {tab === 'manage' && manageView === 'dstate' && <DstatePanel token={token!} onMissing={setDstateMissing} />}
-
-      {tab === 'manage' && manageView === 'consult' && <ConsultPanel token={token!} />}
 
       {tab === 'manage' && manageView === 'recipients' && <AlertsPanel token={token!} onUnread={setUnread} part="recipients" />}
 
