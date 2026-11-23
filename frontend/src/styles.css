@@ -49,6 +49,7 @@ input, select, textarea {
   background: #fff; width: 100%; color: var(--text);
 }
 textarea { resize: vertical; }
+input[type=checkbox], input[type=radio] { width: auto; flex: none; }
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary-soft); border-color: var(--primary); }
 
 /* ---- 앱 골격 ---- */
