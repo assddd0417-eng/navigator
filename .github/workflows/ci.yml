@@ -49,6 +49,9 @@ jobs:
       - name: SQL 스모크 테스트
         run: psql "postgresql://postgres:postgres@localhost:5432/navigator_ci" -X -v ON_ERROR_STOP=1 -f db/tests/smoke_test.sql
 
+      - name: 한글 글꼴 설치 (상담결과서 PDF)
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends fonts-nanum
+
       - name: 백엔드 의존성 설치
         run: pip install -e "backend[dev,llm]"
 
