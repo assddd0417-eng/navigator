@@ -22,6 +22,15 @@
 | 테스트 데이터 | `seeds/navigator_companies.sql`, `seeds/navigator_announcements.sql` (재실행 가능) |
 | 검증 | 가상 기업 20곳 × 공고 5건 정답 `seeds/navigator_eval/corpus.json`, 측정 `python -m app.navigator_eval`, 결과 [navigator_eval.md](navigator_eval.md) |
 
+## 검증 데이터
+
+국기원·국기연 내부 자료(기업 DB, 과제·지원 이력, 실제 상담 기록)는 받을 수 없다. 그래서 모든 검증은 합성 데이터로 했다.
+
+- 기업: 가상 기업 101~103 (`seeds/navigator_companies.sql`, 상담용 `navigator_consult.sql`) 과 검증용 111~127 (`seeds/navigator_eval/corpus.json`). 이름에 `(가상)` 을 붙였다.
+- 공고: 가상 공고 101~107. 실제 공고 평가표·자격요건 문구를 본떠 만들었다. 조건 뽑기 규칙만 공개된 실제 공고 48건 글자로 확인했다.
+- 운영규정·연계 기준표: `navigator_regulation.sql`, `navigator_route.sql` 의 가상 조문·기준. 실제 규정은 소관부서가 등록한다.
+- 정확도 수치(판정 일치, 상위 K 포함률, 관련도 경계)는 모두 합성 100쌍 기준이다 ([navigator_eval.md](navigator_eval.md)). 실제 데이터로 다시 재는 일은 기관 설치 뒤 기관이 한다.
+
 기존 테이블은 컬럼 추가만 했다. 사업자번호는 `organization.business_reg_no` 를 숫자 10자리로 쓴다.
 기존 코드 변경은 `routers/documents.py` 의 문서 저장 부분을 `store_document`, `parse_file` 로 분리한 것과 `reembed` 에 새 벡터 테이블을 추가한 것뿐이다.
 
@@ -393,7 +402,7 @@ AX 주관부서는 변수 이름·정의·증빙 원천·보완 질문·선택�
 
 ### 외부 연동
 
-DISIS·PMS·DTiMS 기업정보 연계는 연동 예정이다. 지금은 회사 정보, 기업 답변, 담당자 입력으로 진단한다.
+DISIS·PMS·DTiMS 기업정보 연계는 연동 예정이다. 지금은 회사 정보, 기업 답변, 담당자 입력으로 진단한다. 붙일 위치는 아래 '기관 시스템 연동'.
 
 ## 값 출처
 
@@ -836,6 +845,21 @@ curl -s -X POST localhost:8000/navigator/announcements -H 'X-User-Id: 1' -H 'Con
   "requirements":[{"req_type_code":"COMPANY_SIZE","rule":{"allowed":["SME","STARTUP","VENTURE"]},"description":"중소기업"}],
   "tech_needs":[{"tech_name":"전술 데이터링크 통신 모뎀","ipc_codes":["H04B"]}]}'
 ```
+
+## 기관 시스템 연동
+
+DISIS·PMS·DTiMS·조달청·SSO 는 기관 내부망이나 기관 계약으로만 접근할 수 있어 PoC 에서는 붙이지 않았다. 기관에 설치할 때 기관 쪽 시스템 접근 권한으로 아래 자리에 어댑터를 붙인다. 화면·판정 코드는 바꾸지 않는다. 어댑터가 넣은 값은 출처 `INTERNAL`(기관 시스템)·확인됨으로 남긴다 ('값 출처').
+
+| 연동 대상 | 받을 정보 | 붙일 위치 | 필요한 것 |
+|-----------|-----------|-----------|-----------|
+| DISIS | 업체 등록 여부, 품목·납품 실적 | 연결 부품 `services/external/disis.py` (`base.py` 형식, `record_fetch` 로 원본 저장) → `collector.py` 의 출처 목록에 추가 → `company_product`·`company_field_source`. D-STATE 는 `dstate.load_input` 에서 `DEFENSE_HISTORY`(군 납품) 값으로 쓴다 | 기관 내부망 접속, 조회 계정·API 또는 DB 뷰, 사업자번호로 찾는 방법 |
+| PMS | 국방 R&D 과제 수행 이력, 결과 | 연결 부품 `services/external/pms.py` → `company_rnd_history` (origin EXTERNAL). 역량 레이더(`company_radar.py`)와 매칭 근거·후보 검색(`navigator_matching.py`, `navigator_embedding.py`) 이 이 표를 읽는다 | 과제 DB 조회 권한, 수행기관 사업자번호 매핑 |
+| DTiMS | 지원사업 참여·지원 이력 | 연결 부품 `services/external/dtims.py` → `company_support_history`. 중복지원 판정(`eligibility.py` `DUPLICATE_SUPPORT`), 성장경로(`route.py`), 매칭(`navigator_matching.py`) 이 이 표를 읽는다 | 지원 이력 조회 권한, 사업 코드 ↔ `ax.program` 매핑표 |
+| 조달청 부정당제재 | 제재 여부·기간 | 연결 부품 `services/external/pps.py` → `company_profile.procurement_sanctioned` (`record_field` 로 출처 EXTERNAL). 판정 `PROCUREMENT_SANCTIONED` 가 이 값을 읽는다 | 공공데이터포털 조달청 제재 API 키 또는 기관 계약 |
+| SSO (기관 로그인) | 담당자 신원·부서 | `backend/app/auth.py` 의 `get_current_user` 하나만 교체 (지금은 `X-User-Id` 헤더). SSO 토큰을 검증해 `ax.app_user` 의 사용자 ID 로 바꿔 넘기면 역할·열람 권한은 그대로 동작 | 기관 SSO 연동 규격(SAML·OIDC 등), 사번 ↔ `app_user` 매핑, nginx 앞단 설정 |
+
+- 새 출처는 `ax.external_source` 에 행을 넣고 `is_active` 로 켜고 끈다. 수집 기록·실패 처리·주기 실행은 기존 외부 수집과 같다.
+- 서비스 안내 화면의 연동 상태 목록은 `services/governance.py` 의 `integrations` 에서 고친다.
 
 ## 미구현
 

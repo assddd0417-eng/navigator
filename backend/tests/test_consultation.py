@@ -1,5 +1,6 @@
 """상담 요청, 상담 실행·이력, 결과서 수정·확정, 기업 화면, 이력 점검."""
 from datetime import date, timedelta
+import re
 
 import psycopg
 import pytest
@@ -112,6 +113,9 @@ async def test_consultation_flow(client, setup):
     view = (await client.get("/navigator/manage/consultations", headers=h)).json()
     v = view["consultations"][0]
     assert v["id"] == c1["id"] and any(s["key"] == "opinion" for s in v["report"])
+    assert not re.search(r"\d+\s*점(?![가-힣])", " ".join(s["text"] for s in v["report"]))   # 기업 판본엔 점수 없음
+    staff = (await client.get(f"/navigator/consult/consultations/{c1['id']}", headers=as_user(1))).json()
+    assert "종합 준비도" in staff["report"][0]["text"] and "점" in staff["report"][0]["text"]
     assert all(a["announcement_id"] != ann for a in v["announcements"])      # 신청 불가로 바꾼 공고는 안내 안 함
     assert view["requests"][0]["status"] == "DONE"
 

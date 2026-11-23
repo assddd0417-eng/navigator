@@ -388,6 +388,17 @@ async def set_request_status(conn: AsyncConnection, rid: int, status: str, user_
 
 # ---------- 기업 화면 ----------
 
+_SCORE = re.compile(r"\s*\|\s*종합 준비도\s*\d+(?:\.\d+)?\s*점"     # 개요의 '| 종합 준비도 62점'
+                    r"|\s*\(\s*\d+(?:\.\d+)?\s*점\s*\)"             # '(62점)'
+                    r"|\s*·\s*\d+(?:\.\d+)?\s*%"                       # '보통 · 41%'
+                    r"|\s+\d+(?:\.\d+)?\s*점(?![가-힣])")               # '기술성 72점,'
+
+
+def strip_scores(text: str) -> str:
+    """기업에게 보이는 판본에서 점수를 뺀다. 라벨·문장은 담당자가 확정한 그대로 둔다."""
+    return _SCORE.sub("", text or "")
+
+
 async def company_view(conn: AsyncConnection, org_id: int) -> dict:
     """확정한 상담만. 점수는 빼고 라벨로 보여 준다 (결과서 본문은 담당자가 확정한 그대로)."""
     rows = await (await conn.execute(
@@ -407,7 +418,7 @@ async def company_view(conn: AsyncConnection, org_id: int) -> dict:
                   "tasks": s["tasks"]} for s in (c["route"] or {}).get("steps", [])]
         out.append({"id": c["id"], "task_label": c["task_label"], "confirmed_at": c["confirmed_at"],
                     "concern": c["concern"], "state_label": c["diagnosis"]["state_label"],
-                    "report": [s for s in c["report"] if s["text"]], "announcements": anns, "steps": steps})
+                    "report": [{**s, "text": strip_scores(s["text"])} for s in c["report"] if s["text"]], "announcements": anns, "steps": steps})
     requests = await list_requests(conn, org_id=org_id)
     return {"consultations": out,
             "requests": [{k: r[k] for k in ("id", "concern", "interest", "status", "status_label", "created_at")}
