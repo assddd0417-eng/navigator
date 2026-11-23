@@ -79,7 +79,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary-sof
 .sidebar-can ul { margin: 0; padding-left: 16px; }
 .content { flex: 1; padding: 24px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
 
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.page-header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.page-header > div:first-child { flex: 1 1 260px; min-width: 0; }
 .page-header h1 { font-size: 22px; }
 .page-header p { color: var(--muted); margin: 4px 0 0; }
 .page-loading, .empty { color: var(--muted); padding: 16px; text-align: center; }
@@ -103,6 +104,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary-sof
 .table td { padding: 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .table tr:last-child td { border-bottom: none; }
 .card:has(> .table) { overflow-x: auto; }
+.table-wide { min-width: 1100px; }
 
 /* ---- 배지 ---- */
 .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }

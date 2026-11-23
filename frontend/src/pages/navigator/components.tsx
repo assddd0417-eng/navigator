@@ -93,7 +93,7 @@ function Summary({ rec, audience }: { rec: MatchRec; audience: Audience }) {
   const top = topEvidence(rec)
   let line: ReactNode
   if (rec.verdict === 'ELIGIBLE') {
-    line = <>필수 조건 {rec.mandatory_total}개를 모두 충족합니다.{rec.preferred_total > 0 && ` 우대 조건 ${rec.preferred_met}/${rec.preferred_total}개.`}</>
+    line = <>{rec.mandatory_total > 0 ? `필수 조건 ${rec.mandatory_total}개를 모두 충족합니다.` : '공고에 필수 조건이 없습니다.'}{rec.preferred_total > 0 && ` 우대 조건 ${rec.preferred_met}/${rec.preferred_total}개.`}</>
   } else if (rec.verdict === 'INELIGIBLE') {
     line = <>충족하지 못한 조건: <strong>{clauses(unmet)}</strong></>
   } else {

@@ -1,5 +1,5 @@
 import type { GrowthRoute, RouteProgram, RouteReadiness } from '../../api/navigator'
-import { Card } from '../../components/ui'
+import { Card, docName } from '../../components/ui'
 
 const READY_TONE: Record<RouteReadiness, string> = { IMMEDIATE: 'ok', AFTER_FIX: 'warn', PREPARE: 'muted' }
 const READY_LABEL: Record<RouteReadiness, string> = { IMMEDIATE: '즉시 신청', AFTER_FIX: '보완 후 신청', PREPARE: '진입조건 준비' }
@@ -14,7 +14,7 @@ function Tile({ label, value }: { label: string; value: string }) {
 }
 
 const docs = (p: RouteProgram) =>
-  p.submit_documents.map((d) => (d.required ? d.name : `${d.name} (해당 시)`)).join(', ')
+  p.submit_documents.map(docName).join(', ')
 
 export function RoutePanel({ data }: { data: GrowthRoute }) {
   const details = data.steps.flatMap((s) => s.programs.map((p) => ({ p, stage: s.stage_label })))
@@ -66,7 +66,7 @@ export function RoutePanel({ data }: { data: GrowthRoute }) {
 
       <Card title="추천 사업 상세">
         {!details.length ? <p className="muted">추천 사업이 없습니다.</p> : (
-          <table className="table">
+          <table className="table table-wide">
             <thead>
               <tr><th>사업</th><th>단계</th><th>준비 상태</th><th>근거 공고</th><th>Q1 / 적합도</th>
                 <th>진입조건</th><th>준비서류</th><th>예상 산출물</th><th>유사 기업</th></tr>

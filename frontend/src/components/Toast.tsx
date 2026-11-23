@@ -46,12 +46,12 @@ export function describeApiError(e: ApiError): Omit<Toast, 'id'> {
     case 404:
       return { kind: 'error', title: '찾는 내용이 없습니다', message: '삭제됐거나 볼 권한이 없는 항목일 수 있습니다.', meta }
     case 409:
-      return { kind: 'error', title: '이미 같은 내용이 있습니다', message: e.detail, meta }
+      return { kind: 'error', title: '처리할 수 없습니다', message: e.detail, meta }
     case 422:
       return {
         kind: 'error',
         title: '입력 내용을 확인해 주세요',
-        message: `입력값이 업무 규칙(예: 원문 근거가 꼭 있어야 함)에 맞지 않습니다.\n이유: ${reasonOf(e)}`,
+        message: reasonOf(e),
         meta,
       }
     default:

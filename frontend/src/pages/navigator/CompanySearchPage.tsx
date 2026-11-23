@@ -27,15 +27,16 @@ export function CompanySearchPage() {
   const [profile, setProfile] = useState<PublicProfile | null>(null)
   const [matches, setMatches] = useState<MatchRun | null>(null)
   const [notFound, setNotFound] = useState<string | null>(null)
+  const [badFormat, setBadFormat] = useState<string | null>(null) // 형식 오류는 '등록되지 않음'과 따로 안내
   const { busy, run } = useAction()
 
   const search = async (value: string) => {
     const digits = value.replace(/[^0-9]/g, '')
+    setProfile(null); setMatches(null); setNotFound(null); setBadFormat(null); setCodeSent(null); setCode(''); setCodeError(null)
     if (digits.length !== 10) {
-      setNotFound('사업자등록번호 10자리를 입력하세요. (예: 123-45-67890)')
+      setBadFormat(digits ? '사업자등록번호는 숫자 10자리입니다. (예: 123-45-67890)' : '사업자등록번호를 넣어 주세요.')
       return
     }
-    setProfile(null); setMatches(null); setNotFound(null); setCodeSent(null); setCode(''); setCodeError(null)
     setParams({ brn: value })
     await run(async () => {
       try {
@@ -43,7 +44,8 @@ export function CompanySearchPage() {
         setProfile(p)
         setMatches(await getPublicMatches(digits))
       } catch (e) {
-        if (e instanceof ApiError && (e.status === 404 || e.status === 422)) setNotFound(e.detail)
+        if (e instanceof ApiError && e.status === 404) setNotFound(e.detail)
+        else if (e instanceof ApiError && e.status === 422) setBadFormat(e.detail)
         else throw e
       }
     })
@@ -94,6 +96,7 @@ export function CompanySearchPage() {
             inputMode="numeric" aria-label="사업자등록번호" />
           <button className="btn btn-primary" disabled={busy}>{busy ? '조회 중…' : '조회'}</button>
         </form>
+        {badFormat && <div className="notice notice-warn small">{badFormat}</div>}
         <div className="chips">
           <span className="small muted">시연용 기업:</span>
           {DEMO.map((d) => (

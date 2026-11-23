@@ -203,6 +203,6 @@ def _guide_text(x: dict, docs: list[dict]) -> str:
     if x["company_burden"]:
         parts.append(f"기업부담: {x['company_burden']}")
     if docs:
-        parts.append("제출서류: " + ", ".join(d["name"] + ("" if d.get("required", True) else "(해당 시)")
-                                            for d in docs))
+        parts.append("제출서류: " + ", ".join(
+            d["name"] + ("" if d.get("required", True) or "해당 시" in d["name"] else " (해당 시)") for d in docs))
     return " | ".join(parts)

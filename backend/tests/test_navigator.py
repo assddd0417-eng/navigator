@@ -143,7 +143,7 @@ async def test_unknown_business_saved_as_unverified(client):
 async def test_invalid_input_rejected(client):
     base = {"company_name": "x", "representative_name": "x", "opened_on": "2020-01-01", "email": "a@b.co"}
     r = await client.post("/navigator/companies", json={**base, "business_reg_no": "999-84-00048"})
-    assert r.status_code == 422 and "검증번호" in r.json()["detail"]
+    assert r.status_code == 422 and "없는 사업자등록번호" in r.json()["detail"]
     r = await client.post("/navigator/companies", json={**base, "business_reg_no": UNKNOWN_BRN, "email": "no-at"})
     assert r.status_code == 422                     # 이메일 필수·형식
     assert (await client.get("/navigator/companies/12-34")).status_code == 422

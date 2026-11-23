@@ -1,9 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import {
-  createAnnouncementFromText, extractRequirements, getAnnouncement, getAnnouncementSource, getRequirementTypes, listAnnouncements, saveReview,
+  createAnnouncementFromText, uploadAnnouncement, extractRequirements, getAnnouncement, getAnnouncementSource, getRequirementTypes, listAnnouncements, saveReview,
   type AnnDetail, type AnnFields, type EvalItem, type AnnSource, type Extraction, type ReqDraft, type TechDraft,
 } from '../../api/navigator'
 import { useAuth } from '../../auth/AuthContext'
+import { useToast } from '../../components/Toast'
 import { Card, Empty, fmtDate, PageHeader, useAction, useAsync } from '../../components/ui'
 import { fmtDay, fmtKrw } from '../navigator/components'
 
@@ -29,7 +30,7 @@ const parseRule = (t: string): Record<string, unknown> => { try { return JSON.pa
 
 export function AnnouncementReviewPage() {
   const { role } = useAuth()
-  const canEdit = role === 'STAFF'
+  const canEdit = role === 'STAFF' || role === 'PROGRAM_OWNER' // 공고 등록·조건 확인은 담당자와 소관부서 (서버 announcements.STAFF 와 같음)
   const [tab, setTab] = useState<'PENDING' | 'DONE'>('PENDING')
   const anns = useAsync(() => listAnnouncements({ review: tab }), [tab])
   const [selected, setSelected] = useState<number | null>(null)
@@ -86,10 +87,21 @@ export function AnnouncementReviewPage() {
 
 function NewAnnouncement({ onCreated, onCancel }: { onCreated: (id: number) => void; onCancel: () => void }) {
   const [f, setF] = useState({ title: '', agency_name: '국방기술진흥연구소', announcement_no: '', source_url: '', posted_on: '', body_text: '' })
+  const [file, setFile] = useState<File | null>(null)
   const { busy, run } = useAction()
+  const toast = useToast()
   const submit = (e: FormEvent) => {
     e.preventDefault()
     void run(async () => {
+      if (file) { // 파일을 고르면 파일 글자로 등록 (본문 칸은 쓰지 않음)
+        const r = await uploadAnnouncement(file, {
+          title: f.title.trim() || undefined, agency_name: f.agency_name.trim(),
+          announcement_no: f.announcement_no.trim() || `UP-${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}`,
+        })
+        if (r.warnings?.length) toast.show({ kind: 'info', title: '공고문을 올렸습니다', message: r.warnings.join('\n') })
+        onCreated(r.id)
+        return
+      }
       const r = await createAnnouncementFromText({
         title: f.title.trim(), agency_name: f.agency_name.trim(), body_text: f.body_text,
         announcement_no: f.announcement_no.trim() || undefined, source_url: f.source_url.trim() || undefined,
@@ -100,18 +112,23 @@ function NewAnnouncement({ onCreated, onCancel }: { onCreated: (id: number) => v
   }
   return (
     <Card title="공고 직접 등록">
-      <p className="small muted">홈페이지에 없는 공고나 미리 받은 공고문을 붙여 넣습니다. 작성 중으로 저장되고, 조건은 다음 화면에서 뽑습니다.</p>
+      <p className="small muted">홈페이지에 없는 공고는 공고문 파일을 올리거나 본문을 붙여 넣습니다. 작성 중으로 저장되고, 조건은 다음 화면에서 뽑습니다.</p>
       <form className="form" onSubmit={submit}>
-        <label>제목<input required value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} /></label>
+        <label>공고문 파일 (PDF·TXT, 선택)
+          <input type="file" accept=".pdf,.txt,.md" aria-label="공고문 파일"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          <span className="small muted">한글(HWP) 파일은 PDF로 저장해 올리거나 본문을 붙여 넣으세요. 스캔본은 글자를 읽지 못합니다.</span>
+        </label>
+        <label>제목{file && ' (비우면 파일 이름)'}<input required={!file} value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} /></label>
         <div className="form-row">
           <label>기관<input required value={f.agency_name} onChange={(e) => setF({ ...f, agency_name: e.target.value })} /></label>
           <label>공고 번호<input value={f.announcement_no} placeholder="비우면 자동" onChange={(e) => setF({ ...f, announcement_no: e.target.value })} /></label>
           <label>게시일<input type="date" value={f.posted_on} onChange={(e) => setF({ ...f, posted_on: e.target.value })} /></label>
         </div>
         <label>원문 주소<input value={f.source_url} placeholder="https://" onChange={(e) => setF({ ...f, source_url: e.target.value })} /></label>
-        <label>공고문 본문<textarea required minLength={20} rows={14} value={f.body_text}
+        {!file && <label>공고문 본문<textarea required minLength={20} rows={14} value={f.body_text}
           placeholder="한글 파일에서 전체 선택해 복사한 내용을 붙여 넣으세요"
-          onChange={(e) => setF({ ...f, body_text: e.target.value })} /></label>
+          onChange={(e) => setF({ ...f, body_text: e.target.value })} /></label>}
         <div className="form-foot">
           <button type="button" className="btn btn-ghost" onClick={onCancel}>취소</button>
           <button className="btn btn-primary" disabled={busy}>{busy ? '저장 중…' : '작성 중으로 저장'}</button>

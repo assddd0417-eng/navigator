@@ -123,6 +123,8 @@ def _parse_pdf(data: bytes, filename: str, digest: str, max_pages: int, chunk_ma
 
 
 def _clean_lines(text: str) -> list[str]:
+    # 일부 PDF(한글 편집기 출력)는 띄어쓰기를 '‧'(U+2027)로 내보낸다 → 공백으로
+    text = text.replace("\u2027", " ")
     lines = [re.sub(r"[ \t 　]+", " ", l).strip() for l in text.replace("\x00", "").splitlines()]
     lines = [l for l in lines if l]
     # 머리·꼬리의 쪽 번호 줄("- 3 -", "3 / 120") 제거

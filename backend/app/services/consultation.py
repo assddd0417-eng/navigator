@@ -58,16 +58,9 @@ def build_report(diag: dict, elig: dict | None, rt: dict | None, concern: str | 
 
     questions: list[str] = []
     if elig is not None:
-        res = elig["results"]
-        s = elig["summary"]
-        lines = [f"검토 공고 {len(res)}건: 신청 가능 {s.get('ELIGIBLE', 0)}건, 확인 필요 {s.get('NEEDS_INFO', 0)}건, "
-                 f"신청 불가 {s.get('INELIGIBLE', 0)}건"]
-        for r in [r for r in res if r["verdict"] != "INELIGIBLE"][:MAX_ANN_LINES]:
-            fix = "; ".join(t["text"] for t in r["todo"][:2])
-            lines.append(f"- {r['title']}: {r['q1_label']}, 적합도 {r['fit']['grade_label']}"
-                         + (f". 보완: {fix}" if fix else ""))
+        text["eligibility"] = eligibility_text(elig)
+        for r in [r for r in elig["results"] if r["verdict"] != "INELIGIBLE"][:MAX_ANN_LINES]:
             questions += [t["question"] for t in r["todo"] if t.get("question")]
-        text["eligibility"] = "\n".join(lines)
     else:
         text["eligibility"] = "이번 상담에서는 검토하지 않음."
     if rt is not None:
@@ -84,6 +77,24 @@ def build_report(diag: dict, elig: dict | None, rt: dict | None, concern: str | 
     text["opinion"] = ""
     text["notice"] = NOTICE
     return [{"key": k, "title": t, "text": text[k]} for k, t in SECTIONS]
+
+
+def eligibility_text(elig: dict, overrides: list[dict] | None = None) -> str:
+    """'지원사업 검토 결과' 항목. 담당자가 바꾼 판정이 있으면 바꾼 판정으로 센다."""
+    changed = {o["announcement_id"]: o["verdict"] for o in overrides or []}
+    res = [{**r, "final": changed.get(r["announcement_id"], r["verdict"])} for r in elig["results"]]
+    count = {v: sum(1 for r in res if r["final"] == v) for v in VERDICTS}
+    lines = [f"검토 공고 {len(res)}건: 신청 가능 {count['ELIGIBLE']}건, 확인 필요 {count['NEEDS_INFO']}건, "
+             f"신청 불가 {count['INELIGIBLE']}건"]
+    for r in [r for r in res if r["final"] != "INELIGIBLE"][:MAX_ANN_LINES]:
+        if r["final"] != r["verdict"]:
+            lines.append(f"- {r['title']}: {eligibility_review.Q1_KO[r['final']]} (담당자 확인), "
+                         f"적합도 {r['fit']['grade_label']}")
+            continue
+        fix = "; ".join(t["text"] for t in r["todo"][:2])
+        lines.append(f"- {r['title']}: {r['q1_label']}, 적합도 {r['fit']['grade_label']}"
+                     + (f". 보완: {fix}" if fix else ""))
+    return "\n".join(lines)
 
 
 def _numbers(t: str) -> set[str]:
@@ -276,9 +287,21 @@ async def update(conn: AsyncConnection, cid: int, *, report: dict[str, str] | No
                 continue
             new_over.append({"announcement_id": r["announcement_id"], "title": r["title"],
                              "from": r["verdict"], "verdict": o["verdict"], "reason": o["reason"]})
+    new_draft = c["draft"]
+    if c["eligibility"] and new_over != c["overrides"]:
+        # 담당자가 손대지 않은 '지원사업 검토 결과'는 바꾼 판정에 맞춰 다시 쓴다 (기업 안내와 판정이 어긋나지 않게)
+        drafted = {d["key"]: d["text"] for d in c["draft"]}
+        cur = {s["key"]: s["text"] for s in new_report}
+        if cur.get("eligibility") == drafted.get("eligibility"):
+            text = eligibility_text(c["eligibility"], new_over)
+            fix = lambda secs: [{**s, "text": text, "drafted_by": "TEMPLATE"} if s["key"] == "eligibility" else s
+                                for s in secs]
+            new_report, new_draft = fix(new_report), fix(c["draft"])
     await conn.execute(
-        """UPDATE ax.consultation SET report = %s, overrides = %s, feedback = %s, updated_at = now() WHERE id = %s""",
-        (Jsonb(new_report), Jsonb(new_over), feedback if feedback is not None else c["feedback"], cid))
+        """UPDATE ax.consultation SET report = %s, draft = %s, overrides = %s, feedback = %s, updated_at = now()
+            WHERE id = %s""",
+        (Jsonb(new_report), Jsonb(new_draft), Jsonb(new_over), feedback if feedback is not None else c["feedback"],
+         cid))
     return await get(conn, cid)
 
 
@@ -321,11 +344,13 @@ async def confirm(conn: AsyncConnection, cid: int, user_id: int, notify: bool) -
 
 # ---------- 이력 점검 ----------
 
-async def review_log(conn: AsyncConnection, limit: int = 100) -> dict:
-    """담당자가 초안과 다르게 고치거나 판정을 바꾼 상담. 기준 보정 점검용."""
+async def review_log(conn: AsyncConnection, limit: int = 100,
+                     access: tuple[str, dict] = ("TRUE", {})) -> dict:
+    """담당자가 초안과 다르게 고치거나 판정을 바꾼 상담. 기준 보정 점검용. access = 열람 권한 조건."""
+    cond, params = access
     rows = await (await conn.execute(
-        SELECT + """ WHERE c.overrides <> '[]'::jsonb OR c.report <> c.draft OR c.feedback IS NOT NULL
-                    ORDER BY c.id DESC LIMIT %s""", (limit,))).fetchall()
+        SELECT + f""" WHERE ({cond}) AND (c.overrides <> '[]'::jsonb OR c.report <> c.draft OR c.feedback IS NOT NULL)
+                    ORDER BY c.id DESC LIMIT %(n)s""", {**params, "n": limit})).fetchall()
     titles = dict(SECTIONS)
     items, by_type = [], {"overrides": 0, "edits": 0, "feedback": 0}
     for r in rows:
@@ -341,8 +366,8 @@ async def review_log(conn: AsyncConnection, limit: int = 100) -> dict:
             "edited_sections": [titles[k] for k in c["edited_sections"]],
             "feedback": c["feedback"]})
     total = (await (await conn.execute(
-        "SELECT count(*) AS n, count(*) FILTER (WHERE status = 'CONFIRMED') AS confirmed FROM ax.consultation"
-    )).fetchone())
+        f"SELECT count(*) AS n, count(*) FILTER (WHERE status = 'CONFIRMED') AS confirmed FROM ax.consultation c WHERE {cond}",
+        params)).fetchone())
     return {"total": total["n"], "confirmed": total["confirmed"], "counts": by_type, "items": items}
 
 
@@ -417,7 +442,8 @@ async def company_view(conn: AsyncConnection, org_id: int) -> dict:
         v = _verdicts(c)
         anns = [{"announcement_id": x["announcement_id"], "title": x["title"], "agency_name": x["agency_name"],
                  "receipt_end": x["receipt_end"], "q1_label": eligibility_review.Q1_KO[v[x["announcement_id"]]],
-                 "fit_grade": x["fit"]["grade"], "todo": [t["text"] for t in x["todo"] if t["kind"] != "FIT"][:3]}
+                 "fit_grade": x["fit"]["grade"], "todo": [] if v[x["announcement_id"]] == "ELIGIBLE" and x["verdict"] != "ELIGIBLE"  # 담당자가 신청 가능으로 확인
+                 else [t["text"] for t in x["todo"] if t["kind"] != "FIT"][:3]}
                 for x in (c["eligibility"] or {}).get("results", [])
                 if v[x["announcement_id"]] != "INELIGIBLE"]
         steps = [{"horizon": s["horizon"], "stage_label": s["stage_label"], "goal": s["goal"],

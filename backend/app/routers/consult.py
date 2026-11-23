@@ -354,10 +354,11 @@ async def confirm_consultation(cid: int, body: ConfirmIn, user: CurrentUser = De
 
 
 @router.get("/consult/review-log")
-async def review_log(limit: int = 100, _: CurrentUser = Depends(require_roles(*governance.AUDIT))):
-    """이력 점검: 담당자가 판정을 바꾸거나 결과서를 고친 상담."""
+async def review_log(limit: int = 100, user: CurrentUser = Depends(require_roles(*governance.AUDIT))):
+    """이력 점검: 담당자가 판정을 바꾸거나 결과서를 고친 상담. 열람 권한이 없는 기업은 빠진다 (AX 주관부서는 전체)."""
     async with transaction() as conn:
-        return await consultation.review_log(conn, max(1, min(limit, 500)))
+        return await consultation.review_log(conn, max(1, min(limit, 500)),
+                                             access=governance.access_filter(user, "c.organization_id"))
 
 
 @router.get("/manage/consultations", dependencies=[Depends(public_rate_limit)])

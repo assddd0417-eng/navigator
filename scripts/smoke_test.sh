@@ -73,7 +73,7 @@ upload() {
     local args=(-sS -o "$BODY_FILE" -w '%{http_code}' -X POST "$BASE_URL$path"
                 -H 'Accept: application/json' -H "X-Request-Id: smoke-$RUN_TAG" -H "X-User-Id: $user"
                 -F "file=@$file")
-    for field in "$@"; do args+=(-F "$field"); done
+    for field in "$@"; do args+=(--form-string "$field"); done  # 값이 ( 로 시작하면 -F 는 다중 파트로 읽음
     STATUS=$(curl "${args[@]}" 2>/dev/null) || STATUS="000"
     BODY=$(cat "$BODY_FILE" 2>/dev/null || true)
     if [[ "$STATUS" == "$expect" ]]; then

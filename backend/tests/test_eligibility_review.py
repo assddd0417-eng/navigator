@@ -138,7 +138,7 @@ async def test_api_flow(client, setup):
     assert res["verdict"] == "ELIGIBLE" and res["q1_text"] == "필수요건 3건 모두 충족: 신청 가능"
     assert res["fit"]["grade"] in ("상", "중", "하") and res["fit"]["score"] is not None
     assert {x["name"]: x["level"] for x in res["fit"]["items"]}["수행방안·기대효과"] is None
-    assert res["guide"]["text"] == "기업부담: 컨설팅 비용 25% | 제출서류: 중소기업확인서, 재무제표(2개년), 부정수급 확인서(해당 시)"
+    assert res["guide"]["text"] == "기업부담: 컨설팅 비용 25% | 제출서류: 중소기업확인서, 재무제표(2개년), 부정수급 확인서 (해당 시)"
     nd = next(c for c in res["checks"] if c["req_type_code"] == "NO_DISQUALIFICATION")
     assert nd["has_basis"] is False and nd["requirement_id"] in res["unsupported"]
 

@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 : "${DATABASE_URL:?DATABASE_URL 을 설정하세요}"
 ./scripts/migrate.sh
-for f in base navigator_companies navigator_announcements navigator_past_announcements navigator_consult navigator_route; do
+for f in base navigator_companies navigator_announcements navigator_past_announcements navigator_consult navigator_route navigator_regulation; do
   psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -o /dev/null -f "seeds/$f.sql"
 done
 (cd backend && python -m app.reembed)
