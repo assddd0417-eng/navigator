@@ -213,7 +213,7 @@ function EvidenceBlock({ orgId, checked, onChecked }: { orgId: number; checked: 
         <ul className="select-list" style={{ maxHeight: 240 }}>
           {list.data.map((e) => (
             <li key={e.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, padding: '4px 0' }}>
-              <input type="checkbox" checked={checked.includes(e.id)} onChange={() => toggle(e.id)} aria-label={`${e.file_name} 상담에 쓰기`} style={{ marginTop: 4 }} />
+              <input type="checkbox" checked={checked.includes(e.id)} onChange={() => toggle(e.id)} aria-label={`${e.file_name} 상담에 쓰기`} style={{ marginTop: 4, width: 'auto', flex: 'none' }} />
               <span style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ wordBreak: 'break-all' }}>{e.file_name}</span>
                 <span className="small muted" style={{ display: 'block' }}>
@@ -221,7 +221,7 @@ function EvidenceBlock({ orgId, checked, onChecked }: { orgId: number; checked: 
                 </span>
               </span>
               {e.origin_label === '담당자 첨부' && (
-                <button className="link-btn small" style={{ width: 'auto' }} disabled={busy} onClick={() => void remove(e)}>삭제</button>
+                <button className="link-btn small" style={{ width: 'auto', flex: 'none', display: 'inline', padding: '0 4px', whiteSpace: 'nowrap' }} disabled={busy} onClick={() => void remove(e)}>삭제</button>
               )}
             </li>
           ))}

@@ -388,15 +388,22 @@ async def set_request_status(conn: AsyncConnection, rid: int, status: str, user_
 
 # ---------- 기업 화면 ----------
 
-_SCORE = re.compile(r"\s*\|\s*종합 준비도\s*\d+(?:\.\d+)?\s*점"     # 개요의 '| 종합 준비도 62점'
-                    r"|\s*\(\s*\d+(?:\.\d+)?\s*점\s*\)"             # '(62점)'
-                    r"|\s*·\s*\d+(?:\.\d+)?\s*%"                       # '보통 · 41%'
-                    r"|\s+\d+(?:\.\d+)?\s*점(?![가-힣])")               # '기술성 72점,'
+_N = r"\d+(?:\.\d+)?\s*점"
+_SCORE = [
+    (re.compile(r"\s*\|\s*종합 준비도\s*" + _N), ""),                  # 개요 '| 종합 준비도 62점'
+    (re.compile(r"(준비도는)\s*" + _N + r"으로"), r"\1"),                 # 요약 '종합 준비도는 71점으로 ~ 단계'
+    (re.compile(r"\s*\(\s*" + _N + r"\s*\)"), ""),                       # '기술성(72점)'
+    (re.compile(r"\s*·\s*\d+(?:\.\d+)?\s*%"), ""),                       # '보통 · 41%'
+    (re.compile(r"\s*" + _N + r"(?:으로|이고|이며|이다|임|입니다)?"), ""),   # 나머지 '72점', 담당자가 고쳐 쓴 문장
+]
 
 
 def strip_scores(text: str) -> str:
     """기업에게 보이는 판본에서 점수를 뺀다. 라벨·문장은 담당자가 확정한 그대로 둔다."""
-    return _SCORE.sub("", text or "")
+    text = text or ""
+    for pat, rep in _SCORE:
+        text = pat.sub(rep, text)
+    return text
 
 
 async def company_view(conn: AsyncConnection, org_id: int) -> dict:
